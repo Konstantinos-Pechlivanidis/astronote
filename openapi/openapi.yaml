@@ -1,0 +1,380 @@
+openapi: 3.0.0
+info:
+  title: SMS Blossom API
+  description: SMS marketing backend for Shopify extensions
+  version: 1.0.0
+  contact:
+    name: SMS Blossom Support
+    email: support@astronote.com
+  license:
+    name: ISC
+    url: https://opensource.org/licenses/ISC
+
+servers:
+  - url: https://astronote-shopify-backend.onrender.com
+    description: Production server
+  - url: http://localhost:3000
+    description: Development server
+
+paths:
+  /health:
+    get:
+      summary: Basic health check
+      description: Returns basic health status
+      tags:
+        - Health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  t:
+                    type: number
+                    description: Timestamp
+
+  /health/full:
+    get:
+      summary: Full health check
+      description: Returns comprehensive system health
+      tags:
+        - Health
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  checks:
+                    type: object
+                    properties:
+                      db:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          responseTime:
+                            type: string
+                      redis:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          responseTime:
+                            type: string
+                      queue:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          responseTime:
+                            type: string
+                      mitto:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                          responseTime:
+                            type: string
+                  metrics:
+                    type: object
+                    properties:
+                      memory:
+                        type: object
+                      uptime:
+                        type: number
+                      nodeVersion:
+                        type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: number
+                  version:
+                    type: string
+
+  /metrics:
+    get:
+      summary: Application metrics
+      description: Returns application performance metrics
+      tags:
+        - Monitoring
+      parameters:
+        - name: format
+          in: query
+          description: Response format
+          required: false
+          schema:
+            type: string
+            enum: [json, prometheus]
+            default: json
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+            text/plain:
+              schema:
+                type: string
+
+  /campaigns:
+    get:
+      summary: Get campaigns
+      description: Retrieve all campaigns for the authenticated shop
+      tags:
+        - Campaigns
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Campaign'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+    post:
+      summary: Create campaign
+      description: Create a new SMS campaign
+      tags:
+        - Campaigns
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignRequest'
+      responses:
+        '201':
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /contacts:
+    get:
+      summary: Get contacts
+      description: Retrieve all contacts for the authenticated shop
+      tags:
+        - Contacts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Contact'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+    post:
+      summary: Create contact
+      description: Create a new contact
+      tags:
+        - Contacts
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContactRequest'
+      responses:
+        '201':
+          description: Contact created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Campaign:
+      type: object
+      properties:
+        id:
+          type: string
+        shopId:
+          type: string
+        name:
+          type: string
+        message:
+          type: string
+        audience:
+          type: string
+        discountId:
+          type: string
+          nullable: true
+        scheduleType:
+          type: string
+          enum: [immediate, scheduled, recurring]
+        scheduleAt:
+          type: string
+          format: date-time
+          nullable: true
+        recurringDays:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [draft, scheduled, sending, sent, failed, cancelled]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCampaignRequest:
+      type: object
+      required:
+        - name
+        - message
+        - audience
+        - scheduleType
+      properties:
+        name:
+          type: string
+        message:
+          type: string
+        audience:
+          type: string
+        discountId:
+          type: string
+        scheduleType:
+          type: string
+          enum: [immediate, scheduled, recurring]
+        scheduleAt:
+          type: string
+          format: date-time
+        recurringDays:
+          type: integer
+
+    Contact:
+      type: object
+      properties:
+        id:
+          type: string
+        shopId:
+          type: string
+        firstName:
+          type: string
+          nullable: true
+        lastName:
+          type: string
+          nullable: true
+        phoneE164:
+          type: string
+        email:
+          type: string
+          nullable: true
+        gender:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        smsConsent:
+          type: string
+          enum: [opted_in, opted_out, unknown]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateContactRequest:
+      type: object
+      required:
+        - phoneE164
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phoneE164:
+          type: string
+        email:
+          type: string
+        gender:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        smsConsent:
+          type: string
+          enum: [opted_in, opted_out, unknown]
+          default: unknown
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        statusCode:
+          type: integer
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Monitoring
+    description: Monitoring and metrics endpoints
+  - name: Campaigns
+    description: SMS campaign management
+  - name: Contacts
+    description: Contact management
+  - name: Automations
+    description: Automation workflows
+  - name: Reports
+    description: Analytics and reporting
+  - name: Billing
+    description: Billing and wallet management

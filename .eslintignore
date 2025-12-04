@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Frontend (testing only)
+frontend/
+
+# Build outputs
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# Config files
+*.config.js
+

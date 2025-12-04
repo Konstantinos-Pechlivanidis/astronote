@@ -1,0 +1,434 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Shop {
+  id                  String               @id @default(cuid())
+  shopDomain          String               @unique
+  shopName            String?
+  accessToken         String?
+  status              String               @default("active")
+  country             String?
+  currency            String               @default("EUR")
+  credits             Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  automations         UserAutomation[]
+  automationLogs      AutomationLog[]
+  campaigns           Campaign[]
+  contacts            Contact[]
+  discounts           DiscountLink[]
+  messages            MessageLog[]
+  segments            Segment[]
+  templates           TemplateUsage[]
+  wallet              Wallet?
+  transactions        WalletTransaction[]
+  billingTransactions BillingTransaction[]
+  settings            ShopSettings?
+  eventProcessingStates EventProcessingState[]
+
+  @@index([status, createdAt])
+  @@index([country])
+}
+
+model Contact {
+  id          String              @id @default(cuid())
+  shopId      String
+  firstName   String?
+  lastName    String?
+  phoneE164   String
+  email       String?
+  gender      String? // "male", "female", "other", or null
+  birthDate   DateTime? // Required for birthday automations
+  tags        String[]            @default([])
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  smsConsent  SmsConsent          @default(unknown)
+  recipients  CampaignRecipient[]
+  shop        Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  memberships SegmentMembership[]
+
+  @@unique([shopId, phoneE164])
+  @@unique([shopId, email])
+  @@index([shopId, phoneE164])
+  @@index([shopId, email])
+  @@index([shopId, smsConsent])
+  @@index([shopId, birthDate])
+  @@index([shopId, createdAt])
+  @@index([shopId, gender])
+}
+
+model Segment {
+  id          String              @id @default(cuid())
+  shopId      String
+  name        String
+  ruleJson    Json
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  shop        Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  memberships SegmentMembership[]
+
+  @@unique([shopId, name])
+  @@index([shopId, name])
+  @@index([shopId, createdAt])
+}
+
+model SegmentMembership {
+  id        String  @id @default(cuid())
+  segmentId String
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  @@unique([segmentId, contactId])
+}
+
+model Campaign {
+  id            String              @id @default(cuid())
+  shopId        String
+  name          String
+  message       String
+  audience      String
+  discountId    String?
+  scheduleAt    DateTime?
+  recurringDays Int?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  scheduleType  ScheduleType
+  status        CampaignStatus      @default(draft)
+  shop          Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  metrics       CampaignMetrics?
+  recipients    CampaignRecipient[]
+  messages      MessageLog[]
+
+  @@unique([shopId, name])
+  @@index([shopId, status])
+  @@index([shopId, createdAt])
+  @@index([shopId, scheduleAt])
+}
+
+model CampaignRecipient {
+  id             String    @id @default(cuid())
+  campaignId     String
+  contactId      String?
+  phoneE164      String
+  status         String
+  mittoMessageId String?
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  error          String?
+  deliveryStatus String? // Mitto delivery status: Delivered, Failed, Queued, etc.
+  senderNumber   String? // Sender number used for this message
+  campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact        Contact?  @relation(fields: [contactId], references: [id])
+
+  @@index([campaignId, status]) // For filtering by campaign and status
+  @@index([campaignId, phoneE164]) // For quick lookups during SMS sending
+  @@index([sentAt]) // For time-based queries
+  @@index([status]) // For status-based filtering
+}
+
+model CampaignMetrics {
+  id             String   @id @default(cuid())
+  campaignId     String   @unique
+  totalSent      Int      @default(0)
+  totalDelivered Int      @default(0)
+  totalFailed    Int      @default(0)
+  totalClicked   Int      @default(0)
+  campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model MessageLog {
+  id             String           @id @default(cuid())
+  shopId         String
+  phoneE164      String
+  provider       String
+  providerMsgId  String?
+  payload        Json?
+  error          String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  campaignId     String?
+  direction      MessageDirection
+  status         MessageStatus?
+  deliveryStatus String? // Mitto delivery status
+  senderNumber   String? // Sender number used
+  campaign       Campaign?        @relation(fields: [campaignId], references: [id])
+  shop           Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, direction])
+  @@index([shopId, status])
+  @@index([shopId, createdAt])
+  @@index([shopId, providerMsgId])
+  @@index([shopId, phoneE164])
+  @@index([campaignId, status]) // For campaign status queries
+  @@index([createdAt, status]) // For time-based filtering with status
+  @@index([providerMsgId]) // For quick lookups by provider message ID
+}
+
+model Wallet {
+  id          String   @id @default(cuid())
+  shopId      String   @unique
+  balance     Int      @default(0)
+  totalUsed   Int      @default(0)
+  totalBought Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model SmsPackage {
+  id          String   @id @default(cuid())
+  name        String
+  credits     Int
+  priceCents  Int
+  currency    String   @default("EUR")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  description String?
+  features    String[] @default([])
+  isActive    Boolean  @default(true)
+  isPopular   Boolean  @default(false)
+}
+
+model WalletTransaction {
+  id        String          @id @default(cuid())
+  shopId    String
+  credits   Int
+  ref       String?
+  meta      Json?
+  createdAt DateTime        @default(now())
+  type      TransactionType
+  shop      Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model TemplateUsage {
+  id         String    @id @default(cuid())
+  shopId     String
+  templateId String
+  usedCount  Int       @default(0)
+  lastUsedAt DateTime?
+  shop       Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  template   Template  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
+
+model Automation {
+  id              String            @id @default(cuid())
+  title           String
+  description     String?
+  triggerEvent    AutomationTrigger
+  defaultMessage  String
+  isSystemDefault Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  userAutomations UserAutomation[]
+}
+
+model UserAutomation {
+  id           String     @id @default(cuid())
+  shopId       String
+  automationId String
+  userMessage  String? // Custom message by user
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  shop         Shop       @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, automationId])
+}
+
+model AutomationLog {
+  id           String   @id @default(cuid())
+  automationId String
+  storeId      String
+  status       String // 'sent', 'skipped', 'failed'
+  reason       String? // Reason for skip/failure
+  triggeredAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+  shop         Shop     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status])
+  @@index([automationId, triggeredAt])
+}
+
+model EventProcessingState {
+  id              String   @id @default(cuid())
+  shopId          String
+  automationType  String   // 'welcome', 'order_placed', 'order_fulfilled'
+  lastEventId     String?  // Last processed Shopify event GID
+  lastProcessedAt DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, automationType])
+  @@index([shopId, automationType])
+}
+
+model DiscountLink {
+  id         String   @id @default(cuid())
+  shopId     String
+  code       String
+  campaignId String?
+  createdAt  DateTime @default(now())
+  shop       Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, code])
+}
+
+enum SmsConsent {
+  opted_in
+  opted_out
+  unknown
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  sending
+  sent
+  failed
+  cancelled
+}
+
+enum ScheduleType {
+  immediate
+  scheduled
+  recurring
+}
+
+enum MessageDirection {
+  outbound
+  inbound
+}
+
+enum MessageStatus {
+  queued
+  sent
+  delivered
+  failed
+  received
+}
+
+enum TransactionType {
+  purchase
+  debit
+  credit
+  refund
+  adjustment
+}
+
+enum AutomationTrigger {
+  welcome
+  abandoned_cart
+  order_confirmation
+  shipping_update
+  delivery_confirmation
+  review_request
+  reorder_reminder
+  birthday
+  customer_inactive
+  cart_abandoned
+  order_placed
+  order_fulfilled
+}
+
+model ShopSettings {
+  id           String   @id @default(cuid())
+  shopId       String   @unique
+  senderNumber String? // Custom sender number for SMS
+  senderName   String? // Custom sender name
+  timezone     String   @default("UTC")
+  currency     String   @default("EUR")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model BillingTransaction {
+  id              String   @id @default(cuid())
+  shopId          String
+  creditsAdded    Int
+  amount          Int // Amount in cents
+  currency        String   @default("EUR")
+  packageType     String
+  stripeSessionId String
+  stripePaymentId String?
+  status          String   @default("pending") // pending, completed, failed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, createdAt])
+}
+
+model Template {
+  id              String          @id @default(cuid())
+  title           String
+  category        String
+  content         String
+  previewImage    String?
+  tags            String[]        @default([])
+  isPublic        Boolean         @default(true)
+  isSystemDefault Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  usage           TemplateUsage[]
+}
+
+model QueueJob {
+  id          String    @id @default(cuid())
+  queueName   String
+  jobName     String
+  data        String // JSON string
+  status      String    @default("pending") // pending, processing, completed, failed
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  priority    Int       @default(0)
+  delay       DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  result      String? // JSON string
+  error       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([queueName, status])
+  @@index([status, createdAt])
+  @@index([delay])
+}
+
+model ShopifySession {
+  id          String    @id
+  shop        String
+  state       String?
+  isOnline    Boolean   @default(false)
+  scope       String?
+  expires     DateTime?
+  accessToken String?
+  userId      String?
+  sessionData String // JSON string
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([shop])
+  @@index([expires])
+  @@index([shop, isOnline])
+}
+
+model RateLimitRecord {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+  @@index([createdAt])
+}
