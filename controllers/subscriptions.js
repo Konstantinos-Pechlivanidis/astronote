@@ -78,7 +78,7 @@ export async function subscribe(req, res, next) {
       process.env.FRONTEND_URL ||
       process.env.WEB_APP_URL ||
       'http://localhost:3000';
-    const successUrl = `${baseUrl}/shopify/app/billing/success?session_id={CHECKOUT_SESSION_ID}`;
+    const successUrl = `${baseUrl}/shopify/app/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`;
     const cancelUrl = `${baseUrl}/shopify/app/billing/cancel`;
 
     const session = await createSubscriptionCheckoutSession({
