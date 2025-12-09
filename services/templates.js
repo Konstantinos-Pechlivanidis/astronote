@@ -43,6 +43,11 @@ export async function listTemplates(filters = {}) {
         content: true,
         previewImage: true,
         tags: true,
+        conversionRate: true,
+        productViewsIncrease: true,
+        clickThroughRate: true,
+        averageOrderValue: true,
+        customerRetention: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -219,6 +224,11 @@ export async function getPopularTemplates(limit = 10) {
       content: true,
       previewImage: true,
       tags: true,
+      conversionRate: true,
+      productViewsIncrease: true,
+      clickThroughRate: true,
+      averageOrderValue: true,
+      customerRetention: true,
     },
   });
 
