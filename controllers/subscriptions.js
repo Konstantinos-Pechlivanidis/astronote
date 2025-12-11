@@ -77,7 +77,7 @@ export async function subscribe(req, res, next) {
     const baseUrl =
       process.env.FRONTEND_URL ||
       process.env.WEB_APP_URL ||
-      'http://localhost:3000';
+      'https://astronote-shopify-frontend.onrender.com';
     const successUrl = `${baseUrl}/shopify/app/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`;
     const cancelUrl = `${baseUrl}/shopify/app/billing/cancel`;
 
@@ -462,7 +462,7 @@ export async function getPortal(req, res, next) {
     const baseUrl =
       process.env.FRONTEND_URL ||
       process.env.WEB_APP_URL ||
-      'http://localhost:3000';
+      'https://astronote-shopify-frontend.onrender.com';
     const returnUrl = `${baseUrl}/shopify/app/billing`;
 
     const portalUrl = await getCustomerPortalUrl(

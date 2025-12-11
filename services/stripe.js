@@ -89,10 +89,10 @@ export async function createStripeCheckoutSession({
         mode: 'payment',
         success_url:
           successUrl ||
-          `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?success=true&session_id={CHECKOUT_SESSION_ID}`,
+          `${process.env.FRONTEND_URL || 'https://astronote-shopify-frontend.onrender.com'}/settings?success=true&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:
           cancelUrl ||
-          `${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings?canceled=true`,
+          `${process.env.FRONTEND_URL || 'https://astronote-shopify-frontend.onrender.com'}/settings?canceled=true`,
         metadata: finalMetadata,
         customer_email: `${shopDomain}@astronote.com`, // Use shop domain as email
         billing_address_collection: 'required',
