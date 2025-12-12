@@ -1264,6 +1264,7 @@ export default {
   deleteCampaign,
   prepareCampaign,
   sendCampaign,
+  enqueueCampaign,
   scheduleCampaign,
   getCampaignMetrics,
   getCampaignStats,
