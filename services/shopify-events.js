@@ -80,24 +80,20 @@ export async function queryEvents(shopDomain, filters = {}) {
       filterVariables.occurredAtMax = occurredAtMax.toISOString();
     }
 
-    // Build filter string for query
-    const filterParts = [];
+    // Build filter arguments for query (direct arguments, not wrapped in filter)
+    const filterArgs = [];
     if (subjectTypes.length > 0) {
-      filterParts.push('subjectTypes: $subjectTypes');
+      filterArgs.push('subjectTypes: $subjectTypes');
     }
-    if (occurredAtMin || occurredAtMax) {
-      const occurredAtParts = [];
-      if (occurredAtMin) {
-        occurredAtParts.push('min: $occurredAtMin');
-      }
-      if (occurredAtMax) {
-        occurredAtParts.push('max: $occurredAtMax');
-      }
-      filterParts.push(`occurredAt: { ${occurredAtParts.join(', ')} }`);
+    if (occurredAtMin) {
+      filterArgs.push('occurredAtMin: $occurredAtMin');
+    }
+    if (occurredAtMax) {
+      filterArgs.push('occurredAtMax: $occurredAtMax');
     }
 
     const filterString =
-      filterParts.length > 0 ? `, filter: { ${filterParts.join(', ')} }` : '';
+      filterArgs.length > 0 ? `, ${filterArgs.join(', ')}` : '';
 
     const query = `
       query getEvents($first: Int!, $after: String${subjectTypes.length > 0 ? ', $subjectTypes: [EventSubjectType!]' : ''}${occurredAtMin ? ', $occurredAtMin: DateTime' : ''}${occurredAtMax ? ', $occurredAtMax: DateTime' : ''}) {
