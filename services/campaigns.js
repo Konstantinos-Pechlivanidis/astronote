@@ -754,7 +754,11 @@ export async function enqueueCampaign(storeId, campaignId) {
       const upd = await tx.campaign.updateMany({
         where: {
           id: campaignId,
-          status: { in: ['draft', 'scheduled', 'paused'] },
+          OR: [
+            { status: 'draft' },
+            { status: 'scheduled' },
+            { status: 'paused' },
+          ],
         },
         data: { status: 'sending', updatedAt: new Date() },
       });
