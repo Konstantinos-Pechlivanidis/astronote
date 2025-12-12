@@ -5,6 +5,7 @@ import { deliveryStatusQueue } from '../index.js';
 import { updateCampaignAggregates } from '../../services/campaignAggregates.js';
 import { replacePlaceholders } from '../../utils/personalization.js';
 import { appendUnsubscribeLink } from '../../utils/unsubscribe.js';
+import { shortenUrlsInText } from '../../utils/urlShortener.js';
 import { getDiscountCode } from '../../services/shopify.js';
 
 /**
@@ -121,39 +122,44 @@ export async function handleBulkSMS(job) {
       'https://astronote-shopify-frontend.onrender.com';
 
     // Prepare messages for bulk sending
-    const bulkMessages = recipients.map(recipient => {
-      // Get message template from campaign
-      let messageText = recipient.campaign.message;
+    const bulkMessages = await Promise.all(
+      recipients.map(async (recipient) => {
+        // Get message template from campaign
+        let messageText = recipient.campaign.message;
 
-      // Replace personalization placeholders
-      messageText = replacePlaceholders(messageText, {
-        firstName: recipient.contact?.firstName || '',
-        lastName: recipient.contact?.lastName || '',
-        discountCode,
-      });
+        // Replace personalization placeholders
+        messageText = replacePlaceholders(messageText, {
+          firstName: recipient.contact?.firstName || '',
+          lastName: recipient.contact?.lastName || '',
+          discountCode,
+        });
 
-      // Append unsubscribe link
-      const messageWithUnsubscribe = appendUnsubscribeLink(
-        messageText,
-        recipient.contactId,
-        shopId,
-        recipient.phoneE164,
-        frontendBaseUrl,
-      );
+        // Shorten any URLs in the message text
+        messageText = await shortenUrlsInText(messageText);
 
-      return {
-        shopId, // Use shopId to match smsBulk.service.js
-        destination: recipient.phoneE164,
-        text: messageWithUnsubscribe,
-        contactId: recipient.contactId,
-        internalRecipientId: recipient.id, // Use internalRecipientId to match smsBulk.service.js
-        meta: {
-          reason: `sms:send:campaign:${campaignId}`,
-          campaignId,
-          recipientId: recipient.id,
-        },
-      };
-    });
+        // Append unsubscribe link (this also shortens the unsubscribe URL)
+        const messageWithUnsubscribe = await appendUnsubscribeLink(
+          messageText,
+          recipient.contactId,
+          shopId,
+          recipient.phoneE164,
+          frontendBaseUrl,
+        );
+
+        return {
+          shopId, // Use shopId to match smsBulk.service.js
+          destination: recipient.phoneE164,
+          text: messageWithUnsubscribe,
+          contactId: recipient.contactId,
+          internalRecipientId: recipient.id, // Use internalRecipientId to match smsBulk.service.js
+          meta: {
+            reason: `sms:send:campaign:${campaignId}`,
+            campaignId,
+            recipientId: recipient.id,
+          },
+        };
+      }),
+    );
 
     // Send bulk SMS via smsBulk service
     const result = await sendBulkSMSWithCredits(bulkMessages);

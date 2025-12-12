@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { logger } from './logger.js';
+import { shortenUrl } from './urlShortener.js';
 
 /**
  * Generate an unsubscribe token for a contact
@@ -117,7 +118,7 @@ export function generateUnsubscribeUrl(contactId, shopId, phoneE164, baseUrl) {
  * @param {string} baseUrl - Base URL for the frontend
  * @returns {string} Message with unsubscribe link appended
  */
-export function appendUnsubscribeLink(
+export async function appendUnsubscribeLink(
   message,
   contactId,
   shopId,
@@ -132,9 +133,9 @@ export function appendUnsubscribeLink(
     baseUrl,
   );
 
-  // Shorten URL if needed (SMS messages have character limits)
-  // For now, we'll use the full URL. In production, you might want to use a URL shortener
-  const unsubscribeText = `\n\nUnsubscribe: ${unsubscribeUrl}`;
+  // Shorten URL for SMS messages (character limits)
+  const shortenedUrl = await shortenUrl(unsubscribeUrl);
+  const unsubscribeText = `\n\nUnsubscribe: ${shortenedUrl}`;
 
   // Check if message + unsubscribe link exceeds SMS limits
   // Standard SMS: 160 characters, Concatenated SMS: 1600 characters

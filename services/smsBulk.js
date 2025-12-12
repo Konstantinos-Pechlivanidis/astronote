@@ -4,6 +4,7 @@
 import { sendBulkMessages } from './mitto.js';
 import { getBalance, debit } from './wallet.js';
 import { generateUnsubscribeToken } from '../utils/unsubscribe.js';
+import { shortenUrlsInText, shortenUrl } from '../utils/urlShortener.js';
 import { isSubscriptionActive } from './subscription.js';
 import { checkAllLimits } from './rateLimiter.js';
 import { logger } from '../utils/logger.js';
@@ -132,8 +133,10 @@ export async function sendBulkSMSWithCredits(messages) {
       }
     }
 
+    // Shorten any URLs in the message text first
+    let finalText = await shortenUrlsInText(msg.text);
+
     // Append unsubscribe link if contactId is provided
-    let finalText = msg.text;
     if (msg.contactId) {
       try {
         const unsubscribeToken = generateUnsubscribeToken(
@@ -142,7 +145,9 @@ export async function sendBulkSMSWithCredits(messages) {
           msg.destination,
         );
         const unsubscribeUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-        finalText += `\n\nTo unsubscribe, tap: ${unsubscribeUrl}`;
+        // Shorten unsubscribe URL
+        const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
+        finalText += `\n\nTo unsubscribe, tap: ${shortenedUnsubscribeUrl}`;
       } catch (tokenErr) {
         logger.warn(
           { shopId, contactId: msg.contactId, err: tokenErr.message },
