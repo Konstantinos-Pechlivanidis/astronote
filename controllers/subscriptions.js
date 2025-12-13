@@ -75,12 +75,12 @@ export async function subscribe(req, res, next) {
       );
     }
 
-    const baseUrl =
-      process.env.FRONTEND_URL ||
-      process.env.WEB_APP_URL ||
-      'https://astronote-shopify-frontend.onrender.com';
-    const successUrl = `${baseUrl}/shopify/app/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`;
-    const cancelUrl = `${baseUrl}/shopify/app/billing/cancel`;
+    const { buildFrontendUrl } = await import('../utils/frontendUrl.js');
+    const baseUrl = buildFrontendUrl(
+      '/app/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription',
+    );
+    const successUrl = baseUrl;
+    const cancelUrl = buildFrontendUrl('/app/billing/cancel');
 
     const session = await createSubscriptionCheckoutSession({
       shopId,
@@ -465,12 +465,9 @@ export async function getPortal(req, res, next) {
       );
     }
 
-    const { getCustomerPortalUrl } = require('../services/stripe.js');
-    const baseUrl =
-      process.env.FRONTEND_URL ||
-      process.env.WEB_APP_URL ||
-      'https://astronote-shopify-frontend.onrender.com';
-    const returnUrl = `${baseUrl}/shopify/app/billing`;
+    const { getCustomerPortalUrl } = await import('../services/stripe.js');
+    const { buildFrontendUrl } = await import('../utils/frontendUrl.js');
+    const returnUrl = buildFrontendUrl('/app/billing');
 
     const portalUrl = await getCustomerPortalUrl(
       subscription.stripeCustomerId,

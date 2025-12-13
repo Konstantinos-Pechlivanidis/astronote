@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { logger } from './logger.js';
+import { normalizeFrontendBaseUrl } from './frontendUrl.js';
 
 /**
  * Generate an unsubscribe token for a contact
@@ -100,13 +101,18 @@ export function verifyUnsubscribeToken(token) {
  * @param {string} contactId - Contact ID
  * @param {string} shopId - Shop ID
  * @param {string} phoneE164 - Phone number (E.164 format)
- * @param {string} baseUrl - Base URL for the frontend
+ * @param {string} baseUrl - Base URL for the frontend (may include /shopify or not)
  * @returns {string} Unsubscribe URL
  */
 export function generateUnsubscribeUrl(contactId, shopId, phoneE164, baseUrl) {
   const token = generateUnsubscribeToken(contactId, shopId, phoneE164);
+
+  // Normalize base URL to remove /shopify if present (to avoid double /shopify)
+  const normalizedBaseUrl = normalizeFrontendBaseUrl(baseUrl);
+
   // Frontend route is /shopify/unsubscribe/:token
-  return `${baseUrl}/shopify/unsubscribe/${token}`;
+  // Always add /shopify/unsubscribe to the normalized base URL
+  return `${normalizedBaseUrl}/shopify/unsubscribe/${token}`;
 }
 
 /**
