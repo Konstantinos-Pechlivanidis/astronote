@@ -1,5 +1,6 @@
 import { logger } from '../../utils/logger.js';
 import { sendCampaign } from '../../services/campaigns.js';
+import { CampaignStatus } from '../../utils/prismaEnums.js';
 
 /**
  * Execute a scheduled campaign
@@ -72,7 +73,7 @@ export async function handleCampaignSend(job) {
       const prisma = (await import('../../services/prisma.js')).default;
       await prisma.campaign.update({
         where: { id: campaignId },
-        data: { status: 'scheduled' },
+        data: { status: CampaignStatus.scheduled },
       });
       logger.info('Reverted campaign status to scheduled after failure', {
         campaignId,

@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.js';
+import { AutomationTrigger } from '../utils/prismaEnums.js';
 
 /**
  * Map Shopify event to automation type(s)
@@ -17,21 +18,21 @@ export function mapEventToAutomationType(event) {
   // Customer events -> welcome automation
   if (subjectType === 'CUSTOMER') {
     if (action === 'created' || action === 'updated') {
-      automationTypes.push('welcome');
+      automationTypes.push(AutomationTrigger.welcome);
     }
   }
 
   // Order events -> order_placed automation
   if (subjectType === 'ORDER') {
     if (action === 'created' || action === 'confirmed') {
-      automationTypes.push('order_placed');
+      automationTypes.push(AutomationTrigger.order_placed);
     }
   }
 
   // Fulfillment events -> order_fulfilled automation
   if (subjectType === 'FULFILLMENT') {
     if (action === 'created' || action === 'updated') {
-      automationTypes.push('order_fulfilled');
+      automationTypes.push(AutomationTrigger.order_fulfilled);
     }
   }
 
@@ -117,7 +118,7 @@ export function shouldTriggerAutomation(event, automationType, eventData = {}) {
   const { subjectType, action } = event;
 
   // Welcome automation: requires customer with SMS consent
-  if (automationType === 'welcome') {
+  if (automationType === AutomationTrigger.welcome) {
     if (
       subjectType !== 'CUSTOMER' ||
       (action !== 'created' && action !== 'updated')
@@ -147,7 +148,7 @@ export function shouldTriggerAutomation(event, automationType, eventData = {}) {
   }
 
   // Order fulfilled automation: requires fulfillment event with success status
-  if (automationType === 'order_fulfilled') {
+  if (automationType === AutomationTrigger.order_fulfilled) {
     if (
       subjectType !== 'FULFILLMENT' ||
       (action !== 'created' && action !== 'updated')

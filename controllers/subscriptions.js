@@ -7,6 +7,7 @@ import {
   deactivateSubscription,
   allocateFreeCredits,
 } from '../services/subscription.js';
+import { SubscriptionPlanType } from '../utils/prismaEnums.js';
 import {
   createSubscriptionCheckoutSession,
   updateSubscription,
@@ -396,7 +397,13 @@ export async function verifySession(req, res, next) {
       const planType =
         session.metadata?.planType || stripeSubscription.metadata?.planType;
 
-      if (!planType || !['starter', 'pro'].includes(planType)) {
+      if (
+        !planType ||
+        ![
+          SubscriptionPlanType.starter,
+          SubscriptionPlanType.pro,
+        ].includes(planType)
+      ) {
         return sendError(
           res,
           400,

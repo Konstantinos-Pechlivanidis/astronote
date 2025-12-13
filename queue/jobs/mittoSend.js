@@ -5,6 +5,10 @@ import {
   ValidationError,
 } from '../../services/mitto.js';
 import { logger } from '../../utils/logger.js';
+import {
+  MessageDirection,
+  MessageStatus,
+} from '../../utils/prismaEnums.js';
 import { deliveryStatusQueue } from '../index.js';
 
 export async function handleMittoSend(job) {
@@ -72,7 +76,7 @@ export async function handleMittoSend(job) {
       data: {
         shopId,
         phoneE164,
-        direction: 'outbound',
+        direction: MessageDirection.outbound,
         provider: 'mitto',
         providerMsgId: msgId,
         status: 'sent',
@@ -193,9 +197,9 @@ export async function handleMittoSend(job) {
       data: {
         shopId,
         phoneE164,
-        direction: 'outbound',
+        direction: MessageDirection.outbound,
         provider: 'mitto',
-        status: 'failed',
+        status: MessageStatus.failed,
         error: errorMessage,
         campaignId,
       },

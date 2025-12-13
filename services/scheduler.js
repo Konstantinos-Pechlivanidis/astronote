@@ -151,15 +151,15 @@ async function acquireSchedulerLock(lockType = 'campaigns') {
     const lockKey = `scheduler:lock:${lockType}`;
     const lockTTL = lockType === 'campaigns' ? 90 : 330; // campaigns: 90s, others: 330s (5.5 min)
     const lockValue = `${process.pid}-${Date.now()}`; // Unique value per instance
-    
+
     // Try to acquire lock (NX = only if not exists)
     const acquired = await queueRedis.set(lockKey, lockValue, 'EX', lockTTL, 'NX');
-    
+
     if (acquired === 'OK') {
       logger.debug('Scheduler lock acquired', { lockType, lockValue, ttl: lockTTL });
       return true;
     }
-    
+
     logger.debug('Scheduler lock not acquired - another instance is processing', { lockType });
     return false;
   } catch (error) {
@@ -266,7 +266,7 @@ export function startPeriodicStatusUpdates() {
   async function scheduleNextUpdate() {
     // Use Redis lock to prevent multiple instances from scheduling simultaneously
     const hasLock = await acquireSchedulerLock('status-updates');
-    
+
     if (!hasLock) {
       logger.debug('Skipping status update - another instance has the lock');
       setTimeout(scheduleNextUpdate, INTERVAL_MS);
@@ -334,7 +334,7 @@ export function startBirthdayAutomationScheduler() {
     setTimeout(async () => {
       // Use Redis lock to prevent multiple instances from processing simultaneously
       const hasLock = await acquireSchedulerLock('birthdays');
-      
+
       if (!hasLock) {
         logger.debug('Skipping birthday automation - another instance has the lock');
         scheduleNextRun();

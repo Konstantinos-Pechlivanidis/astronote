@@ -1,6 +1,10 @@
 import prisma from './prisma.js';
 import { credit } from './wallet.js';
 import { logger } from '../utils/logger.js';
+import {
+  SubscriptionStatus,
+  SubscriptionPlanType,
+} from '../utils/prismaEnums.js';
 
 /**
  * Subscription Service
@@ -94,12 +98,12 @@ export async function getSubscriptionStatus(shopId) {
       return {
         active: false,
         planType: null,
-        status: 'inactive',
+        status: SubscriptionStatus.inactive,
       };
     }
 
     return {
-      active: shop.subscriptionStatus === 'active',
+      active: shop.subscriptionStatus === SubscriptionStatus.active,
       planType: shop.planType,
       status: shop.subscriptionStatus,
       stripeCustomerId: shop.stripeCustomerId,
@@ -163,7 +167,7 @@ export async function allocateFreeCredits(
     }
 
     // Verify subscription is active (required for credit allocation)
-    if (shop.subscriptionStatus !== 'active') {
+    if (shop.subscriptionStatus !== SubscriptionStatus.active) {
       logger.warn(
         { shopId, subscriptionStatus: shop.subscriptionStatus },
         'Subscription not active',
@@ -295,7 +299,12 @@ export async function activateSubscription(
   planType,
 ) {
   try {
-    if (!['starter', 'pro'].includes(planType)) {
+    if (
+      ![
+        SubscriptionPlanType.starter,
+        SubscriptionPlanType.pro,
+      ].includes(planType)
+    ) {
       throw new Error(`Invalid plan type: ${planType}`);
     }
 
@@ -338,7 +347,10 @@ export async function activateSubscription(
  */
 export async function deactivateSubscription(shopId, reason = 'cancelled') {
   try {
-    const status = reason === 'cancelled' ? 'cancelled' : 'inactive';
+    const status =
+      reason === 'cancelled'
+        ? SubscriptionStatus.cancelled
+        : SubscriptionStatus.inactive;
 
     const shop = await prisma.shop.update({
       where: { id: shopId },

@@ -1,6 +1,10 @@
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
 import { getMessageStatus, MittoApiError } from './mitto.js';
+import {
+  CampaignStatus,
+  MessageStatus,
+} from '../utils/prismaEnums.js';
 
 /**
  * Delivery Status Service
@@ -14,26 +18,26 @@ import { getMessageStatus, MittoApiError } from './mitto.js';
  * @returns {string} Internal status ('sent', 'delivered', 'failed')
  */
 export function mapMittoStatusToInternal(mittoStatus) {
-  if (!mittoStatus) return 'sent'; // Default to sent if no status
+  if (!mittoStatus) return MessageStatus.sent; // Default to sent if no status
 
   const status = mittoStatus.toLowerCase().trim();
 
   // Mitto statuses: Queued, Sent, Delivered, Failed, Failure
   if (status === 'delivered') {
-    return 'delivered';
+    return MessageStatus.delivered;
   }
   if (status === 'failed' || status === 'failure') {
-    return 'failed';
+    return MessageStatus.failed;
   }
   if (status === 'sent' || status === 'queued') {
-    return 'sent'; // Queued and Sent both map to 'sent' (message is in transit)
+    return MessageStatus.sent; // Queued and Sent both map to 'sent' (message is in transit)
   }
 
   // Default to sent for unknown statuses
   logger.warn('Unknown Mitto deliveryStatus, defaulting to sent', {
     mittoStatus,
   });
-  return 'sent';
+  return MessageStatus.sent;
 }
 
 /**
@@ -81,10 +85,11 @@ export async function updateMessageDeliveryStatus(
         const previousDeliveryStatus = recipient.deliveryStatus;
 
         // Update recipient status based on delivery status
-        if (internalStatus === 'delivered') {
+        // Note: CampaignRecipient.status is String, not enum, so we use string literals
+        if (internalStatus === MessageStatus.delivered) {
           updateData.status = 'sent'; // Keep as 'sent' but mark as delivered
           updateData.deliveredAt = new Date();
-        } else if (internalStatus === 'failed') {
+        } else if (internalStatus === MessageStatus.failed) {
           updateData.status = 'failed';
           updateData.error = `Delivery failed: ${mittoStatus.deliveryStatus}`;
         }
@@ -293,7 +298,7 @@ export async function updateCampaignStatusFromRecipients(campaignId) {
   }
 
   // Only update if campaign is in 'sending' status
-  if (campaign.status !== 'sending') {
+  if (campaign.status !== CampaignStatus.sending) {
     logger.debug('Campaign not in sending status, skipping status update', {
       campaignId,
       currentStatus: campaign.status,
@@ -338,10 +343,10 @@ export async function updateCampaignStatusFromRecipients(campaignId) {
   if (pending === 0) {
     // If all failed, mark campaign as failed
     if (failed === total) {
-      newStatus = 'failed';
+      newStatus = CampaignStatus.failed;
     } else {
       // At least some succeeded, mark as sent
-      newStatus = 'sent';
+      newStatus = CampaignStatus.sent;
     }
   }
   // If there are still pending recipients, keep as 'sending'
@@ -379,7 +384,7 @@ export async function updateAllActiveCampaigns(limit = 50) {
   // Get all campaigns in 'sending' status
   const campaigns = await prisma.campaign.findMany({
     where: {
-      status: 'sending',
+      status: CampaignStatus.sending,
     },
     select: {
       id: true,

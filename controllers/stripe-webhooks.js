@@ -14,6 +14,7 @@ import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
 import { sendSuccess } from '../utils/response.js';
 import { ValidationError } from '../utils/errors.js';
+import { PaymentStatus } from '../utils/prismaEnums.js';
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -435,10 +436,10 @@ async function handlePaymentIntentFailed(paymentIntent) {
     const updated = await prisma.billingTransaction.updateMany({
       where: {
         stripePaymentId: paymentIntent.id,
-        status: 'pending',
+        status: PaymentStatus.pending,
       },
       data: {
-        status: 'failed',
+        status: PaymentStatus.failed,
       },
     });
 

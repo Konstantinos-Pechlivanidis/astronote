@@ -4,6 +4,11 @@ import { ValidationError, NotFoundError } from '../utils/errors.js';
 import { InsufficientCreditsError } from './credit-validation.js';
 import { smsQueue } from '../queue/index.js';
 import { createHash } from 'crypto';
+import {
+  CampaignStatus,
+  ScheduleType,
+  SmsConsent,
+} from '../utils/prismaEnums.js';
 
 /**
  * Campaigns Service
@@ -17,18 +22,18 @@ import { createHash } from 'crypto';
  */
 function normalizeAudienceQuery(audience) {
   if (!audience || audience === 'all') {
-    return { smsConsent: 'opted_in' };
+    return { smsConsent: SmsConsent.opted_in };
   }
   if (audience === 'men' || audience === 'male') {
-    return { smsConsent: 'opted_in', gender: 'male' };
+    return { smsConsent: SmsConsent.opted_in, gender: 'male' };
   }
   if (audience === 'women' || audience === 'female') {
-    return { smsConsent: 'opted_in', gender: 'female' };
+    return { smsConsent: SmsConsent.opted_in, gender: 'female' };
   }
   if (audience.startsWith('segment:')) {
     return null; // Handle separately
   }
-  return { smsConsent: 'opted_in' };
+  return { smsConsent: SmsConsent.opted_in };
 }
 
 /**
@@ -175,12 +180,19 @@ function validateCampaignData(campaignData) {
   }
 
   if (
-    !['immediate', 'scheduled', 'recurring'].includes(campaignData.scheduleType)
+    ![
+      ScheduleType.immediate,
+      ScheduleType.scheduled,
+      ScheduleType.recurring,
+    ].includes(campaignData.scheduleType)
   ) {
     throw new ValidationError('Invalid schedule type');
   }
 
-  if (campaignData.scheduleType === 'scheduled' && !campaignData.scheduleAt) {
+  if (
+    campaignData.scheduleType === ScheduleType.scheduled &&
+    !campaignData.scheduleAt
+  ) {
     throw new ValidationError(
       'Schedule date is required for scheduled campaigns',
     );
@@ -217,9 +229,14 @@ export async function listCampaigns(storeId, filters = {}) {
 
   if (
     status &&
-    ['draft', 'scheduled', 'sending', 'sent', 'failed', 'cancelled'].includes(
-      status,
-    )
+    [
+      CampaignStatus.draft,
+      CampaignStatus.scheduled,
+      CampaignStatus.sending,
+      CampaignStatus.sent,
+      CampaignStatus.failed,
+      CampaignStatus.cancelled,
+    ].includes(status)
   ) {
     where.status = status;
   }
@@ -350,9 +367,9 @@ export async function getCampaignById(storeId, campaignId) {
   let recipientCount = 0;
 
   if (
-    campaign.status === 'sending' ||
-    campaign.status === 'sent' ||
-    campaign.status === 'failed'
+    campaign.status === CampaignStatus.sending ||
+    campaign.status === CampaignStatus.sent ||
+    campaign.status === CampaignStatus.failed
   ) {
     // Count actual recipients for campaigns that have been sent
     recipientCount = await prisma.campaignRecipient.count({
@@ -543,7 +560,10 @@ export async function updateCampaign(storeId, campaignId, campaignData) {
   }
 
   // Can't update sent or sending campaigns
-  if (existing.status === 'sent' || existing.status === 'sending') {
+  if (
+    existing.status === CampaignStatus.sent ||
+    existing.status === CampaignStatus.sending
+  ) {
     throw new ValidationError(
       'Cannot update a campaign that has already been sent or is currently sending',
     );
@@ -634,7 +654,10 @@ export async function deleteCampaign(storeId, campaignId) {
   }
 
   // Can't delete sent campaigns
-  if (existing.status === 'sent' || existing.status === 'sending') {
+  if (
+    existing.status === CampaignStatus.sent ||
+    existing.status === CampaignStatus.sending
+  ) {
     throw new ValidationError(
       'Cannot delete a campaign that is sent or currently sending',
     );
@@ -729,7 +752,7 @@ export async function enqueueCampaign(storeId, campaignId) {
       }
 
       // If campaign is already sending, check if there are pending recipients
-      if (campaign.status === 'sending') {
+      if (campaign.status === CampaignStatus.sending) {
         const pendingCount = await tx.campaignRecipient.count({
           where: {
             campaignId,
@@ -777,15 +800,17 @@ export async function enqueueCampaign(storeId, campaignId) {
       // CRITICAL: Atomically transition status from draft/scheduled to sending
       // This prevents race conditions where multiple requests try to enqueue the same campaign
       const previousStatus = campaign.status; // Store for potential rollback
-      
+
       const updateResult = await tx.campaign.updateMany({
         where: {
           id: campaignId,
           shopId: storeId,
-          status: { in: ['draft', 'scheduled'] },
+          status: {
+            in: [CampaignStatus.draft, CampaignStatus.scheduled],
+          },
         },
         data: {
-          status: 'sending',
+          status: CampaignStatus.sending,
           updatedAt: new Date(),
         },
       });
@@ -798,7 +823,7 @@ export async function enqueueCampaign(storeId, campaignId) {
           select: { status: true },
         });
 
-        if (recheck?.status === 'sending') {
+        if (recheck?.status === CampaignStatus.sending) {
           // Another request is handling this campaign
           return {
             ok: false,
@@ -890,9 +915,14 @@ export async function enqueueCampaign(storeId, campaignId) {
     );
     // Revert campaign status back to scheduled/draft
     await prisma.campaign.updateMany({
-      where: { id: campaignId, shopId: storeId, status: 'sending' },
-      data: { 
-        status: statusTransitionResult.previousStatus || 'draft',
+      where: {
+        id: campaignId,
+        shopId: storeId,
+        status: CampaignStatus.sending,
+      },
+      data: {
+        status:
+          statusTransitionResult.previousStatus || CampaignStatus.draft,
         updatedAt: new Date(),
       },
     });
@@ -911,9 +941,14 @@ export async function enqueueCampaign(storeId, campaignId) {
     );
     // Revert campaign status back to scheduled/draft
     await prisma.campaign.updateMany({
-      where: { id: campaignId, shopId: storeId, status: 'sending' },
-      data: { 
-        status: statusTransitionResult.previousStatus || 'draft',
+      where: {
+        id: campaignId,
+        shopId: storeId,
+        status: CampaignStatus.sending,
+      },
+      data: {
+        status:
+          statusTransitionResult.previousStatus || CampaignStatus.draft,
         updatedAt: new Date(),
       },
     });
@@ -1058,7 +1093,7 @@ export async function enqueueCampaign(storeId, campaignId) {
       // Revert campaign status
       await prisma.campaign.updateMany({
         where: { id: campaign.id, shopId: storeId },
-        data: { status: 'draft', updatedAt: new Date() },
+        data: { status: CampaignStatus.draft, updatedAt: new Date() },
       });
       throw e;
     }
@@ -1401,9 +1436,9 @@ export async function scheduleCampaign(storeId, campaignId, scheduleData) {
   const updated = await prisma.campaign.update({
     where: { id: campaignId },
     data: {
-      scheduleType: scheduleData.scheduleType || 'scheduled',
+      scheduleType: scheduleData.scheduleType || ScheduleType.scheduled,
       scheduleAt,
-      status: 'scheduled',
+      status: CampaignStatus.scheduled,
     },
   });
 
@@ -1583,15 +1618,24 @@ export async function getCampaignStats(storeId) {
     total,
     totalCampaigns: total, // Alias for consistency with expected response structure
     byStatus: {
-      draft: statusStats.find(s => s.status === 'draft')?._count?.status || 0,
+      draft:
+        statusStats.find(s => s.status === CampaignStatus.draft)?._count
+          ?.status || 0,
       scheduled:
-        statusStats.find(s => s.status === 'scheduled')?._count?.status || 0,
+        statusStats.find(s => s.status === CampaignStatus.scheduled)?._count
+          ?.status || 0,
       sending:
-        statusStats.find(s => s.status === 'sending')?._count?.status || 0,
-      sent: statusStats.find(s => s.status === 'sent')?._count?.status || 0,
-      failed: statusStats.find(s => s.status === 'failed')?._count?.status || 0,
+        statusStats.find(s => s.status === CampaignStatus.sending)?._count
+          ?.status || 0,
+      sent:
+        statusStats.find(s => s.status === CampaignStatus.sent)?._count
+          ?.status || 0,
+      failed:
+        statusStats.find(s => s.status === CampaignStatus.failed)?._count
+          ?.status || 0,
       cancelled:
-        statusStats.find(s => s.status === 'cancelled')?._count?.status || 0,
+        statusStats.find(s => s.status === CampaignStatus.cancelled)?._count
+          ?.status || 0,
     },
     recent: recentCampaigns,
     recentCampaigns, // Alias for backward compatibility
