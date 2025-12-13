@@ -659,21 +659,73 @@ export async function prepareCampaign(storeId, campaignId) {
 export async function enqueueCampaign(storeId, campaignId) {
   logger.info('Enqueuing campaign for bulk SMS', { storeId, campaignId });
 
-  // 0) Fetch campaign and build audience OUTSIDE transaction (heavy work)
+  // 0) CRITICAL: Check campaign status FIRST to prevent duplicate enqueues
+  // This check happens before any heavy work to fail fast
+  const campaignStatus = await prisma.campaign.findUnique({
+    where: { id: campaignId, shopId: storeId },
+    select: { id: true, status: true },
+  });
+
+  if (!campaignStatus) {
+    return { ok: false, reason: 'not_found', enqueuedJobs: 0 };
+  }
+
+  // CRITICAL: If campaign is already sending or sent, check if there are pending recipients
+  // If there are pending recipients, they should be enqueued by the existing process
+  // If there are NO pending recipients, this is a duplicate enqueue attempt
+  if (campaignStatus.status === 'sending') {
+    const pendingCount = await prisma.campaignRecipient.count({
+      where: {
+        campaignId,
+        status: 'pending',
+        mittoMessageId: null,
+      },
+    });
+
+    if (pendingCount === 0) {
+      logger.warn(
+        {
+          storeId,
+          campaignId,
+          status: campaignStatus.status,
+          pendingCount,
+        },
+        'Campaign already sending with no pending recipients - duplicate enqueue attempt blocked',
+      );
+      return {
+        ok: false,
+        reason: 'already_sending_no_pending',
+        enqueuedJobs: 0,
+      };
+    } else {
+      logger.info(
+        {
+          storeId,
+          campaignId,
+          status: campaignStatus.status,
+          pendingCount,
+        },
+        'Campaign already sending but has pending recipients - will enqueue existing recipients only',
+      );
+      // Continue to enqueue existing pending recipients
+    }
+  }
+
+  if (!['draft', 'scheduled', 'sending'].includes(campaignStatus.status)) {
+    return {
+      ok: false,
+      reason: `invalid_status:${campaignStatus.status}`,
+      enqueuedJobs: 0,
+    };
+  }
+
+  // 1) Fetch full campaign data and build audience OUTSIDE transaction (heavy work)
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId, shopId: storeId },
   });
 
   if (!campaign) {
     return { ok: false, reason: 'not_found', enqueuedJobs: 0 };
-  }
-
-  if (!['draft', 'scheduled'].includes(campaign.status)) {
-    return {
-      ok: false,
-      reason: `invalid_status:${campaign.status}`,
-      enqueuedJobs: 0,
-    };
   }
 
   // Build audience OUTSIDE transaction (this can be slow with many contacts)
@@ -733,7 +785,8 @@ export async function enqueueCampaign(storeId, campaignId) {
     return { ok: false, reason: 'insufficient_credits', enqueuedJobs: 0 };
   }
 
-  // 3) Short transaction: only update campaign status (fast, no heavy work)
+  // 3) CRITICAL: Atomic transaction to update campaign status and check for duplicates
+  // This prevents race conditions when enqueueCampaign is called multiple times simultaneously
   const txResult = await prisma.$transaction(
     async tx => {
       // Double-check status hasn't changed (optimistic locking)
@@ -746,11 +799,29 @@ export async function enqueueCampaign(storeId, campaignId) {
         return { ok: false, reason: 'not_found' };
       }
 
+      // CRITICAL: If already sending, check if there are pending recipients
+      // If no pending recipients, this is a duplicate enqueue attempt - block it
+      if (currentCamp.status === 'sending') {
+        const pendingCount = await tx.campaignRecipient.count({
+          where: {
+            campaignId,
+            status: 'pending',
+            mittoMessageId: null,
+          },
+        });
+
+        if (pendingCount === 0) {
+          return { ok: false, reason: 'already_sending_no_pending' };
+        }
+        // If there are pending recipients, allow enqueue but skip recipient creation
+        return { ok: true, statusUnchanged: true, pendingCount };
+      }
+
       if (!['draft', 'scheduled'].includes(currentCamp.status)) {
         return { ok: false, reason: `invalid_status:${currentCamp.status}` };
       }
 
-      // Update status atomically
+      // Update status atomically only if draft or scheduled
       const upd = await tx.campaign.updateMany({
         where: {
           AND: [
@@ -767,10 +838,28 @@ export async function enqueueCampaign(storeId, campaignId) {
       });
 
       if (upd.count === 0) {
+        // Status changed between checks - re-check
+        const recheck = await tx.campaign.findUnique({
+          where: { id: campaignId },
+          select: { status: true },
+        });
+        if (recheck?.status === 'sending') {
+          const pendingCount = await tx.campaignRecipient.count({
+            where: {
+              campaignId,
+              status: 'pending',
+              mittoMessageId: null,
+            },
+          });
+          if (pendingCount === 0) {
+            return { ok: false, reason: 'already_sending_no_pending' };
+          }
+          return { ok: true, statusUnchanged: true, pendingCount };
+        }
         return { ok: false, reason: 'already_sending' };
       }
 
-      return { ok: true };
+      return { ok: true, statusUnchanged: false };
     },
     {
       timeout: 5000, // 5 second timeout (should be fast now)
@@ -782,123 +871,148 @@ export async function enqueueCampaign(storeId, campaignId) {
     return { ...txResult, enqueuedJobs: 0 };
   }
 
-  // 4) Check if recipients already exist (idempotency check)
-  // This prevents duplicate recipients if enqueueCampaign is called multiple times
-  const existingRecipients = await prisma.campaignRecipient.findMany({
-    where: {
-      campaignId: campaign.id,
-    },
-    select: {
-      phoneE164: true,
-    },
-  });
+  // If status was already 'sending', skip recipient creation and only enqueue existing pending recipients
+  let existingRecipients = [];
+  let recipientsData = [];
 
-  const existingPhones = new Set(existingRecipients.map(r => r.phoneE164));
-
-  // Filter out contacts that already have recipients (idempotency)
-  const newContacts = contacts.filter(
-    contact => !existingPhones.has(contact.phoneE164),
-  );
-
-  if (newContacts.length === 0 && existingRecipients.length > 0) {
-    logger.warn(
-      {
-        storeId,
-        campaignId,
-        existingCount: existingRecipients.length,
-        requestedCount: contacts.length,
-      },
-      'All recipients already exist, skipping creation (idempotency)',
-    );
-    // Continue to enqueue existing recipients
-  } else if (newContacts.length < contacts.length) {
+  if (txResult.statusUnchanged) {
     logger.info(
       {
         storeId,
         campaignId,
-        newCount: newContacts.length,
-        existingCount: existingRecipients.length,
-        totalRequested: contacts.length,
+        pendingCount: txResult.pendingCount,
       },
-      'Some recipients already exist, creating only new ones (idempotency)',
+      'Campaign already in sending status - skipping recipient creation, will enqueue existing pending recipients only',
     );
-  }
-
-  // 5) Create recipient records and prepare messages
-  // Note: Credits are NOT debited here - they will be debited per message after successful send
-  const messageTemplate = campaign.message;
-
-  if (!messageTemplate || !messageTemplate.trim()) {
-    logger.error({ storeId, campaignId }, 'Campaign has no message text');
-    await prisma.campaign.updateMany({
-      where: { id: campaign.id, shopId: storeId },
-      data: { status: 'failed', updatedAt: new Date() },
+    // Skip to enqueue step (step 6) - recipients already exist
+    // Fetch existing recipients for logging purposes
+    existingRecipients = await prisma.campaignRecipient.findMany({
+      where: {
+        campaignId: campaign.id,
+      },
+      select: {
+        phoneE164: true,
+      },
     });
-    return { ok: false, reason: 'no_message_text', enqueuedJobs: 0 };
-  }
+  } else {
+    // 4) Check if recipients already exist (idempotency check)
+    // This prevents duplicate recipients if enqueueCampaign is called multiple times
+    existingRecipients = await prisma.campaignRecipient.findMany({
+      where: {
+        campaignId: campaign.id,
+      },
+      select: {
+        phoneE164: true,
+      },
+    });
 
-  // Generate recipient records (only for new contacts)
-  // Note: Message personalization (including discount codes) and unsubscribe links
-  // are added in the worker (see queue/jobs/bulkSms.js) to avoid storing
-  // full message text in DB
-  const recipientsData = newContacts.map(contact => {
-    // Note: Message personalization and unsubscribe links are added in the worker
-    // (see queue/jobs/bulkSms.js) to avoid storing full message text in DB
-    return {
-      campaignId: campaign.id,
-      contactId: contact.contactId,
-      phoneE164: contact.phoneE164,
-      status: 'pending', // Will be updated to 'sent' or 'failed' by worker
-      retryCount: 0,
-    };
-  });
+    const existingPhones = new Set(existingRecipients.map(r => r.phoneE164));
 
-  try {
-    // For large campaigns (>10k recipients), batch the createMany operation
-    const BATCH_SIZE = 10000;
-    const recipientCount = recipientsData.length;
+    // Filter out contacts that already have recipients (idempotency)
+    const newContacts = contacts.filter(
+      contact => !existingPhones.has(contact.phoneE164),
+    );
 
-    if (recipientCount > BATCH_SIZE) {
-      logger.info(
-        { storeId, campaignId, recipientCount },
-        'Large campaign detected, using batched inserts',
+    if (newContacts.length === 0 && existingRecipients.length > 0) {
+      logger.warn(
+        {
+          storeId,
+          campaignId,
+          existingCount: existingRecipients.length,
+          requestedCount: contacts.length,
+        },
+        'All recipients already exist, skipping creation (idempotency)',
       );
+      // Continue to enqueue existing recipients
+    } else if (newContacts.length < contacts.length) {
+      logger.info(
+        {
+          storeId,
+          campaignId,
+          newCount: newContacts.length,
+          existingCount: existingRecipients.length,
+          totalRequested: contacts.length,
+        },
+        'Some recipients already exist, creating only new ones (idempotency)',
+      );
+    }
 
-      // Batch create recipients
-      for (let i = 0; i < recipientsData.length; i += BATCH_SIZE) {
-        const batch = recipientsData.slice(i, i + BATCH_SIZE);
+    // 5) Create recipient records and prepare messages
+    // Note: Credits are NOT debited here - they will be debited per message after successful send
+    const messageTemplate = campaign.message;
+
+    if (!messageTemplate || !messageTemplate.trim()) {
+      logger.error({ storeId, campaignId }, 'Campaign has no message text');
+      await prisma.campaign.updateMany({
+        where: { id: campaign.id, shopId: storeId },
+        data: { status: 'failed', updatedAt: new Date() },
+      });
+      return { ok: false, reason: 'no_message_text', enqueuedJobs: 0 };
+    }
+
+    // Generate recipient records (only for new contacts)
+    // Note: Message personalization (including discount codes) and unsubscribe links
+    // are added in the worker (see queue/jobs/bulkSms.js) to avoid storing
+    // full message text in DB
+    recipientsData = newContacts.map(contact => {
+      // Note: Message personalization and unsubscribe links are added in the worker
+      // (see queue/jobs/bulkSms.js) to avoid storing full message text in DB
+      return {
+        campaignId: campaign.id,
+        contactId: contact.contactId,
+        phoneE164: contact.phoneE164,
+        status: 'pending', // Will be updated to 'sent' or 'failed' by worker
+        retryCount: 0,
+      };
+    });
+
+    try {
+      // For large campaigns (>10k recipients), batch the createMany operation
+      const BATCH_SIZE = 10000;
+      const recipientCount = recipientsData.length;
+
+      if (recipientCount > BATCH_SIZE) {
+        logger.info(
+          { storeId, campaignId, recipientCount },
+          'Large campaign detected, using batched inserts',
+        );
+
+        // Batch create recipients
+        for (let i = 0; i < recipientsData.length; i += BATCH_SIZE) {
+          const batch = recipientsData.slice(i, i + BATCH_SIZE);
+          await prisma.campaignRecipient.createMany({
+            data: batch,
+            skipDuplicates: true,
+          });
+          logger.debug(
+            {
+              storeId,
+              campaignId,
+              batch: Math.floor(i / BATCH_SIZE) + 1,
+              totalBatches: Math.ceil(recipientCount / BATCH_SIZE),
+            },
+            'Batch inserted',
+          );
+        }
+      } else {
+        // For smaller campaigns, use single createMany
         await prisma.campaignRecipient.createMany({
-          data: batch,
+          data: recipientsData,
           skipDuplicates: true,
         });
-        logger.debug(
-          {
-            storeId,
-            campaignId,
-            batch: Math.floor(i / BATCH_SIZE) + 1,
-            totalBatches: Math.ceil(recipientCount / BATCH_SIZE),
-          },
-          'Batch inserted',
-        );
       }
-    } else {
-      // For smaller campaigns, use single createMany
-      await prisma.campaignRecipient.createMany({
-        data: recipientsData,
-        skipDuplicates: true,
+    } catch (e) {
+      logger.error(
+        { storeId, campaignId, err: e.message, contactCount: contacts.length },
+        'Failed to create campaign recipients',
+      );
+      // Revert campaign status
+      await prisma.campaign.updateMany({
+        where: { id: campaign.id, shopId: storeId },
+        data: { status: 'draft', updatedAt: new Date() },
       });
+      throw e;
     }
-  } catch (e) {
-    logger.error(
-      { storeId, campaignId, err: e.message, contactCount: contacts.length },
-      'Failed to create campaign recipients',
-    );
-    // Revert campaign status
-    await prisma.campaign.updateMany({
-      where: { id: campaign.id, shopId: storeId },
-      data: { status: 'draft', updatedAt: new Date() },
-    });
-    throw e;
   }
 
   // 6) Enqueue jobs to Redis (OUTSIDE transaction, non-blocking)
@@ -966,8 +1080,10 @@ export async function enqueueCampaign(storeId, campaignId) {
             recipientIds,
           },
           {
-            // Use campaignId + batchIndex for unique jobId (prevents duplicate jobs)
+            // CRITICAL: Use campaignId + batchIndex for jobId (NOT timestamp)
             // BullMQ will reject jobs with same jobId, ensuring idempotency
+            // If same jobId exists, BullMQ will skip adding duplicate job
+            // This prevents duplicate jobs even if enqueueCampaign is called multiple times
             jobId: `batch:${campaign.id}:${batchIndex}`,
             attempts: 5,
             backoff: { type: 'exponential', delay: 3000 },
