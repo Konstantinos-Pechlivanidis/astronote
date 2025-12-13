@@ -11,32 +11,97 @@
  * status: { in: [CampaignStatus.draft, CampaignStatus.scheduled] }
  */
 
-import { Prisma } from '@prisma/client';
+// Prisma enums are not directly available on Prisma object
+// Define them as constants matching the Prisma schema exactly
 
 // Campaign enums
-export const CampaignStatus = Prisma.CampaignStatus;
-export const ScheduleType = Prisma.ScheduleType;
+export const CampaignStatus = {
+  draft: 'draft',
+  scheduled: 'scheduled',
+  sending: 'sending',
+  sent: 'sent',
+  failed: 'failed',
+  cancelled: 'cancelled',
+};
+
+// Schedule type enums
+export const ScheduleType = {
+  immediate: 'immediate',
+  scheduled: 'scheduled',
+  recurring: 'recurring',
+};
 
 // Contact enums
-export const SmsConsent = Prisma.SmsConsent;
+export const SmsConsent = {
+  opted_in: 'opted_in',
+  opted_out: 'opted_out',
+  unknown: 'unknown',
+};
 
 // Message enums
-export const MessageDirection = Prisma.MessageDirection;
-export const MessageStatus = Prisma.MessageStatus;
+export const MessageDirection = {
+  outbound: 'outbound',
+  inbound: 'inbound',
+};
+
+export const MessageStatus = {
+  queued: 'queued',
+  sent: 'sent',
+  delivered: 'delivered',
+  failed: 'failed',
+  received: 'received',
+};
 
 // Transaction enums
-export const TransactionType = Prisma.TransactionType;
-export const CreditTxnType = Prisma.CreditTxnType;
+export const TransactionType = {
+  purchase: 'purchase',
+  debit: 'debit',
+  credit: 'credit',
+  refund: 'refund',
+  adjustment: 'adjustment',
+};
+
+export const CreditTxnType = {
+  credit: 'credit',
+  debit: 'debit',
+  refund: 'refund',
+};
 
 // Subscription enums
-export const SubscriptionPlanType = Prisma.SubscriptionPlanType;
-export const SubscriptionStatus = Prisma.SubscriptionStatus;
+export const SubscriptionPlanType = {
+  starter: 'starter',
+  pro: 'pro',
+};
+
+export const SubscriptionStatus = {
+  active: 'active',
+  inactive: 'inactive',
+  cancelled: 'cancelled',
+};
 
 // Automation enums
-export const AutomationTrigger = Prisma.AutomationTrigger;
+export const AutomationTrigger = {
+  welcome: 'welcome',
+  abandoned_cart: 'abandoned_cart',
+  order_confirmation: 'order_confirmation',
+  shipping_update: 'shipping_update',
+  delivery_confirmation: 'delivery_confirmation',
+  review_request: 'review_request',
+  reorder_reminder: 'reorder_reminder',
+  birthday: 'birthday',
+  customer_inactive: 'customer_inactive',
+  cart_abandoned: 'cart_abandoned',
+  order_placed: 'order_placed',
+  order_fulfilled: 'order_fulfilled',
+};
 
 // Payment enums
-export const PaymentStatus = Prisma.PaymentStatus;
+export const PaymentStatus = {
+  pending: 'pending',
+  paid: 'paid',
+  failed: 'failed',
+  refunded: 'refunded',
+};
 
 /**
  * Helper function to get all enum values as an array

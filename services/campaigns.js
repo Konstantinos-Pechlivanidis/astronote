@@ -199,7 +199,7 @@ function validateCampaignData(campaignData) {
   }
 
   if (
-    campaignData.scheduleType === 'recurring' &&
+    campaignData.scheduleType === ScheduleType.recurring &&
     !campaignData.recurringDays
   ) {
     throw new ValidationError(
@@ -267,9 +267,9 @@ export async function listCampaigns(storeId, filters = {}) {
 
       // If campaign has been sent (status is 'sending' or 'sent'), count actual recipients
       if (
-        campaign.status === 'sending' ||
-        campaign.status === 'sent' ||
-        campaign.status === 'failed'
+        campaign.status === CampaignStatus.sending ||
+        campaign.status === CampaignStatus.sent ||
+        campaign.status === CampaignStatus.failed
       ) {
         recipientCount = await prisma.campaignRecipient.count({
           where: { campaignId: campaign.id },
@@ -497,10 +497,10 @@ export async function createCampaign(storeId, campaignData) {
           message: campaignData.message.trim(),
           audience: campaignData.audience || 'all',
           discountId: campaignData.discountId || null,
-          scheduleType: campaignData.scheduleType || 'immediate',
+          scheduleType: campaignData.scheduleType || ScheduleType.immediate,
           scheduleAt: scheduleAtDate,
           recurringDays: campaignData.recurringDays || null,
-          status: 'draft',
+          status: CampaignStatus.draft,
         },
       });
 
@@ -597,11 +597,11 @@ export async function updateCampaign(storeId, campaignId, campaignData) {
     updateData.scheduleType = campaignData.scheduleType;
     // If changing from scheduled to immediate, clear scheduleAt and set status to draft
     if (
-      campaignData.scheduleType === 'immediate' &&
-      existing.scheduleType === 'scheduled'
+      campaignData.scheduleType === ScheduleType.immediate &&
+      existing.scheduleType === ScheduleType.scheduled
     ) {
       updateData.scheduleAt = null;
-      updateData.status = 'draft';
+      updateData.status = CampaignStatus.draft;
     }
     // If changing to scheduled, status will be set by schedule endpoint
   }
@@ -688,7 +688,7 @@ export async function prepareCampaign(storeId, campaignId) {
     throw new NotFoundError('Campaign');
   }
 
-  if (campaign.status !== 'draft') {
+  if (campaign.status !== CampaignStatus.draft) {
     throw new ValidationError('Only draft campaigns can be prepared');
   }
 
@@ -790,7 +790,12 @@ export async function enqueueCampaign(storeId, campaignId) {
       }
 
       // If campaign is sent or failed, reject
-      if (!['draft', 'scheduled'].includes(campaign.status)) {
+      if (
+        ![
+          CampaignStatus.draft,
+          CampaignStatus.scheduled,
+        ].includes(campaign.status)
+      ) {
         return {
           ok: false,
           reason: `invalid_status:${campaign.status}`,
@@ -1029,7 +1034,7 @@ export async function enqueueCampaign(storeId, campaignId) {
       logger.error({ storeId, campaignId }, 'Campaign has no message text');
       await prisma.campaign.updateMany({
         where: { id: campaign.id, shopId: storeId },
-        data: { status: 'failed', updatedAt: new Date() },
+        data: { status: CampaignStatus.failed, updatedAt: new Date() },
       });
       return { ok: false, reason: 'no_message_text', enqueuedJobs: 0 };
     }
@@ -1376,7 +1381,7 @@ export async function sendCampaign(storeId, campaignId) {
   return {
     campaignId: result.campaignId,
     recipientCount: result.created,
-    status: 'sending',
+    status: CampaignStatus.sending,
     queuedAt: new Date(),
   };
 }
