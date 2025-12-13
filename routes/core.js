@@ -7,6 +7,7 @@ import { metrics } from '../utils/metrics.js';
 import { cacheManager } from '../utils/cache.js';
 import * as billingCtrl from '../controllers/billing.js';
 import * as contactCtrl from '../controllers/contact.js';
+import { resolveStore } from '../middlewares/store-resolution.js';
 
 const r = Router();
 
@@ -186,7 +187,8 @@ r.post('/webhooks/app_uninstalled', async (req, res) => {
 });
 
 // example "whoami" with session token - requires store context
-r.get('/whoami', async (req, res) => {
+// Use resolveStore middleware to extract store from token/headers
+r.get('/whoami', resolveStore, async (req, res) => {
   // ✅ Use store context if available (from resolveStore middleware)
   if (req.ctx?.store) {
     return res.json({
