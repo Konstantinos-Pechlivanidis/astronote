@@ -668,7 +668,7 @@ export async function enqueueCampaign(storeId, campaignId) {
     return { ok: false, reason: 'not_found', enqueuedJobs: 0 };
   }
 
-  if (!['draft', 'scheduled', 'paused'].includes(campaign.status)) {
+  if (!['draft', 'scheduled'].includes(campaign.status)) {
     return {
       ok: false,
       reason: `invalid_status:${campaign.status}`,
@@ -746,7 +746,7 @@ export async function enqueueCampaign(storeId, campaignId) {
         return { ok: false, reason: 'not_found' };
       }
 
-      if (!['draft', 'scheduled', 'paused'].includes(currentCamp.status)) {
+      if (!['draft', 'scheduled'].includes(currentCamp.status)) {
         return { ok: false, reason: `invalid_status:${currentCamp.status}` };
       }
 
@@ -759,7 +759,6 @@ export async function enqueueCampaign(storeId, campaignId) {
               OR: [
                 { status: 'draft' },
                 { status: 'scheduled' },
-                { status: 'paused' },
               ],
             },
           ],
