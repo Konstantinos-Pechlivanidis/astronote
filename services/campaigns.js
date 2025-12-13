@@ -712,64 +712,130 @@ export async function prepareCampaign(storeId, campaignId) {
 export async function enqueueCampaign(storeId, campaignId) {
   logger.info('Enqueuing campaign for bulk SMS', { storeId, campaignId });
 
-  // 0) CRITICAL: Check campaign status FIRST to prevent duplicate enqueues
-  // This check happens before any heavy work to fail fast
-  const campaignStatus = await prisma.campaign.findUnique({
-    where: { id: campaignId, shopId: storeId },
-    select: { id: true, status: true },
-  });
+  // 0) CRITICAL: Atomically check and update status to prevent race conditions
+  // This prevents multiple simultaneous requests from all passing the status check
+  // Use a transaction with updateMany and WHERE condition for atomic operation
+  let statusTransitionResult;
+  try {
+    statusTransitionResult = await prisma.$transaction(async tx => {
+      // Get current campaign status
+      const campaign = await tx.campaign.findUnique({
+        where: { id: campaignId, shopId: storeId },
+        select: { id: true, status: true },
+      });
 
-  if (!campaignStatus) {
-    return { ok: false, reason: 'not_found', enqueuedJobs: 0 };
-  }
+      if (!campaign) {
+        return { ok: false, reason: 'not_found' };
+      }
 
-  // CRITICAL: If campaign is already sending or sent, check if there are pending recipients
-  // If there are pending recipients, they should be enqueued by the existing process
-  // If there are NO pending recipients, this is a duplicate enqueue attempt
-  if (campaignStatus.status === 'sending') {
-    const pendingCount = await prisma.campaignRecipient.count({
-      where: {
-        campaignId,
-        status: 'pending',
-        mittoMessageId: null,
-      },
+      // If campaign is already sending, check if there are pending recipients
+      if (campaign.status === 'sending') {
+        const pendingCount = await tx.campaignRecipient.count({
+          where: {
+            campaignId,
+            status: 'pending',
+            mittoMessageId: null,
+          },
+        });
+
+        if (pendingCount === 0) {
+          logger.warn(
+            {
+              storeId,
+              campaignId,
+              status: campaign.status,
+              pendingCount,
+            },
+            'Campaign already sending with no pending recipients - duplicate enqueue attempt blocked',
+          );
+          return {
+            ok: false,
+            reason: 'already_sending_no_pending',
+          };
+        } else {
+          logger.info(
+            {
+              storeId,
+              campaignId,
+              status: campaign.status,
+              pendingCount,
+            },
+            'Campaign already sending but has pending recipients - will enqueue existing recipients only',
+          );
+          return { ok: true, statusUnchanged: true, pendingCount };
+        }
+      }
+
+      // If campaign is sent or failed, reject
+      if (!['draft', 'scheduled'].includes(campaign.status)) {
+        return {
+          ok: false,
+          reason: `invalid_status:${campaign.status}`,
+        };
+      }
+
+      // CRITICAL: Atomically transition status from draft/scheduled to sending
+      // This prevents race conditions where multiple requests try to enqueue the same campaign
+      const previousStatus = campaign.status; // Store for potential rollback
+      
+      const updateResult = await tx.campaign.updateMany({
+        where: {
+          id: campaignId,
+          shopId: storeId,
+          status: { in: ['draft', 'scheduled'] },
+        },
+        data: {
+          status: 'sending',
+          updatedAt: new Date(),
+        },
+      });
+
+      // If update count is 0, another request already updated the status
+      if (updateResult.count === 0) {
+        // Re-check status to see what happened
+        const recheck = await tx.campaign.findUnique({
+          where: { id: campaignId },
+          select: { status: true },
+        });
+
+        if (recheck?.status === 'sending') {
+          // Another request is handling this campaign
+          return {
+            ok: false,
+            reason: 'already_sending_race_condition',
+          };
+        }
+
+        return {
+          ok: false,
+          reason: 'status_changed_concurrently',
+        };
+      }
+
+      return { ok: true, statusUnchanged: false, previousStatus };
+    }, {
+      timeout: 5000,
+      maxWait: 5000,
     });
-
-    if (pendingCount === 0) {
-      logger.warn(
-        {
-          storeId,
-          campaignId,
-          status: campaignStatus.status,
-          pendingCount,
-        },
-        'Campaign already sending with no pending recipients - duplicate enqueue attempt blocked',
-      );
-      return {
-        ok: false,
-        reason: 'already_sending_no_pending',
-        enqueuedJobs: 0,
-      };
-    } else {
-      logger.info(
-        {
-          storeId,
-          campaignId,
-          status: campaignStatus.status,
-          pendingCount,
-        },
-        'Campaign already sending but has pending recipients - will enqueue existing recipients only',
-      );
-      // Continue to enqueue existing pending recipients
-    }
-  }
-
-  if (!['draft', 'scheduled', 'sending'].includes(campaignStatus.status)) {
+  } catch (txError) {
+    logger.error(
+      {
+        storeId,
+        campaignId,
+        error: txError.message,
+      },
+      'Failed to atomically update campaign status',
+    );
     return {
       ok: false,
-      reason: `invalid_status:${campaignStatus.status}`,
+      reason: 'transaction_failed',
       enqueuedJobs: 0,
     };
+  }
+
+  // If status transition failed, return early
+  if (!statusTransitionResult.ok) {
+    return { ...statusTransitionResult, enqueuedJobs: 0 };
   }
 
   // 1) Fetch full campaign data and build audience OUTSIDE transaction (heavy work)
@@ -814,7 +880,7 @@ export async function enqueueCampaign(storeId, campaignId) {
     'Audience built, checking subscription and credits',
   );
 
-  // 1) Check subscription status BEFORE starting any transaction
+  // 1) Check subscription status BEFORE starting heavy work
   const { isSubscriptionActive } = await import('./subscription.js');
   const subscriptionActive = await isSubscriptionActive(storeId);
   if (!subscriptionActive) {
@@ -822,10 +888,18 @@ export async function enqueueCampaign(storeId, campaignId) {
       { storeId, campaignId },
       'Inactive subscription - campaign enqueue blocked',
     );
+    // Revert campaign status back to scheduled/draft
+    await prisma.campaign.updateMany({
+      where: { id: campaignId, shopId: storeId, status: 'sending' },
+      data: { 
+        status: statusTransitionResult.previousStatus || 'draft',
+        updatedAt: new Date(),
+      },
+    });
     return { ok: false, reason: 'inactive_subscription', enqueuedJobs: 0 };
   }
 
-  // 2) Check credits BEFORE starting any transaction
+  // 2) Check credits BEFORE starting heavy work
   const { getBalance } = await import('./wallet.js');
   const currentBalance = await getBalance(storeId);
   const requiredCredits = contacts.length;
@@ -835,105 +909,27 @@ export async function enqueueCampaign(storeId, campaignId) {
       { storeId, campaignId, currentBalance, requiredCredits },
       'Insufficient credits',
     );
+    // Revert campaign status back to scheduled/draft
+    await prisma.campaign.updateMany({
+      where: { id: campaignId, shopId: storeId, status: 'sending' },
+      data: { 
+        status: statusTransitionResult.previousStatus || 'draft',
+        updatedAt: new Date(),
+      },
+    });
     return { ok: false, reason: 'insufficient_credits', enqueuedJobs: 0 };
-  }
-
-  // 3) CRITICAL: Atomic transaction to update campaign status and check for duplicates
-  // This prevents race conditions when enqueueCampaign is called multiple times simultaneously
-  const txResult = await prisma.$transaction(
-    async tx => {
-      // Double-check status hasn't changed (optimistic locking)
-      const currentCamp = await tx.campaign.findUnique({
-        where: { id: campaignId },
-        select: { status: true, shopId: true },
-      });
-
-      if (!currentCamp) {
-        return { ok: false, reason: 'not_found' };
-      }
-
-      // CRITICAL: If already sending, check if there are pending recipients
-      // If no pending recipients, this is a duplicate enqueue attempt - block it
-      if (currentCamp.status === 'sending') {
-        const pendingCount = await tx.campaignRecipient.count({
-          where: {
-            campaignId,
-            status: 'pending',
-            mittoMessageId: null,
-          },
-        });
-
-        if (pendingCount === 0) {
-          return { ok: false, reason: 'already_sending_no_pending' };
-        }
-        // If there are pending recipients, allow enqueue but skip recipient creation
-        return { ok: true, statusUnchanged: true, pendingCount };
-      }
-
-      if (!['draft', 'scheduled'].includes(currentCamp.status)) {
-        return { ok: false, reason: `invalid_status:${currentCamp.status}` };
-      }
-
-      // Update status atomically only if draft or scheduled
-      const upd = await tx.campaign.updateMany({
-        where: {
-          AND: [
-            { id: campaignId },
-            {
-              OR: [
-                { status: 'draft' },
-                { status: 'scheduled' },
-              ],
-            },
-          ],
-        },
-        data: { status: 'sending', updatedAt: new Date() },
-      });
-
-      if (upd.count === 0) {
-        // Status changed between checks - re-check
-        const recheck = await tx.campaign.findUnique({
-          where: { id: campaignId },
-          select: { status: true },
-        });
-        if (recheck?.status === 'sending') {
-          const pendingCount = await tx.campaignRecipient.count({
-            where: {
-              campaignId,
-              status: 'pending',
-              mittoMessageId: null,
-            },
-          });
-          if (pendingCount === 0) {
-            return { ok: false, reason: 'already_sending_no_pending' };
-          }
-          return { ok: true, statusUnchanged: true, pendingCount };
-        }
-        return { ok: false, reason: 'already_sending' };
-      }
-
-      return { ok: true, statusUnchanged: false };
-    },
-    {
-      timeout: 5000, // 5 second timeout (should be fast now)
-      maxWait: 5000,
-    },
-  );
-
-  if (!txResult.ok) {
-    return { ...txResult, enqueuedJobs: 0 };
   }
 
   // If status was already 'sending', skip recipient creation and only enqueue existing pending recipients
   let existingRecipients = [];
   let recipientsData = [];
 
-  if (txResult.statusUnchanged) {
+  if (statusTransitionResult.statusUnchanged) {
     logger.info(
       {
         storeId,
         campaignId,
-        pendingCount: txResult.pendingCount,
+        pendingCount: statusTransitionResult.pendingCount,
       },
       'Campaign already in sending status - skipping recipient creation, will enqueue existing pending recipients only',
     );
