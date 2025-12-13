@@ -132,8 +132,8 @@ model CampaignRecipient {
   phoneE164      String
   status         String
   mittoMessageId String?
-  bulkId         String?  // Mitto bulkId for batch tracking (bulk SMS)
-  retryCount     Int      @default(0) // Track retry attempts for idempotency
+  bulkId         String? // Mitto bulkId for batch tracking (bulk SMS)
+  retryCount     Int       @default(0) // Track retry attempts for idempotency
   sentAt         DateTime?
   deliveredAt    DateTime?
   error          String?
@@ -142,6 +142,7 @@ model CampaignRecipient {
   campaign       Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contact        Contact?  @relation(fields: [contactId], references: [id])
 
+  @@unique([campaignId, phoneE164]) // Prevent duplicate messages to same phone in same campaign
   @@index([campaignId, status]) // For filtering by campaign and status
   @@index([campaignId, phoneE164]) // For quick lookups during SMS sending
   @@index([sentAt]) // For time-based queries
@@ -485,23 +486,23 @@ model CreditTransaction {
 }
 
 model Template {
-  id              String          @id @default(cuid())
-  title           String
-  category        String
-  content         String
-  previewImage    String?
-  tags            String[]        @default([])
-  isPublic        Boolean         @default(true)
-  isSystemDefault Boolean         @default(false)
+  id                   String          @id @default(cuid())
+  title                String
+  category             String
+  content              String
+  previewImage         String?
+  tags                 String[]        @default([])
+  isPublic             Boolean         @default(true)
+  isSystemDefault      Boolean         @default(false)
   // Statistics fields
-  conversionRate      Float?      // Conversion rate percentage (e.g., 33.5 for 33.5%)
-  productViewsIncrease Float?     // Product views increase percentage (e.g., 55.0 for 55%)
-  clickThroughRate    Float?      // Click-through rate percentage
-  averageOrderValue    Float?      // Average order value increase percentage
-  customerRetention    Float?      // Customer retention improvement percentage
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  usage           TemplateUsage[]
+  conversionRate       Float? // Conversion rate percentage (e.g., 33.5 for 33.5%)
+  productViewsIncrease Float? // Product views increase percentage (e.g., 55.0 for 55%)
+  clickThroughRate     Float? // Click-through rate percentage
+  averageOrderValue    Float? // Average order value increase percentage
+  customerRetention    Float? // Customer retention improvement percentage
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  usage                TemplateUsage[]
 }
 
 model QueueJob {
