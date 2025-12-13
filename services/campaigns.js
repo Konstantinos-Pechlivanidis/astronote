@@ -733,7 +733,12 @@ export async function prepareCampaign(storeId, campaignId) {
  * @returns {Promise<Object>} Enqueue result
  */
 export async function enqueueCampaign(storeId, campaignId) {
-  logger.info('Enqueuing campaign for bulk SMS', { storeId, campaignId });
+  logger.info('Enqueuing campaign for bulk SMS', {
+    storeId,
+    campaignId,
+    timestamp: new Date().toISOString(),
+    processId: process.pid,
+  });
 
   // 0) CRITICAL: Atomically check and update status to prevent race conditions
   // This prevents multiple simultaneous requests from all passing the status check

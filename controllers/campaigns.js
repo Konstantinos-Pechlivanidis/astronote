@@ -195,6 +195,14 @@ export async function enqueue(req, res, next) {
   try {
     const storeId = getStoreId(req);
     const { id } = req.params;
+    const logger = (await import('../utils/logger.js')).logger;
+
+    logger.info('Enqueue campaign request received', {
+      storeId,
+      campaignId: id,
+      timestamp: new Date().toISOString(),
+      requestId: req.id || req.headers['x-request-id'] || 'unknown',
+    });
 
     const result = await campaignsService.enqueueCampaign(storeId, id);
 

@@ -36,7 +36,7 @@ export async function handleCampaignSend(job) {
     }
 
     // Campaign should be in 'sending' status (set by scheduler) or 'scheduled' (if retrying)
-    if (campaign.status !== 'sending' && campaign.status !== 'scheduled') {
+    if (campaign.status !== CampaignStatus.sending && campaign.status !== CampaignStatus.scheduled) {
       logger.warn('Campaign is not in expected status, skipping', {
         campaignId,
         status: campaign.status,

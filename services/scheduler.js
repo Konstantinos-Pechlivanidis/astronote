@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js';
 import { allCampaignsStatusQueue, campaignQueue } from '../queue/index.js';
 import prisma from './prisma.js';
 import { processDailyBirthdayAutomations } from './automations.js';
+import { CampaignStatus } from '../utils/prismaEnums.js';
 
 /**
  * Scheduler Service
@@ -19,7 +20,7 @@ export async function processScheduledCampaigns() {
     // Find all campaigns that are scheduled and due to be sent
     const dueCampaigns = await prisma.campaign.findMany({
       where: {
-        status: 'scheduled',
+        status: CampaignStatus.scheduled,
         scheduleAt: {
           lte: now, // scheduleAt is in UTC, so we compare with UTC now
         },
@@ -58,7 +59,7 @@ export async function processScheduledCampaigns() {
             select: { id: true, status: true },
           });
 
-          if (!currentCampaign || currentCampaign.status !== 'scheduled') {
+          if (!currentCampaign || currentCampaign.status !== CampaignStatus.scheduled) {
             logger.warn('Campaign status changed before queuing, skipping', {
               campaignId: campaign.id,
               currentStatus: currentCampaign?.status,
@@ -70,7 +71,7 @@ export async function processScheduledCampaigns() {
           // The worker will handle the actual sending
           await tx.campaign.update({
             where: { id: campaign.id },
-            data: { status: 'sending' },
+            data: { status: CampaignStatus.sending },
           });
         });
 
