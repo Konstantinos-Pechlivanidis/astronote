@@ -161,62 +161,135 @@ export async function handleBulkSMS(job) {
       }),
     );
 
-    // Send bulk SMS via smsBulk service
-    const result = await sendBulkSMSWithCredits(bulkMessages);
+    // CRITICAL: Re-check recipients status before sending (prevent duplicate sends from retries)
+    // This check happens right before the API call to ensure we only send to truly pending recipients
+    const currentRecipients = await prisma.campaignRecipient.findMany({
+      where: {
+        id: { in: recipientIds },
+        campaignId,
+        status: 'pending',
+        mittoMessageId: null, // CRITICAL: Only process unsent messages
+      },
+      select: { id: true },
+    });
 
-    // Update recipients with results
-    const updatePromises = [];
-    const successfulIds = [];
-    const failedIds = [];
+    // Filter bulkMessages to only include recipients that are still pending
+    const currentRecipientIds = new Set(currentRecipients.map(r => r.id));
+    const filteredBulkMessages = bulkMessages.filter(msg =>
+      currentRecipientIds.has(msg.internalRecipientId),
+    );
 
-    for (const res of result.results) {
-      const recipient = recipients.find(r => r.id === res.internalRecipientId);
-      if (!recipient) continue;
-
-      const updateData = {
-        updatedAt: new Date(),
+    if (filteredBulkMessages.length === 0) {
+      logger.warn(
+        {
+          campaignId,
+          shopId,
+          requestedCount: bulkMessages.length,
+          currentPendingCount: currentRecipients.length,
+          jobId: job.id,
+          retryAttempt: job.attemptsMade || 0,
+        },
+        'No pending recipients found (already sent by another job or previous retry)',
+      );
+      return {
+        ok: true,
+        bulkId: null,
+        successful: 0,
+        failed: 0,
+        skipped: bulkMessages.length,
+        total: 0,
       };
-
-      if (res.sent && res.messageId) {
-        // Idempotency: Only update if not already sent (prevent duplicates from retries)
-        updateData.mittoMessageId = res.messageId;
-        updateData.bulkId = result.bulkId;
-        updateData.sentAt = new Date();
-        updateData.status = 'sent';
-        updateData.deliveryStatus = 'Queued'; // Initial status from Mitto
-        updateData.error = null;
-        successfulIds.push(res.internalRecipientId);
-
-        // Use updateMany with condition to prevent race conditions
-        updatePromises.push(
-          prisma.campaignRecipient.updateMany({
-            where: {
-              id: res.internalRecipientId,
-              mittoMessageId: null, // Only update if not already sent
-            },
-            data: updateData,
-          }),
-        );
-      } else {
-        updateData.status = 'failed';
-        updateData.failedAt = new Date();
-        updateData.error = res.error || res.reason || 'Send failed';
-        failedIds.push(res.internalRecipientId);
-
-        // Only update if still pending (idempotency)
-        updatePromises.push(
-          prisma.campaignRecipient.updateMany({
-            where: {
-              id: res.internalRecipientId,
-              status: 'pending', // Only update pending recipients
-            },
-            data: updateData,
-          }),
-        );
-      }
     }
 
-    await Promise.all(updatePromises);
+    // Send bulk SMS only for recipients that are still pending
+    const result = await sendBulkSMSWithCredits(filteredBulkMessages);
+
+    // CRITICAL: Use transaction to ensure atomic updates and prevent race conditions
+    // This prevents duplicate updates when jobs retry or run concurrently
+    const updateResult = await prisma.$transaction(
+      async tx => {
+        const successfulIds = [];
+        const failedIds = [];
+
+        for (const res of result.results) {
+          if (res.sent && res.messageId) {
+            // CRITICAL: Atomic update with double idempotency check
+            const updateResult = await tx.campaignRecipient.updateMany({
+              where: {
+                id: res.internalRecipientId,
+                mittoMessageId: null, // CRITICAL: Only update if not already sent
+                status: 'pending', // Double check: only update pending recipients
+              },
+              data: {
+                mittoMessageId: res.messageId,
+                bulkId: result.bulkId,
+                sentAt: new Date(),
+                status: 'sent',
+                deliveryStatus: 'Queued', // Initial status from Mitto
+                error: null,
+                updatedAt: new Date(),
+              },
+            });
+
+            if (updateResult.count > 0) {
+              successfulIds.push(res.internalRecipientId);
+            } else {
+              logger.warn(
+                {
+                  campaignId,
+                  shopId,
+                  recipientId: res.internalRecipientId,
+                  messageId: res.messageId,
+                },
+                'Recipient already sent (transaction idempotency check prevented duplicate)',
+              );
+            }
+          } else {
+            // Only update if still pending (idempotency)
+            const updateResult = await tx.campaignRecipient.updateMany({
+              where: {
+                id: res.internalRecipientId,
+                status: 'pending', // CRITICAL: Only update pending recipients
+                mittoMessageId: null, // Double check: only update unsent
+              },
+              data: {
+                status: 'failed',
+                failedAt: new Date(),
+                error: res.error || res.reason || 'Send failed',
+                updatedAt: new Date(),
+              },
+            });
+
+            if (updateResult.count > 0) {
+              failedIds.push(res.internalRecipientId);
+            } else {
+              logger.warn(
+                {
+                  campaignId,
+                  shopId,
+                  recipientId: res.internalRecipientId,
+                },
+                'Recipient already processed (transaction idempotency check prevented duplicate)',
+              );
+            }
+          }
+        }
+
+        return {
+          successfulIds,
+          failedIds,
+        };
+      },
+      {
+        timeout: 30000, // 30 second timeout for transaction (updates should be fast)
+        maxWait: 5000, // 5 second max wait for lock
+      },
+    );
+
+    const { successfulIds, failedIds } = updateResult;
+    const skipped = bulkMessages.length - filteredBulkMessages.length;
+    const bulkId = result.bulkId;
+    const results = result.results;
 
     const duration = Date.now() - startTime;
     logger.info({
@@ -239,7 +312,7 @@ export async function handleBulkSMS(job) {
     }
 
     // Queue delivery status update jobs for successful sends
-    if (result.bulkId && successfulIds.length > 0) {
+    if (bulkId && successfulIds.length > 0) {
       try {
         // First check after 30 seconds
         await deliveryStatusQueue.add(
@@ -273,12 +346,12 @@ export async function handleBulkSMS(job) {
 
         logger.debug('Queued delivery status update jobs', {
           campaignId,
-          bulkId: result.bulkId,
+          bulkId,
         });
       } catch (queueError) {
         logger.warn('Failed to queue delivery status update', {
           campaignId,
-          bulkId: result.bulkId,
+          bulkId,
           error: queueError.message,
         });
       }
@@ -295,10 +368,11 @@ export async function handleBulkSMS(job) {
 
     return {
       ok: true,
-      bulkId: result.bulkId,
+      bulkId,
       successful: successfulIds.length,
       failed: failedIds.length,
-      total: result.results.length,
+      skipped: skipped || 0,
+      total: results.length,
     };
 
   } catch (e) {

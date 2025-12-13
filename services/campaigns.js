@@ -782,7 +782,49 @@ export async function enqueueCampaign(storeId, campaignId) {
     return { ...txResult, enqueuedJobs: 0 };
   }
 
-  // 4) Create recipient records and prepare messages
+  // 4) Check if recipients already exist (idempotency check)
+  // This prevents duplicate recipients if enqueueCampaign is called multiple times
+  const existingRecipients = await prisma.campaignRecipient.findMany({
+    where: {
+      campaignId: campaign.id,
+    },
+    select: {
+      phoneE164: true,
+    },
+  });
+
+  const existingPhones = new Set(existingRecipients.map(r => r.phoneE164));
+
+  // Filter out contacts that already have recipients (idempotency)
+  const newContacts = contacts.filter(
+    contact => !existingPhones.has(contact.phoneE164),
+  );
+
+  if (newContacts.length === 0 && existingRecipients.length > 0) {
+    logger.warn(
+      {
+        storeId,
+        campaignId,
+        existingCount: existingRecipients.length,
+        requestedCount: contacts.length,
+      },
+      'All recipients already exist, skipping creation (idempotency)',
+    );
+    // Continue to enqueue existing recipients
+  } else if (newContacts.length < contacts.length) {
+    logger.info(
+      {
+        storeId,
+        campaignId,
+        newCount: newContacts.length,
+        existingCount: existingRecipients.length,
+        totalRequested: contacts.length,
+      },
+      'Some recipients already exist, creating only new ones (idempotency)',
+    );
+  }
+
+  // 5) Create recipient records and prepare messages
   // Note: Credits are NOT debited here - they will be debited per message after successful send
   const messageTemplate = campaign.message;
 
@@ -795,11 +837,11 @@ export async function enqueueCampaign(storeId, campaignId) {
     return { ok: false, reason: 'no_message_text', enqueuedJobs: 0 };
   }
 
-  // Generate recipient records
+  // Generate recipient records (only for new contacts)
   // Note: Message personalization (including discount codes) and unsubscribe links
   // are added in the worker (see queue/jobs/bulkSms.js) to avoid storing
   // full message text in DB
-  const recipientsData = contacts.map(contact => {
+  const recipientsData = newContacts.map(contact => {
     // Note: Message personalization and unsubscribe links are added in the worker
     // (see queue/jobs/bulkSms.js) to avoid storing full message text in DB
     return {
@@ -859,8 +901,9 @@ export async function enqueueCampaign(storeId, campaignId) {
     throw e;
   }
 
-  // 5) Enqueue jobs to Redis (OUTSIDE transaction, non-blocking)
+  // 6) Enqueue jobs to Redis (OUTSIDE transaction, non-blocking)
   // Campaigns always use bulk SMS with fixed batch size
+  // CRITICAL: Only enqueue recipients that are pending and haven't been sent yet
   const toEnqueue = await prisma.campaignRecipient.findMany({
     where: {
       campaignId: campaign.id,
@@ -869,6 +912,26 @@ export async function enqueueCampaign(storeId, campaignId) {
     },
     select: { id: true },
   });
+
+  // Additional safety check: log if we find recipients that should not be enqueued
+  if (toEnqueue.length === 0 && existingRecipients.length > 0) {
+    const alreadySent = await prisma.campaignRecipient.count({
+      where: {
+        campaignId: campaign.id,
+        status: { in: ['sent', 'failed'] },
+      },
+    });
+    logger.info(
+      {
+        storeId,
+        campaignId,
+        totalRecipients: existingRecipients.length,
+        alreadySent,
+        pending: 0,
+      },
+      'No pending recipients to enqueue (all already processed)',
+    );
+  }
 
   let enqueuedJobs = 0;
   if (smsQueue && toEnqueue.length > 0) {
