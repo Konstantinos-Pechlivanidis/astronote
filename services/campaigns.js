@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { ValidationError, NotFoundError } from '../utils/errors.js';
 import { InsufficientCreditsError } from './credit-validation.js';
 import { smsQueue } from '../queue/index.js';
+import { createHash } from 'crypto';
 
 /**
  * Campaigns Service
@@ -1047,6 +1048,70 @@ export async function enqueueCampaign(storeId, campaignId) {
     );
   }
 
+  /**
+   * Generate unique job ID based on recipient IDs hash
+   * This ensures that even if the same batchIndex is used, different recipientIds
+   * will create different jobIds, preventing duplicate sends
+   */
+  function generateJobId(campaignId, recipientIds) {
+    // Sort recipientIds to ensure consistent hash regardless of order
+    const sortedIds = [...recipientIds].sort((a, b) => a.localeCompare(b));
+    const idsString = sortedIds.join(',');
+    // Create short hash (first 8 chars of SHA256) for jobId
+    const hash = createHash('sha256').update(idsString).digest('hex').substring(0, 8);
+    return `batch:${campaignId}:${hash}`;
+  }
+
+  /**
+   * Check if a job with the same recipientIds already exists (waiting, active, or delayed)
+   * This prevents duplicate enqueues even if the jobId doesn't match
+   */
+  async function checkExistingJob(campaignId, recipientIds) {
+    try {
+      // Get all active jobs (waiting, active, delayed)
+      const [waiting, active, delayed] = await Promise.all([
+        smsQueue.getWaiting(),
+        smsQueue.getActive(),
+        smsQueue.getDelayed(),
+      ]);
+
+      const allActiveJobs = [...waiting, ...active, ...delayed];
+
+      // Check if any job has the same recipientIds
+      for (const job of allActiveJobs) {
+        if (
+          job.name === 'sendBulkSMS' &&
+          job.data?.campaignId === campaignId &&
+          job.data?.recipientIds &&
+          Array.isArray(job.data.recipientIds)
+        ) {
+          // Compare recipientIds (sorted for comparison)
+          const jobRecipientIds = [...job.data.recipientIds].sort((a, b) =>
+            a.localeCompare(b),
+          );
+          const currentRecipientIds = [...recipientIds].sort((a, b) =>
+            a.localeCompare(b),
+          );
+
+          if (
+            jobRecipientIds.length === currentRecipientIds.length &&
+            jobRecipientIds.every((id, idx) => id === currentRecipientIds[idx])
+          ) {
+            return true; // Duplicate job found
+          }
+        }
+      }
+
+      return false; // No duplicate found
+    } catch (err) {
+      logger.warn(
+        { campaignId, err: err.message },
+        'Failed to check for existing jobs, continuing anyway',
+      );
+      return false; // On error, allow enqueue (fail open)
+    }
+  }
+
   let enqueuedJobs = 0;
   if (smsQueue && toEnqueue.length > 0) {
     // Fixed batch size for bulk SMS
@@ -1069,10 +1134,29 @@ export async function enqueueCampaign(storeId, campaignId) {
       'Enqueuing bulk SMS batch jobs',
     );
 
-    // Enqueue batch jobs
-    const enqueuePromises = batches.map((recipientIds, batchIndex) =>
-      smsQueue
-        .add(
+    // Enqueue batch jobs with duplicate checking
+    const enqueuePromises = batches.map(async (recipientIds, batchIndex) => {
+      // CRITICAL: Check if a job with the same recipientIds already exists
+      const isDuplicate = await checkExistingJob(campaign.id, recipientIds);
+      if (isDuplicate) {
+        logger.warn(
+          {
+            storeId,
+            campaignId,
+            batchIndex,
+            recipientCount: recipientIds.length,
+            recipientIds: recipientIds.slice(0, 5), // Log first 5 for debugging
+          },
+          'Duplicate batch job detected (same recipients already enqueued), skipping',
+        );
+        return; // Skip this batch
+      }
+
+      // Generate unique jobId based on recipientIds hash
+      const jobId = generateJobId(campaign.id, recipientIds);
+
+      try {
+        await smsQueue.add(
           'sendBulkSMS',
           {
             campaignId: campaign.id,
@@ -1080,32 +1164,56 @@ export async function enqueueCampaign(storeId, campaignId) {
             recipientIds,
           },
           {
-            // CRITICAL: Use campaignId + batchIndex for jobId (NOT timestamp)
-            // BullMQ will reject jobs with same jobId, ensuring idempotency
-            // If same jobId exists, BullMQ will skip adding duplicate job
-            // This prevents duplicate jobs even if enqueueCampaign is called multiple times
-            jobId: `batch:${campaign.id}:${batchIndex}`,
+            // CRITICAL: Use hash of recipientIds in jobId for true idempotency
+            // This ensures that even if removeOnComplete removes a job,
+            // the same recipients won't be enqueued again with a different jobId
+            jobId,
             attempts: 5,
             backoff: { type: 'exponential', delay: 3000 },
             removeOnComplete: true, // Remove completed jobs to save memory
             removeOnFail: false, // Keep failed jobs for debugging
           },
-        )
-        .then(() => {
-          enqueuedJobs += recipientIds.length;
-          logger.debug(
-            { storeId, campaignId, batchIndex, recipientCount: recipientIds.length },
-            'Batch job enqueued',
+        );
+
+        enqueuedJobs += recipientIds.length;
+        logger.debug(
+          {
+            storeId,
+            campaignId,
+            batchIndex,
+            jobId,
+            recipientCount: recipientIds.length,
+          },
+          'Batch job enqueued',
+        );
+      } catch (err) {
+        // Check if error is due to duplicate jobId (BullMQ throws error for duplicate jobIds)
+        if (err.message?.includes('already exists') || err.code === 'DUPLICATE_JOB') {
+          logger.warn(
+            {
+              storeId,
+              campaignId,
+              batchIndex,
+              jobId,
+              recipientCount: recipientIds.length,
+            },
+            'Job with same jobId already exists, skipping duplicate',
           );
-        })
-        .catch(err => {
+        } else {
           logger.error(
-            { storeId, campaignId, batchIndex, err: err.message },
+            {
+              storeId,
+              campaignId,
+              batchIndex,
+              jobId,
+              err: err.message,
+            },
             'Failed to enqueue batch job',
           );
           // Continue even if some batches fail to enqueue
-        }),
-    );
+        }
+      }
+    });
 
     // Wait for initial batches (first 10) to ensure some jobs are enqueued
     try {

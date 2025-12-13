@@ -163,14 +163,17 @@ export async function handleBulkSMS(job) {
 
     // CRITICAL: Re-check recipients status before sending (prevent duplicate sends from retries)
     // This check happens right before the API call to ensure we only send to truly pending recipients
-    const currentRecipients = await prisma.campaignRecipient.findMany({
-      where: {
-        id: { in: recipientIds },
-        campaignId,
-        status: 'pending',
-        mittoMessageId: null, // CRITICAL: Only process unsent messages
-      },
-      select: { id: true },
+    // Use a transaction to get a consistent snapshot of recipient statuses
+    const currentRecipients = await prisma.$transaction(async tx => {
+      return await tx.campaignRecipient.findMany({
+        where: {
+          id: { in: recipientIds },
+          campaignId,
+          status: 'pending',
+          mittoMessageId: null, // CRITICAL: Only process unsent messages
+        },
+        select: { id: true, phoneE164: true },
+      });
     });
 
     // Filter bulkMessages to only include recipients that are still pending
@@ -178,6 +181,22 @@ export async function handleBulkSMS(job) {
     const filteredBulkMessages = bulkMessages.filter(msg =>
       currentRecipientIds.has(msg.internalRecipientId),
     );
+
+    const skippedCount = bulkMessages.length - filteredBulkMessages.length;
+    if (skippedCount > 0) {
+      logger.warn(
+        {
+          campaignId,
+          shopId,
+          requestedCount: bulkMessages.length,
+          currentPendingCount: currentRecipients.length,
+          skippedCount,
+          jobId: job.id,
+          retryAttempt: job.attemptsMade || 0,
+        },
+        'Some recipients already sent (skipping to prevent duplicates)',
+      );
+    }
 
     if (filteredBulkMessages.length === 0) {
       logger.warn(
@@ -189,7 +208,7 @@ export async function handleBulkSMS(job) {
           jobId: job.id,
           retryAttempt: job.attemptsMade || 0,
         },
-        'No pending recipients found (already sent by another job or previous retry)',
+        'No pending recipients found (all already sent by another job or previous retry)',
       );
       return {
         ok: true,
