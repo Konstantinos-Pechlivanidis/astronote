@@ -185,14 +185,14 @@ export async function validateCreditsForMessages(storeId, messageCount) {
  */
 export async function logAutomationSkip(
   automationId,
-  storeId,
+  shopId,
   reason = 'Insufficient credits',
 ) {
   try {
     await prisma.automationLog.create({
       data: {
         automationId,
-        storeId,
+        shopId,
         status: 'skipped',
         reason,
         triggeredAt: new Date(),
@@ -201,13 +201,13 @@ export async function logAutomationSkip(
 
     logger.warn('Automation skipped due to insufficient credits', {
       automationId,
-      storeId,
+      shopId,
       reason,
     });
   } catch (error) {
     logger.error('Failed to log automation skip', {
       automationId,
-      storeId,
+      shopId,
       reason,
       error: error.message,
     });

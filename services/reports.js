@@ -232,14 +232,14 @@ export async function getCampaignPerformance(storeId, filters = {}) {
  * @param {Object} filters - Date range and other filters
  * @returns {Promise<Object>} Automation insights data
  */
-export async function getAutomationInsights(storeId, filters = {}) {
+export async function getAutomationInsights(shopId, filters = {}) {
   const { from, to } = filters;
 
   try {
     // Get automation logs
     const automationLogs = await prisma.automationLog.findMany({
       where: {
-        storeId,
+        shopId,
         ...(from &&
           to && {
           triggeredAt: {
@@ -252,7 +252,7 @@ export async function getAutomationInsights(storeId, filters = {}) {
 
     // Get user automations
     const userAutomations = await prisma.userAutomation.findMany({
-      where: { shopId: storeId },
+      where: { shopId },
       include: {
         automation: {
           select: {
@@ -319,7 +319,7 @@ export async function getAutomationInsights(storeId, filters = {}) {
     };
   } catch (error) {
     logger.error('Failed to get automation insights', {
-      storeId,
+      shopId,
       error: error.message,
     });
     throw error;
@@ -606,7 +606,7 @@ export async function getKPIs(storeId) {
         }),
         prisma.automationLog.count({
           where: {
-            storeId,
+            shopId: storeId,
             triggeredAt: { gte: sevenDaysAgo },
           },
         }),

@@ -20,6 +20,13 @@ r.post(
   validateShopifyWebhook,
   ctrl.handleCartAbandoned,
 );
+r.post(
+  '/shopify/checkout/abandoned',
+  validateShopifyWebhook,
+  ctrl.handleAbandonedCheckout,
+);
+// Flow webhook endpoint (may not have Shopify signature)
+r.post('/flow/abandoned-checkout', ctrl.handleAbandonedCheckout);
 
 // Manual trigger route (for testing - no webhook validation)
 r.post('/trigger', ctrl.triggerAutomationManually);

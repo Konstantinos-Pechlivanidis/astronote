@@ -1,0 +1,216 @@
+{
+  "id": 1234567890,
+  "name": "#1001",
+  "email": "customer@example.com",
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "number": 1001,
+  "note": null,
+  "token": "abc123def456",
+  "gateway": "shopify_payments",
+  "test": false,
+  "total_price": "99.99",
+  "subtotal_price": "89.99",
+  "total_weight": 500,
+  "total_tax": "10.00",
+  "currency": "EUR",
+  "financial_status": "paid",
+  "confirmed": true,
+  "total_discounts": "0.00",
+  "buyer_accepts_marketing": true,
+  "name": "#1001",
+  "referring_site": null,
+  "landing_site": null,
+  "cancelled_at": null,
+  "cancel_reason": null,
+  "total_line_items_price": "89.99",
+  "customer": {
+    "id": 9876543210,
+    "email": "customer@example.com",
+    "accepts_marketing": true,
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "first_name": "John",
+    "last_name": "Doe",
+    "orders_count": 1,
+    "state": "enabled",
+    "total_spent": "99.99",
+    "last_order_id": 1234567890,
+    "note": null,
+    "verified_email": true,
+    "multipass_identifier": null,
+    "tax_exempt": false,
+    "phone": "+306977123456",
+    "tags": "",
+    "last_order_name": "#1001",
+    "currency": "EUR",
+    "accepts_marketing_updated_at": "2024-01-01T00:00:00Z",
+    "marketing_opt_in_level": "single_opt_in",
+    "tax_exemptions": [],
+    "admin_graphql_api_id": "gid://shopify/Customer/9876543210",
+    "default_address": {
+      "id": 1111111111,
+      "customer_id": 9876543210,
+      "first_name": "John",
+      "last_name": "Doe",
+      "company": null,
+      "address1": "123 Main St",
+      "address2": null,
+      "city": "Athens",
+      "province": "Attica",
+      "country": "Greece",
+      "zip": "12345",
+      "phone": "+306977123456",
+      "name": "John Doe",
+      "province_code": "I",
+      "country_code": "GR",
+      "country_name": "Greece",
+      "default": true
+    }
+  },
+  "line_items": [
+    {
+      "id": 1111111111,
+      "variant_id": 2222222222,
+      "title": "Product A",
+      "quantity": 2,
+      "sku": "PROD-A",
+      "variant_title": "Large",
+      "vendor": "Test Vendor",
+      "fulfillment_service": "manual",
+      "product_id": 3333333333,
+      "requires_shipping": true,
+      "taxable": true,
+      "gift_card": false,
+      "name": "Product A - Large",
+      "variant_inventory_management": "shopify",
+      "properties": [],
+      "product_exists": true,
+      "fulfillable_quantity": 2,
+      "grams": 500,
+      "price": "44.99",
+      "total_discount": "0.00",
+      "fulfillment_status": null,
+      "price_set": {
+        "shop_money": {
+          "amount": "44.99",
+          "currency_code": "EUR"
+        },
+        "presentment_money": {
+          "amount": "44.99",
+          "currency_code": "EUR"
+        }
+      },
+      "total_discount_set": {
+        "shop_money": {
+          "amount": "0.00",
+          "currency_code": "EUR"
+        },
+        "presentment_money": {
+          "amount": "0.00",
+          "currency_code": "EUR"
+        }
+      },
+      "discount_allocations": [],
+      "duties": [],
+      "admin_graphql_api_id": "gid://shopify/LineItem/1111111111",
+      "tax_lines": []
+    }
+  ],
+  "shipping_address": {
+    "first_name": "John",
+    "address1": "123 Main St",
+    "phone": "+306977123456",
+    "city": "Athens",
+    "zip": "12345",
+    "province": "Attica",
+    "country": "Greece",
+    "last_name": "Doe",
+    "address2": null,
+    "company": null,
+    "latitude": null,
+    "longitude": null,
+    "name": "John Doe",
+    "country_code": "GR",
+    "province_code": "I"
+  },
+  "billing_address": {
+    "first_name": "John",
+    "address1": "123 Main St",
+    "phone": "+306977123456",
+    "city": "Athens",
+    "zip": "12345",
+    "province": "Attica",
+    "country": "Greece",
+    "last_name": "Doe",
+    "address2": null,
+    "company": null,
+    "latitude": null,
+    "longitude": null,
+    "name": "John Doe",
+    "country_code": "GR",
+    "province_code": "I"
+  },
+  "fulfillments": [],
+  "discount_codes": [],
+  "note_attributes": [],
+  "payment_gateway_names": [
+    "shopify_payments"
+  ],
+  "processing_method": "direct",
+  "checkout_id": null,
+  "checkout_token": null,
+  "source_name": "web",
+  "presentment_currency": "EUR",
+  "total_discounts_set": {
+    "shop_money": {
+      "amount": "0.00",
+      "currency_code": "EUR"
+    },
+    "presentment_money": {
+      "amount": "0.00",
+      "currency_code": "EUR"
+    }
+  },
+  "total_line_items_price_set": {
+    "shop_money": {
+      "amount": "89.99",
+      "currency_code": "EUR"
+    },
+    "presentment_money": {
+      "amount": "89.99",
+      "currency_code": "EUR"
+    }
+  },
+  "total_price_set": {
+    "shop_money": {
+      "amount": "99.99",
+      "currency_code": "EUR"
+    },
+    "presentment_money": {
+      "amount": "99.99",
+      "currency_code": "EUR"
+    }
+  },
+  "total_shipping_price_set": {
+    "shop_money": {
+      "amount": "10.00",
+      "currency_code": "EUR"
+    },
+    "presentment_money": {
+      "amount": "10.00",
+      "currency_code": "EUR"
+    }
+  },
+  "total_tax_set": {
+    "shop_money": {
+      "amount": "0.00",
+      "currency_code": "EUR"
+    },
+    "presentment_money": {
+      "amount": "0.00",
+      "currency_code": "EUR"
+    }
+  },
+  "shop_domain": "test-shop.myshopify.com"
+}

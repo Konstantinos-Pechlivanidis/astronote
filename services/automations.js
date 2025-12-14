@@ -3,6 +3,7 @@ import { sendSms } from './mitto.js';
 import { logger } from '../utils/logger.js';
 import { generateUnsubscribeUrl } from '../utils/unsubscribe.js';
 import { shortenUrlsInText } from '../utils/urlShortener.js';
+import { formatLineItems } from './shopify-graphql.js';
 
 /**
  * Trigger an automation for a specific contact
@@ -41,9 +42,12 @@ export async function triggerAutomation({
       return { success: false, reason: 'No active automation found' };
     }
 
-    // Get contact information
-    const contact = await prisma.contact.findUnique({
-      where: { id: contactId },
+    // Get contact information (filter by shopId for multi-tenant security)
+    const contact = await prisma.contact.findFirst({
+      where: {
+        id: contactId,
+        shopId,
+      },
     });
 
     if (!contact) {
@@ -169,24 +173,73 @@ export async function triggerAutomation({
 }
 
 /**
+ * Sanitize string for SMS (remove control characters, limit length)
+ * @param {string} str - String to sanitize
+ * @returns {string} Sanitized string
+ */
+function sanitizeForSms(str) {
+  if (typeof str !== 'string') {
+    return String(str || '');
+  }
+  // Remove control characters except newlines and tabs
+  return str
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '')
+    .substring(0, 1600); // SMS limit
+}
+
+/**
  * Process message template with variables
+ * Supports all variables from cursor_instructions.txt
+ * All variables are sanitized to prevent injection
  */
 function processMessageTemplate(template, data) {
   let processedMessage = template;
 
-  // Replace contact variables
+  // Replace contact/customer variables (support both naming conventions)
+  // All values are sanitized to prevent injection
   if (data.contact) {
     processedMessage = processedMessage.replace(
       /\{\{firstName\}\}/g,
-      data.contact.firstName || '',
+      sanitizeForSms(data.contact.firstName || ''),
     );
     processedMessage = processedMessage.replace(
       /\{\{lastName\}\}/g,
-      data.contact.lastName || '',
+      sanitizeForSms(data.contact.lastName || ''),
     );
     processedMessage = processedMessage.replace(
       /\{\{phone\}\}/g,
-      data.contact.phoneE164 || '',
+      sanitizeForSms(data.contact.phoneE164 || ''),
+    );
+    // New customer variables
+    processedMessage = processedMessage.replace(
+      /\{\{customer\.firstName\}\}/g,
+      sanitizeForSms(data.contact.firstName || ''),
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{customer\.lastName\}\}/g,
+      sanitizeForSms(data.contact.lastName || ''),
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{customer\.displayName\}\}/g,
+      sanitizeForSms(
+        data.contact.displayName ||
+          `${data.contact.firstName || ''} ${data.contact.lastName || ''}`.trim() ||
+          data.contact.email ||
+          '',
+      ),
+    );
+  }
+
+  // Replace subscriber variables (for welcome series)
+  if (data.subscriber) {
+    processedMessage = processedMessage.replace(
+      /\{\{subscriber\.firstName\}\}/g,
+      sanitizeForSms(data.subscriber.firstName || ''),
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{subscriber\.lastName\}\}/g,
+      sanitizeForSms(data.subscriber.lastName || ''),
     );
   }
 
@@ -194,54 +247,261 @@ function processMessageTemplate(template, data) {
   if (data.shop) {
     processedMessage = processedMessage.replace(
       /\{\{shopName\}\}/g,
-      data.shop.shopDomain || '',
+      sanitizeForSms(data.shop.shopDomain || data.shop.shopName || ''),
     );
     processedMessage = processedMessage.replace(
       /\{\{shopDomain\}\}/g,
-      data.shop.shopDomain || '',
+      sanitizeForSms(data.shop.shopDomain || ''),
     );
   }
 
-  // Replace additional data variables
+  // Replace order variables
+  if (data.order) {
+    processedMessage = processedMessage.replace(
+      /\{\{order\.name\}\}/g,
+      sanitizeForSms(data.order.name || data.order.orderNumber || ''),
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{orderNumber\}\}/g,
+      sanitizeForSms(data.order.name || data.order.orderNumber || ''),
+    );
+  }
+
+  // Legacy orderNumber support
   if (data.orderNumber) {
     processedMessage = processedMessage.replace(
       /\{\{orderNumber\}\}/g,
-      data.orderNumber,
+      sanitizeForSms(data.orderNumber),
     );
-  }
-  if (data.trackingLink) {
     processedMessage = processedMessage.replace(
-      /\{\{trackingLink\}\}/g,
-      data.trackingLink,
+      /\{\{order\.name\}\}/g,
+      sanitizeForSms(data.orderNumber),
     );
   }
-  if (data.trackingNumber) {
+
+  // Replace price variables
+  if (data.order?.totalPriceSet?.shopMoney) {
     processedMessage = processedMessage.replace(
-      /\{\{trackingNumber\}\}/g,
-      data.trackingNumber,
+      /\{\{totalPrice\}\}/g,
+      data.order.totalPriceSet.shopMoney.amount || '',
     );
-  }
-  if (
-    data.trackingUrls &&
-    Array.isArray(data.trackingUrls) &&
-    data.trackingUrls.length > 0
-  ) {
-    // Use first tracking URL if available
     processedMessage = processedMessage.replace(
-      /\{\{trackingLink\}\}/g,
-      data.trackingUrls[0],
+      /\{\{currency\}\}/g,
+      data.order.totalPriceSet.shopMoney.currencyCode || '',
     );
-  }
-  if (data.productName) {
+  } else if (data.totalPrice) {
     processedMessage = processedMessage.replace(
-      /\{\{productName\}\}/g,
-      data.productName,
+      /\{\{totalPrice\}\}/g,
+      data.totalPrice,
     );
   }
-  if (data.discountCode) {
+  if (data.currency) {
+    processedMessage = processedMessage.replace(
+      /\{\{currency\}\}/g,
+      data.currency,
+    );
+  }
+
+  // Replace line items
+  if (data.order?.lineItems?.edges) {
+    const lineItemsStr = formatLineItems(data.order.lineItems.edges);
+    processedMessage = processedMessage.replace(
+      /\{\{lineItems\}\}/g,
+      sanitizeForSms(lineItemsStr),
+    );
+  } else if (data.lineItems) {
+    // Support both GraphQL format and simple array format
+    if (Array.isArray(data.lineItems)) {
+      if (data.lineItems[0]?.node) {
+        // GraphQL format
+        const lineItemsStr = formatLineItems(data.lineItems);
+        processedMessage = processedMessage.replace(
+          /\{\{lineItems\}\}/g,
+          sanitizeForSms(lineItemsStr),
+        );
+      } else {
+        // Simple format: [{title, quantity}, ...]
+        const lineItemsStr = data.lineItems
+          .map(item => `${item.title || 'Product'} x${item.quantity || 1}`)
+          .join(', ');
+        processedMessage = processedMessage.replace(
+          /\{\{lineItems\}\}/g,
+          sanitizeForSms(lineItemsStr),
+        );
+      }
+    }
+  }
+
+  // Replace discount codes
+  if (data.order?.discountCodes && Array.isArray(data.order.discountCodes)) {
+    const discountCodesStr = data.order.discountCodes.join(', ');
+    processedMessage = processedMessage.replace(
+      /\{\{discountCodes\}\}/g,
+      discountCodesStr,
+    );
+  } else if (data.discountCode) {
     processedMessage = processedMessage.replace(
       /\{\{discountCode\}\}/g,
       data.discountCode,
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{discountCodes\}\}/g,
+      data.discountCode,
+    );
+  }
+
+  // Replace shipping address variables
+  if (data.order?.shippingAddress) {
+    processedMessage = processedMessage.replace(
+      /\{\{shippingAddress\.city\}\}/g,
+      sanitizeForSms(data.order.shippingAddress.city || ''),
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{shippingAddress\.country\}\}/g,
+      sanitizeForSms(data.order.shippingAddress.country || ''),
+    );
+  }
+
+  // Replace tracking variables
+  if (data.fulfillment?.trackingInfo) {
+    processedMessage = processedMessage.replace(
+      /\{\{tracking\.number\}\}/g,
+      data.fulfillment.trackingInfo.number || '',
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{tracking\.url\}\}/g,
+      data.fulfillment.trackingInfo.url || '',
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{tracking\.company\}\}/g,
+      data.fulfillment.trackingInfo.company || '',
+    );
+    // Legacy support
+    processedMessage = processedMessage.replace(
+      /\{\{trackingNumber\}\}/g,
+      data.fulfillment.trackingInfo.number || '',
+    );
+    processedMessage = processedMessage.replace(
+      /\{\{trackingLink\}\}/g,
+      data.fulfillment.trackingInfo.url || '',
+    );
+  } else {
+    // Legacy tracking support
+    if (data.trackingNumber) {
+      processedMessage = processedMessage.replace(
+        /\{\{trackingNumber\}\}/g,
+        data.trackingNumber,
+      );
+      processedMessage = processedMessage.replace(
+        /\{\{tracking\.number\}\}/g,
+        data.trackingNumber,
+      );
+    }
+    if (data.trackingLink) {
+      processedMessage = processedMessage.replace(
+        /\{\{trackingLink\}\}/g,
+        data.trackingLink,
+      );
+      processedMessage = processedMessage.replace(
+        /\{\{tracking\.url\}\}/g,
+        data.trackingLink,
+      );
+    }
+    if (
+      data.trackingUrls &&
+      Array.isArray(data.trackingUrls) &&
+      data.trackingUrls.length > 0
+    ) {
+      processedMessage = processedMessage.replace(
+        /\{\{trackingLink\}\}/g,
+        data.trackingUrls[0],
+      );
+      processedMessage = processedMessage.replace(
+        /\{\{tracking\.url\}\}/g,
+        data.trackingUrls[0],
+      );
+    }
+  }
+
+  // Replace estimated delivery date
+  if (data.fulfillment?.estimatedDeliveryAt) {
+    const deliveryDate = new Date(data.fulfillment.estimatedDeliveryAt);
+    const formattedDate = deliveryDate.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    processedMessage = processedMessage.replace(
+      /\{\{estimatedDeliveryAt\}\}/g,
+      sanitizeForSms(formattedDate),
+    );
+  }
+
+  // Replace abandoned checkout variables
+  if (data.checkout) {
+    // URLs are not sanitized as they need to remain valid
+    processedMessage = processedMessage.replace(
+      /\{\{abandonedCheckoutUrl\}\}/g,
+      data.checkout.abandonedCheckoutUrl || '',
+    );
+    if (data.checkout.subtotalPriceSet?.shopMoney) {
+      processedMessage = processedMessage.replace(
+        /\{\{subtotalPrice\}\}/g,
+        sanitizeForSms(data.checkout.subtotalPriceSet.shopMoney.amount || ''),
+      );
+    }
+    if (data.checkout.lineItems?.edges) {
+      const lineItemsStr = formatLineItems(data.checkout.lineItems.edges);
+      processedMessage = processedMessage.replace(
+        /\{\{lineItems\}\}/g,
+        sanitizeForSms(lineItemsStr),
+      );
+    }
+  }
+
+  // Replace product variables
+  if (data.productName) {
+    processedMessage = processedMessage.replace(
+      /\{\{productName\}\}/g,
+      sanitizeForSms(data.productName),
+    );
+  }
+  if (data.productTitle) {
+    processedMessage = processedMessage.replace(
+      /\{\{productTitle\}\}/g,
+      sanitizeForSms(data.productTitle),
+    );
+  }
+
+  // Replace recommended products
+  if (data.recommendedProducts) {
+    let recommendedStr = '';
+    if (Array.isArray(data.recommendedProducts)) {
+      recommendedStr = data.recommendedProducts
+        .map(p => sanitizeForSms(p.title || p.name || 'Product'))
+        .join(', ');
+    } else if (typeof data.recommendedProducts === 'string') {
+      recommendedStr = sanitizeForSms(data.recommendedProducts);
+    }
+    processedMessage = processedMessage.replace(
+      /\{\{recommendedProducts\}\}/g,
+      recommendedStr,
+    );
+  }
+
+  // Replace review link (URLs are not sanitized as they need to remain valid)
+  if (data.reviewLink) {
+    processedMessage = processedMessage.replace(
+      /\{\{reviewLink\}\}/g,
+      data.reviewLink,
+    );
+  }
+
+  // Replace days since last order
+  if (data.daysSinceLastOrder !== undefined) {
+    processedMessage = processedMessage.replace(
+      /\{\{daysSinceLastOrder\}\}/g,
+      sanitizeForSms(String(data.daysSinceLastOrder)),
     );
   }
 
@@ -255,12 +515,20 @@ export async function triggerAbandonedCart({
   shopId,
   contactId,
   cartData = {},
+  checkoutData = {},
 }) {
+  // Merge cartData and checkoutData
+  const mergedData = {
+    ...cartData,
+    ...checkoutData,
+    checkout: checkoutData, // Support {{checkout.*}} variables
+  };
+
   return await triggerAutomation({
     shopId,
     contactId,
     triggerEvent: 'cart_abandoned',
-    additionalData: cartData,
+    additionalData: mergedData,
   });
 }
 
@@ -337,6 +605,42 @@ export async function triggerWelcome({ shopId, contactId, welcomeData = {} }) {
     contactId,
     triggerEvent: 'welcome',
     additionalData: welcomeData,
+  });
+}
+
+/**
+ * Trigger review request automation
+ */
+export async function triggerReviewRequest({
+  shopId,
+  contactId,
+  orderData = {},
+}) {
+  return await triggerAutomation({
+    shopId,
+    contactId,
+    triggerEvent: 'review_request',
+    additionalData: orderData,
+  });
+}
+
+/**
+ * Trigger cross-sell/upsell automation
+ */
+export async function triggerCrossSell({
+  shopId,
+  contactId,
+  orderData = {},
+  recommendedProducts = [],
+}) {
+  return await triggerAutomation({
+    shopId,
+    contactId,
+    triggerEvent: 'cross_sell',
+    additionalData: {
+      ...orderData,
+      recommendedProducts,
+    },
   });
 }
 
@@ -552,6 +856,8 @@ export default {
   triggerCustomerReengagement,
   triggerBirthdayOffer,
   triggerWelcome,
+  triggerReviewRequest,
+  triggerCrossSell,
   getActiveAutomations,
   hasActiveAutomation,
   processDailyBirthdayAutomations,

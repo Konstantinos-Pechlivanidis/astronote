@@ -746,7 +746,7 @@ export async function prepareCampaign(storeId, campaignId) {
  */
 export async function enqueueCampaign(storeId, campaignId) {
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:747',message:'enqueueCampaign ENTRY',data:{storeId,campaignId,processId:process.pid,requestId:`req_${Date.now()}`},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:747',message:'enqueueCampaign ENTRY',data:{storeId,campaignId,processId:process.pid,requestId:`req_${Date.now()}`},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
   // #endregion
   logger.info('Enqueuing campaign for bulk SMS', {
     storeId,
@@ -763,51 +763,51 @@ export async function enqueueCampaign(storeId, campaignId) {
     statusTransitionResult = await prisma.$transaction(async tx => {
       // Get current campaign status
       const campaign = await tx.campaign.findUnique({
-    where: { id: campaignId, shopId: storeId },
-    select: { id: true, status: true },
-  });
+        where: { id: campaignId, shopId: storeId },
+        select: { id: true, status: true },
+      });
 
       if (!campaign) {
         return { ok: false, reason: 'not_found' };
-  }
+      }
 
       // If campaign is already sending, check if there are pending recipients
       if (campaign.status === CampaignStatus.sending) {
         const pendingCount = await tx.campaignRecipient.count({
-      where: {
-        campaignId,
-        status: 'pending',
-        mittoMessageId: null,
-      },
-    });
+          where: {
+            campaignId,
+            status: 'pending',
+            mittoMessageId: null,
+          },
+        });
 
-    if (pendingCount === 0) {
-      logger.warn(
-        {
-          storeId,
-          campaignId,
+        if (pendingCount === 0) {
+          logger.warn(
+            {
+              storeId,
+              campaignId,
               status: campaign.status,
-          pendingCount,
-        },
-        'Campaign already sending with no pending recipients - duplicate enqueue attempt blocked',
-      );
-      return {
-        ok: false,
-        reason: 'already_sending_no_pending',
-      };
-    } else {
-      logger.info(
-        {
-          storeId,
-          campaignId,
+              pendingCount,
+            },
+            'Campaign already sending with no pending recipients - duplicate enqueue attempt blocked',
+          );
+          return {
+            ok: false,
+            reason: 'already_sending_no_pending',
+          };
+        } else {
+          logger.info(
+            {
+              storeId,
+              campaignId,
               status: campaign.status,
-          pendingCount,
-        },
-        'Campaign already sending but has pending recipients - will enqueue existing recipients only',
-      );
+              pendingCount,
+            },
+            'Campaign already sending but has pending recipients - will enqueue existing recipients only',
+          );
           return { ok: true, statusUnchanged: true, pendingCount };
-    }
-  }
+        }
+      }
 
       // If campaign is sent or failed, reject
       if (
@@ -816,8 +816,8 @@ export async function enqueueCampaign(storeId, campaignId) {
           CampaignStatus.scheduled,
         ].includes(campaign.status)
       ) {
-    return {
-      ok: false,
+        return {
+          ok: false,
           reason: `invalid_status:${campaign.status}`,
         };
       }
@@ -827,7 +827,7 @@ export async function enqueueCampaign(storeId, campaignId) {
       const previousStatus = campaign.status; // Store for potential rollback
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:814',message:'BEFORE atomic status update',data:{campaignId,currentStatus:campaign.status,previousStatus},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:814',message:'BEFORE atomic status update',data:{campaignId,currentStatus:campaign.status,previousStatus},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
       // #endregion
       const updateResult = await tx.campaign.updateMany({
         where: {
@@ -843,7 +843,7 @@ export async function enqueueCampaign(storeId, campaignId) {
         },
       });
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:830',message:'AFTER atomic status update',data:{campaignId,updateCount:updateResult.count,currentStatus:campaign.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:830',message:'AFTER atomic status update',data:{campaignId,updateCount:updateResult.count,currentStatus:campaign.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
       // #endregion
 
       // If update count is 0, another request already updated the status
@@ -1040,7 +1040,7 @@ export async function enqueueCampaign(storeId, campaignId) {
           statusTransitionResult.previousStatus || CampaignStatus.draft,
         updatedAt: new Date(),
       },
-      });
+    });
     return {
       ok: false,
       reason: 'insufficient_credits',
@@ -1060,13 +1060,13 @@ export async function enqueueCampaign(storeId, campaignId) {
   let creditReservation;
   try {
     creditReservation = await reserveCredits(storeId, requiredCredits, {
-            campaignId,
+      campaignId,
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h expiration
       meta: {
         campaignName: campaign.name,
         recipientCount: contacts.length,
-          },
-        });
+      },
+    });
     logger.info(
       {
         storeId,
@@ -1082,12 +1082,12 @@ export async function enqueueCampaign(storeId, campaignId) {
         storeId,
         campaignId,
         error: reservationError.message,
-            },
+      },
       'Failed to reserve credits',
     );
     // Revert campaign status
     await prisma.campaign.updateMany({
-            where: {
+      where: {
         id: campaignId,
         shopId: storeId,
         status: CampaignStatus.sending,
@@ -1096,8 +1096,8 @@ export async function enqueueCampaign(storeId, campaignId) {
         status:
           statusTransitionResult.previousStatus || CampaignStatus.draft,
         updatedAt: new Date(),
-            },
-          });
+      },
+    });
     return {
       ok: false,
       reason: 'credit_reservation_failed',
@@ -1364,7 +1364,7 @@ export async function enqueueCampaign(storeId, campaignId) {
             jobRecipientIds.every((id, idx) => id === currentRecipientIds[idx])
           ) {
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1356',message:'DUPLICATE FOUND in checkExistingJob',data:{campaignId,jobId:job.id,jobState:job.state||'unknown',recipientCount:recipientIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1356',message:'DUPLICATE FOUND in checkExistingJob',data:{campaignId,jobId:job.id,jobState:job.state||'unknown',recipientCount:recipientIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(() => {});
             // #endregion
             logger.warn(
               {
@@ -1433,7 +1433,7 @@ export async function enqueueCampaign(storeId, campaignId) {
       // Generate unique jobId based on recipientIds hash
       const jobId = generateJobId(campaign.id, recipientIds);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1422',message:'Generated jobId',data:{campaignId,batchIndex,jobId,recipientCount:recipientIds.length,first5Recipients:recipientIds.slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1422',message:'Generated jobId',data:{campaignId,batchIndex,jobId,recipientCount:recipientIds.length,first5Recipients:recipientIds.slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(() => {});
       // #endregion
 
       try {
@@ -1441,12 +1441,12 @@ export async function enqueueCampaign(storeId, campaignId) {
         // This prevents race conditions where multiple requests try to add the same job
         const existingJob = await smsQueue.getJob(jobId);
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1427',message:'getJob result',data:{campaignId,jobId,existingJobFound:!!existingJob},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1427',message:'getJob result',data:{campaignId,jobId,existingJobFound:!!existingJob},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(() => {});
         // #endregion
         if (existingJob) {
           const jobState = await existingJob.getState();
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1429',message:'Existing job state',data:{campaignId,jobId,jobState},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1429',message:'Existing job state',data:{campaignId,jobId,jobState},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(() => {});
           // #endregion
           if (['waiting', 'active', 'delayed', 'completed'].includes(jobState)) {
             logger.warn(
@@ -1509,12 +1509,12 @@ export async function enqueueCampaign(storeId, campaignId) {
         return { enqueued: true, skipped: false, recipientCount: recipientIds.length };
       } catch (err) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1489',message:'smsQueue.add ERROR',data:{campaignId,batchIndex,jobId,error:err.message,errorCode:err.code,isDuplicate:err.message?.includes('already exists')||err.code==='DUPLICATE_JOB'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1489',message:'smsQueue.add ERROR',data:{campaignId,batchIndex,jobId,error:err.message,errorCode:err.code,isDuplicate:err.message?.includes('already exists')||err.code==='DUPLICATE_JOB'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(() => {});
         // #endregion
         // Check if error is due to duplicate jobId (BullMQ throws error for duplicate jobIds)
         if (err.message?.includes('already exists') || err.code === 'DUPLICATE_JOB') {
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1491',message:'DUPLICATE JOB ERROR caught',data:{campaignId,batchIndex,jobId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1491',message:'DUPLICATE JOB ERROR caught',data:{campaignId,batchIndex,jobId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(() => {});
           // #endregion
           logger.warn(
             {
@@ -1549,26 +1549,26 @@ export async function enqueueCampaign(storeId, campaignId) {
     try {
       const results = await Promise.allSettled(enqueuePromises);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1526',message:'Promise.allSettled results',data:{campaignId,totalBatches:batches.length,resultsCount:results.length,fulfilled:results.filter(r=>r.status==='fulfilled').length,rejected:results.filter(r=>r.status==='rejected').length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1526',message:'Promise.allSettled results',data:{campaignId,totalBatches:batches.length,resultsCount:results.length,fulfilled:results.filter(r => r.status==='fulfilled').length,rejected:results.filter(r => r.status==='rejected').length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
       // #endregion
 
       // Calculate enqueuedJobs from results (no race condition)
       enqueuedJobs = results.reduce((total, result) => {
         if (result.status === 'fulfilled' && result.value?.enqueued) {
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1530',message:'Batch ENQUEUED in results',data:{campaignId,recipientCount:result.value.recipientCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1530',message:'Batch ENQUEUED in results',data:{campaignId,recipientCount:result.value.recipientCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
           // #endregion
           return total + (result.value.recipientCount || 0);
         }
         if (result.status === 'fulfilled' && result.value?.skipped) {
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1533',message:'Batch SKIPPED in results',data:{campaignId,recipientCount:result.value.recipientCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1533',message:'Batch SKIPPED in results',data:{campaignId,recipientCount:result.value.recipientCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
           // #endregion
         }
         return total;
       }, 0);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1534',message:'Total enqueuedJobs calculated',data:{campaignId,enqueuedJobs,totalBatches:batches.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:1534',message:'Total enqueuedJobs calculated',data:{campaignId,enqueuedJobs,totalBatches:batches.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
       // #endregion
 
       // Log skipped and failed batches for debugging
@@ -1586,13 +1586,13 @@ export async function enqueueCampaign(storeId, campaignId) {
             enqueuedJobs,
           },
           'Batch enqueue completed with some skipped/failed batches',
-      );
+        );
       }
     } catch (err) {
       logger.error(
         { storeId, campaignId, err: err.message },
         'Error waiting for batch jobs to enqueue',
-        );
+      );
     }
   } else {
     logger.warn(

@@ -104,6 +104,9 @@ export async function handleOptIn(req, res, next) {
     });
 
     if (contact) {
+      // Store previous consent status before update
+      const previousConsent = contact.smsConsent;
+
       // Update existing contact with SMS consent and new data
       // Always update with new data if provided, otherwise keep existing
       const updateData = {
@@ -138,6 +141,7 @@ export async function handleOptIn(req, res, next) {
         contactId: contact.id,
         shopId: shop.id,
         updateData,
+        previousConsent,
       });
 
       contact = await prisma.contact.update({
@@ -150,6 +154,26 @@ export async function handleOptIn(req, res, next) {
         shopId: shop.id,
         source,
       });
+
+      // Schedule welcome series if contact just opted in (wasn't opted in before)
+      if (previousConsent !== 'opted_in' && updateData.smsConsent === 'opted_in') {
+        try {
+          const { scheduleWelcomeSeries } = await import(
+            '../services/welcome-series.js'
+          );
+          await scheduleWelcomeSeries(contact.id, shop.id);
+          logger.info('Welcome series scheduled for opted-in contact', {
+            contactId: contact.id,
+            shopId: shop.id,
+          });
+        } catch (welcomeError) {
+          logger.warn('Failed to schedule welcome series', {
+            contactId: contact.id,
+            shopId: shop.id,
+            error: welcomeError.message,
+          });
+        }
+      }
     } else {
       // Create new contact with SMS consent
       try {
@@ -160,6 +184,25 @@ export async function handleOptIn(req, res, next) {
           shopId: shop.id,
           source,
         });
+
+        // Schedule welcome series for new contact
+        try {
+          const { scheduleWelcomeSeries } = await import(
+            '../services/welcome-series.js'
+          );
+          await scheduleWelcomeSeries(contact.id, shop.id);
+          logger.info('Welcome series scheduled for new contact', {
+            contactId: contact.id,
+            shopId: shop.id,
+          });
+        } catch (welcomeError) {
+          // Don't fail opt-in if welcome series scheduling fails
+          logger.warn('Failed to schedule welcome series', {
+            contactId: contact.id,
+            shopId: shop.id,
+            error: welcomeError.message,
+          });
+        }
       } catch (error) {
         // If contact creation fails due to duplicate, try to find and update
         if (error.message && error.message.includes('already exists')) {
@@ -200,10 +243,32 @@ export async function handleOptIn(req, res, next) {
               }
             }
 
+            const previousConsent = contact.smsConsent;
+
             contact = await prisma.contact.update({
               where: { id: contact.id },
               data: updateData,
             });
+
+            // Schedule welcome series if contact just opted in (wasn't opted in before)
+            if (previousConsent !== 'opted_in' && updateData.smsConsent === 'opted_in') {
+              try {
+                const { scheduleWelcomeSeries } = await import(
+                  '../services/welcome-series.js'
+                );
+                await scheduleWelcomeSeries(contact.id, shop.id);
+                logger.info('Welcome series scheduled for opted-in contact', {
+                  contactId: contact.id,
+                  shopId: shop.id,
+                });
+              } catch (welcomeError) {
+                logger.warn('Failed to schedule welcome series', {
+                  contactId: contact.id,
+                  shopId: shop.id,
+                  error: welcomeError.message,
+                });
+              }
+            }
           }
         } else {
           throw error;

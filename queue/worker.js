@@ -14,6 +14,8 @@ import {
   handleCustomerReengagementTrigger,
   handleBirthdayTrigger,
   handleWelcomeTrigger,
+  handleReviewRequestTrigger,
+  handleCrossSellTrigger,
 } from './jobs/automationTriggers.js';
 import { logger } from '../utils/logger.js';
 
@@ -111,6 +113,10 @@ export const automationWorker = skipWorkers
           return await handleOrderConfirmationTrigger(job);
         case 'order-fulfilled':
           return await handleOrderFulfilledTrigger(job);
+        case 'review-request':
+          return await handleReviewRequestTrigger(job);
+        case 'cross-sell':
+          return await handleCrossSellTrigger(job);
         case 'abandoned-cart':
           return await handleAbandonedCartTrigger(job);
         case 'customer-reengagement':

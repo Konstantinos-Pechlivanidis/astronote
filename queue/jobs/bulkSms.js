@@ -32,7 +32,7 @@ function isRetryable(err) {
 export async function handleBulkSMS(job) {
   const { campaignId, shopId, recipientIds } = job.data;
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:32',message:'handleBulkSMS ENTRY',data:{jobId:job.id,campaignId,shopId,recipientIdsCount:recipientIds?.length,first5Recipients:recipientIds?.slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:32',message:'handleBulkSMS ENTRY',data:{jobId:job.id,campaignId,shopId,recipientIdsCount:recipientIds?.length,first5Recipients:recipientIds?.slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
   // #endregion
 
   if (!campaignId || !shopId || !recipientIds || !Array.isArray(recipientIds) || recipientIds.length === 0) {
@@ -71,7 +71,7 @@ export async function handleBulkSMS(job) {
     // Idempotency: Skip messages that were already sent (in case of retry)
     const alreadySent = recipientIds.length - recipients.length;
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:67',message:'Recipients found in DB',data:{campaignId,jobId:job.id,requestedCount:recipientIds.length,foundCount:recipients.length,alreadySent},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:67',message:'Recipients found in DB',data:{campaignId,jobId:job.id,requestedCount:recipientIds.length,foundCount:recipients.length,alreadySent},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
     // #endregion
     if (alreadySent > 0) {
       logger.warn({
@@ -233,7 +233,7 @@ export async function handleBulkSMS(job) {
     // Send bulk SMS only for recipients that are still pending
     const result = await sendBulkSMSWithCredits(filteredBulkMessages);
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:230',message:'sendBulkSMSWithCredits result',data:{campaignId,jobId:job.id,totalResults:result.results?.length,sentCount:result.results?.filter(r=>r.sent).length,failedCount:result.results?.filter(r=>!r.sent).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:230',message:'sendBulkSMSWithCredits result',data:{campaignId,jobId:job.id,totalResults:result.results?.length,sentCount:result.results?.filter(r => r.sent).length,failedCount:result.results?.filter(r => !r.sent).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
     // #endregion
 
     // CRITICAL: Use transaction to ensure atomic updates and prevent race conditions
@@ -247,7 +247,7 @@ export async function handleBulkSMS(job) {
           if (res.sent && res.messageId) {
             // CRITICAL: Atomic update with double idempotency check
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:242',message:'BEFORE updateMany recipient',data:{campaignId,recipientId:res.internalRecipientId,messageId:res.messageId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:242',message:'BEFORE updateMany recipient',data:{campaignId,recipientId:res.internalRecipientId,messageId:res.messageId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
             // #endregion
             const updateResult = await tx.campaignRecipient.updateMany({
               where: {
@@ -265,7 +265,7 @@ export async function handleBulkSMS(job) {
               },
             });
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:257',message:'AFTER updateMany recipient',data:{campaignId,recipientId:res.internalRecipientId,updateCount:updateResult.count},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:257',message:'AFTER updateMany recipient',data:{campaignId,recipientId:res.internalRecipientId,updateCount:updateResult.count},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
             // #endregion
 
             if (updateResult.count > 0) {
@@ -323,7 +323,7 @@ export async function handleBulkSMS(job) {
       },
     );
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:312',message:'Transaction completed',data:{campaignId,jobId:job.id,successfulCount:updateResult.successfulIds.length,failedCount:updateResult.failedIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:312',message:'Transaction completed',data:{campaignId,jobId:job.id,successfulCount:updateResult.successfulIds.length,failedCount:updateResult.failedIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
     // #endregion
 
     const { successfulIds, failedIds } = updateResult;

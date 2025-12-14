@@ -3,6 +3,10 @@ import { logger } from '../utils/logger.js';
 import { getStoreId } from '../middlewares/store-resolution.js';
 import { sendSuccess, sendCreated } from '../utils/response.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
+import {
+  getAvailableVariables,
+  getVariableDescriptions,
+} from '../services/automation-variables.js';
 
 /**
  * Create a new user automation
@@ -11,47 +15,8 @@ import { NotFoundError, ValidationError } from '../utils/errors.js';
 export async function createUserAutomation(req, res, next) {
   try {
     const shopId = getStoreId(req);
+    // Body is already validated by Zod middleware
     const { name, trigger, message, status } = req.body;
-
-    // Validate required fields
-    if (!name || !name.trim()) {
-      throw new ValidationError('Automation name is required');
-    }
-
-    if (!trigger) {
-      throw new ValidationError('Trigger is required');
-    }
-
-    if (!message || !message.trim()) {
-      throw new ValidationError('Message is required');
-    }
-
-    // Validate trigger is a valid AutomationTrigger enum value
-    const validTriggers = [
-      'welcome',
-      'abandoned_cart',
-      'order_confirmation',
-      'shipping_update',
-      'delivery_confirmation',
-      'review_request',
-      'reorder_reminder',
-      'birthday',
-      'customer_inactive',
-      'cart_abandoned',
-      'order_placed',
-      'order_fulfilled', // Added
-    ];
-
-    if (!validTriggers.includes(trigger)) {
-      throw new ValidationError(
-        `Invalid trigger. Must be one of: ${validTriggers.join(', ')}`,
-      );
-    }
-
-    // Validate status if provided
-    if (status && !['draft', 'active'].includes(status)) {
-      throw new ValidationError('Status must be either "draft" or "active"');
-    }
 
     // Create custom automation (not system default)
     const automation = await prisma.automation.create({
@@ -184,6 +149,7 @@ export async function getUserAutomations(req, res, next) {
 export async function updateUserAutomation(req, res, next) {
   try {
     const { id } = req.params;
+    // Body is already validated by Zod middleware
     // Accept both frontend-friendly format and backend format
     const { userMessage, isActive, message, status } = req.body;
 
@@ -498,6 +464,33 @@ export async function getAutomationStats(req, res, next) {
   }
 }
 
+/**
+ * Get available variables for an automation trigger type
+ * @route GET /automations/variables/:triggerType
+ */
+export async function getAutomationVariables(req, res, next) {
+  try {
+    // Params are already validated by Zod middleware
+    const { triggerType } = req.params;
+
+    // Get available variables for the trigger type
+    const variables = getAvailableVariables(triggerType);
+    const variableDescriptions = getVariableDescriptions(triggerType);
+
+    return sendSuccess(res, {
+      triggerType,
+      variables,
+      variableDescriptions,
+    });
+  } catch (error) {
+    logger.error('Failed to get automation variables', {
+      error: error.message,
+      triggerType: req.params.triggerType,
+    });
+    next(error);
+  }
+}
+
 export default {
   createUserAutomation,
   getUserAutomations,
@@ -506,4 +499,5 @@ export default {
   getSystemDefaults,
   syncSystemDefaults,
   getAutomationStats,
+  getAutomationVariables,
 };

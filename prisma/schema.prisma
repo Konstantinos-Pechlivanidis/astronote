@@ -34,6 +34,9 @@ model Shop {
   purchases             Purchase[]
   settings              ShopSettings?
   eventProcessingStates EventProcessingState[]
+  abandonedCheckouts    AbandonedCheckout[]
+  scheduledAutomations  ScheduledAutomation[]
+  automationSequences   AutomationSequence[]
 
   // Subscription fields
   stripeCustomerId           String?               @db.VarChar(255)
@@ -50,22 +53,26 @@ model Shop {
 }
 
 model Contact {
-  id          String              @id @default(cuid())
-  shopId      String
-  firstName   String?
-  lastName    String?
-  phoneE164   String
-  email       String?
-  gender      String? // "male", "female", "other", or null
-  birthDate   DateTime? // Required for birthday automations
-  tags        String[]            @default([])
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-  smsConsent  SmsConsent          @default(unknown)
-  recipients  CampaignRecipient[]
-  clickEvents ClickEvent[]
-  shop        Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  memberships SegmentMembership[]
+  id                 String              @id @default(cuid())
+  shopId             String
+  firstName          String?
+  lastName           String?
+  phoneE164          String
+  email              String?
+  gender             String? // "male", "female", "other", or null
+  birthDate          DateTime? // Required for birthday automations
+  tags               String[]            @default([])
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  smsConsent         SmsConsent          @default(unknown)
+  hasPurchased       Boolean             @default(false) // Track if contact has made a purchase
+  firstPurchaseAt    DateTime? // Date of first purchase
+  lastOrderAt        DateTime? // Date of last order (for win-back automation)
+  recipients         CampaignRecipient[]
+  clickEvents        ClickEvent[]
+  shop               Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  memberships        SegmentMembership[]
+  abandonedCheckouts AbandonedCheckout[]
 
   @@unique([shopId, phoneE164])
   @@unique([shopId, email])
@@ -75,6 +82,8 @@ model Contact {
   @@index([shopId, birthDate])
   @@index([shopId, createdAt])
   @@index([shopId, gender])
+  @@index([shopId, hasPurchased])
+  @@index([shopId, lastOrderAt])
 }
 
 model Segment {
@@ -343,15 +352,87 @@ model UserAutomation {
 model AutomationLog {
   id           String   @id @default(cuid())
   automationId String
-  storeId      String
+  shopId       String
   status       String // 'sent', 'skipped', 'failed'
   reason       String? // Reason for skip/failure
   triggeredAt  DateTime @default(now())
   createdAt    DateTime @default(now())
-  shop         Shop     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
-  @@index([storeId, status])
+  @@index([shopId, status])
   @@index([automationId, triggeredAt])
+}
+
+model AbandonedCheckout {
+  id                   String    @id @default(cuid())
+  shopId               String
+  contactId            String
+  checkoutId           String // Shopify checkout ID
+  lineItems            Json // Store line items as JSON
+  subtotalPrice        String? // Subtotal price
+  currency             String? // Currency code
+  abandonedCheckoutUrl String? // Recovery URL
+  abandonedAt          DateTime  @default(now())
+  recoveredAt          DateTime? // When order was completed
+  scheduledJobIds      String[]  @default([]) // Array of Bull job IDs for cancellation
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  shop                 Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  contact              Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, checkoutId])
+  @@index([shopId, contactId])
+  @@index([shopId, abandonedAt])
+  @@index([shopId, recoveredAt])
+  @@index([contactId])
+}
+
+model ScheduledAutomation {
+  id             String    @id @default(cuid())
+  shopId         String
+  contactId      String
+  automationId   String? // Optional: link to Automation
+  automationType String // Automation trigger type
+  jobId          String    @unique // Bull queue job ID - must be unique to prevent duplicates
+  scheduledFor   DateTime // When the automation should execute
+  status         String    @default("scheduled") // scheduled, cancelled, executed, failed
+  orderId        String? // Optional: link to order for cancellation
+  checkoutId     String? // Optional: link to checkout for cancellation
+  data           Json? // Additional automation data
+  executedAt     DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  shop           Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, automationType])
+  @@index([shopId, status])
+  @@index([shopId, scheduledFor])
+  @@index([contactId])
+  @@index([orderId])
+  @@index([checkoutId])
+}
+
+model AutomationSequence {
+  id            String    @id @default(cuid())
+  shopId        String
+  contactId     String
+  sequenceType  String // 'welcome', 'post_purchase', 'win_back'
+  currentStep   Int       @default(1) // Current step in sequence (1, 2, 3, etc.)
+  totalSteps    Int // Total steps in sequence
+  status        String    @default("active") // active, completed, cancelled
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  scheduledJobs String[]  @default([]) // Array of Bull job IDs
+  metadata      Json? // Additional sequence data
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  shop          Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, contactId, sequenceType]) // Prevent duplicate sequences for same contact
+  @@index([shopId, status])
+  @@index([contactId])
 }
 
 model EventProcessingState {
@@ -458,6 +539,8 @@ enum AutomationTrigger {
   cart_abandoned
   order_placed
   order_fulfilled
+  cross_sell
+  upsell
 }
 
 enum PaymentStatus {

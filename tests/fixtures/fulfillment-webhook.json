@@ -1,0 +1,87 @@
+{
+  "id": 5555555555,
+  "order_id": 1234567890,
+  "status": "success",
+  "created_at": "2024-01-16T10:00:00Z",
+  "updated_at": "2024-01-16T10:00:00Z",
+  "tracking_company": "UPS",
+  "tracking_number": "1Z999AA10123456784",
+  "tracking_numbers": [
+    "1Z999AA10123456784"
+  ],
+  "tracking_url": "https://www.ups.com/track?tracknum=1Z999AA10123456784",
+  "tracking_urls": [
+    "https://www.ups.com/track?tracknum=1Z999AA10123456784"
+  ],
+  "receipt": {},
+  "name": "#1001.1",
+  "service": "standard",
+  "shipment_status": null,
+  "location_id": null,
+  "origin_address": null,
+  "destination": {
+    "id": 4444444444,
+    "country_code": "GR",
+    "province_code": "I",
+    "name": "John Doe",
+    "address1": "123 Main St",
+    "address2": null,
+    "city": "Athens",
+    "zip": "12345"
+  },
+  "line_items": [
+    {
+      "id": 1111111111,
+      "variant_id": 2222222222,
+      "title": "Product A",
+      "quantity": 2,
+      "sku": "PROD-A",
+      "variant_title": "Large",
+      "vendor": "Test Vendor",
+      "fulfillment_service": "manual",
+      "product_id": 3333333333,
+      "requires_shipping": true,
+      "taxable": true,
+      "gift_card": false,
+      "name": "Product A - Large",
+      "variant_inventory_management": "shopify",
+      "properties": [],
+      "product_exists": true,
+      "fulfillable_quantity": 2,
+      "grams": 500,
+      "price": "44.99",
+      "total_discount": "0.00",
+      "fulfillment_status": "fulfilled",
+      "price_set": {
+        "shop_money": {
+          "amount": "44.99",
+          "currency_code": "EUR"
+        }
+      },
+      "total_discount_set": {
+        "shop_money": {
+          "amount": "0.00",
+          "currency_code": "EUR"
+        }
+      },
+      "discount_allocations": [],
+      "duties": [],
+      "admin_graphql_api_id": "gid://shopify/LineItem/1111111111",
+      "tax_lines": []
+    }
+  ],
+  "order": {
+    "id": 1234567890,
+    "name": "#1001",
+    "email": "customer@example.com"
+  },
+  "customer": {
+    "id": 9876543210,
+    "email": "customer@example.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "phone": "+306977123456"
+  },
+  "shop_domain": "test-shop.myshopify.com",
+  "fulfillment_id": "gid://shopify/Fulfillment/5555555555"
+}
