@@ -175,6 +175,13 @@ export async function shortenUrlsInText(text) {
     // Normalize URL (add https:// if missing)
     const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
 
+    // CRITICAL: Never shorten unsubscribe URLs
+    // Unsubscribe URLs contain /shopify/unsubscribe/ and must remain intact
+    // because they are signed tokens that need to be verified by the backend
+    if (normalizedUrl.includes('/shopify/unsubscribe/') || normalizedUrl.includes('/unsubscribe/')) {
+      return { original: url, shortened: url }; // Return unchanged
+    }
+
     // Check cache first
     if (urlMap.has(normalizedUrl)) {
       return { original: url, shortened: urlMap.get(normalizedUrl) };

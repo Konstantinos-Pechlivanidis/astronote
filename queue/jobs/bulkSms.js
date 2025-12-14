@@ -140,10 +140,14 @@ export async function handleBulkSMS(job) {
           discountCode,
         });
 
-        // Shorten any URLs in the message text
+        // Shorten any URLs in the message text FIRST (before adding unsubscribe link)
         messageText = await shortenUrlsInText(messageText);
 
-        // Append unsubscribe link (this also shortens the unsubscribe URL)
+        // Append unsubscribe link AFTER shortening
+        // CRITICAL: The unsubscribe URL must NOT be shortened because:
+        // 1. The custom shortener creates /s/{shortCode} URLs that have no route handler
+        // 2. The unsubscribe URL is already signed and secure
+        // 3. We add it after shortening to ensure it's never processed by shortenUrlsInText
         const messageWithUnsubscribe = await appendUnsubscribeLink(
           messageText,
           recipient.contactId,
