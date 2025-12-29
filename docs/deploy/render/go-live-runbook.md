@@ -52,10 +52,8 @@ Step-by-step guide for deploying all services to Render for the first time.
    - Root Directory: **(EMPTY - leave blank)**
 
 2. **Build & Start Commands:**
-   - Build: `(git submodule sync --recursive || true) && (git submodule update --init --recursive || true) && npm ci && npm -w @astronote/retail-api run build`
+   - Build: `npm ci && npm -w @astronote/retail-api run build`
    - Start: `npm -w @astronote/retail-api run start`
-   
-   **Note:** The `|| true` ensures the build continues even if submodules fail (non-critical for deployment).
 
 3. **Set Environment Variables:**
    - See `docs/deploy/checklists/render-retail-api-env.md`
