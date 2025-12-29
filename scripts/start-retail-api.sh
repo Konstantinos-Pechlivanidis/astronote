@@ -7,12 +7,12 @@ set -e
 # If we're in apps/retail-api directory (most reliable)
 if [ -f "package.json" ] && [ -f "src/server.js" ]; then
   echo "[Start] Running from apps/retail-api directory"
-  npm run start
+  DOTENV_CONFIG_PATH=../../.env node -r dotenv/config src/server.js
 # If we're in the root directory (monorepo root)
 elif [ -f "package.json" ] && [ -d "apps/retail-api" ]; then
   echo "[Start] Running from monorepo root, using direct path"
   cd apps/retail-api
-  npm run start
+  DOTENV_CONFIG_PATH=../../.env node -r dotenv/config src/server.js
 # If we're in a different location, try to find the workspace
 else
   echo "[Start] Attempting to find workspace..."
