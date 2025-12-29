@@ -5,6 +5,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "build": "prisma generate",
     "prisma:init": "prisma init --datasource-provider postgresql",
     "prisma:migrate": "node scripts/migrate.js",
     "prisma:migrate:dev": "prisma migrate dev",
