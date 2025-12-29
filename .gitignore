@@ -46,6 +46,18 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
+.env.local
+apps/**/.env
+apps/**/.env.local
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

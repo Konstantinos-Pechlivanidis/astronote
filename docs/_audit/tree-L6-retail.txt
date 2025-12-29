@@ -1,0 +1,64 @@
+apps/retail-api/
+├── apps/
+│   ├── api/
+│   │   ├── node_modules/
+│   │   ├── package.json
+│   │   ├── scripts/
+│   │   │   ├── [20+ script files]
+│   │   └── src/
+│   │       ├── config/
+│   │       │   └── env.js
+│   │       ├── docs/
+│   │       │   └── openapi.yaml
+│   │       ├── lib/
+│   │       │   ├── [20+ lib files]
+│   │       ├── middleware/
+│   │       │   ├── idempotency.js
+│   │       │   ├── requestId.js
+│   │       │   └── requireAuth.js
+│   │       ├── modules/
+│   │       │   ├── auth.service.js
+│   │       │   └── templates/
+│   │       ├── queues/
+│   │       │   ├── [6 queue files]
+│   │       ├── routes/
+│   │       │   ├── [19 route files]
+│   │       ├── server.js
+│   │       └── services/
+│   │           └── [32 service files]
+│   ├── web/
+│   │   ├── dist/
+│   │   │   └── assets/
+│   │   ├── node_modules/
+│   │   ├── package.json
+│   │   └── src/
+│   │       ├── api/
+│   │       ├── app/
+│   │       ├── components/
+│   │       ├── features/
+│   │       ├── lib/
+│   │       └── test/
+│   └── worker/
+│       ├── package.json
+│       └── src/
+│           ├── birthday.worker.js
+│           ├── contactImport.worker.js
+│           ├── deliveryStatusPoller.worker.js
+│           ├── piiRetention.worker.js
+│           ├── scheduler.worker.js
+│           ├── sms.worker.js
+│           ├── statusRefresh.worker.js
+│           └── watchdog.worker.js
+├── docs/
+├── node_modules/
+├── package-lock.json
+├── package.json
+├── prisma/
+│   ├── migrations/
+│   │   └── [13 migration files]
+│   ├── schema.prisma
+│   └── seed.js
+├── scripts/
+│   └── [30+ script files]
+└── tests/
+

@@ -1,0 +1,53 @@
+apps/shopify-api/
+├── config/
+│   ├── development.js
+│   ├── env-validation.js
+│   ├── loadEnv.js
+│   ├── production.js
+│   ├── redis.js
+│   └── security.js
+├── controllers/
+│   └── [22 controller files]
+├── docs/
+│   ├── dashboard-reports-shape.md
+│   ├── phase3-implementation-summary.md
+│   ├── phase4-completion-summary.md
+│   ├── phase4-implementation-summary.md
+│   ├── runbooks/
+│   ├── segments.md
+│   └── web-backend-contract.md
+├── middlewares/
+│   └── [9 middleware files]
+├── node_modules/
+├── package-lock.json
+├── package.json
+├── prisma/
+│   ├── migrations/
+│   │   └── [12 migration files]
+│   └── schema.prisma
+├── queue/
+│   ├── database-queue.js
+│   ├── index.js
+│   ├── jobs/
+│   │   └── [6 job files]
+│   └── worker.js
+├── routes/
+│   └── [26 route files]
+├── schemas/
+│   └── [6 schema files]
+├── scripts/
+│   └── [7 script files]
+├── services/
+│   └── [39 service files]
+├── tests/
+│   ├── fixtures/
+│   ├── integration/
+│   └── unit/
+├── utils/
+│   └── [14 utility files]
+├── workers/
+│   └── event-poller.js
+├── app.js
+├── env.example
+└── index.js
+

@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+**/dist/
+**/build/
+
+# Coverage
+coverage/
+**/coverage/
+
+# Logs
+logs/
+**/logs/
+*.log
+
+# Cache
+.turbo/
+.cache/
+**/.cache/
+
+# Prisma generated
+**/prisma/migrations/
+**/prisma/migrations/**/*.sql
+
+# Package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Generated files
+*.min.js
+*.min.css
+
+# Environment
+.env
+.env.local
+**/.env
+**/.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+

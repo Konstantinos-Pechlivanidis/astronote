@@ -1,0 +1,45 @@
+Final Repository Structure (tree -L 4 equivalent)
+==================================================
+
+apps/
+├── astronote-shopify-extension/
+├── retail-api/
+│   ├── docs/
+│   ├── prisma/
+│   ├── scripts/
+│   ├── src/                    ← MOVED from apps/retail-api/apps/api/src
+│   │   ├── config/
+│   │   ├── docs/
+│   │   ├── lib/
+│   │   ├── middleware/
+│   │   ├── modules/
+│   │   ├── queues/
+│   │   ├── routes/
+│   │   ├── server.js
+│   │   └── services/
+│   └── tests/
+├── retail-worker/              ← MOVED from apps/retail-api/apps/worker
+│   ├── package.json
+│   └── src/
+│       ├── birthday.worker.js
+│       ├── contactImport.worker.js
+│       ├── deliveryStatusPoller.worker.js
+│       ├── piiRetention.worker.js
+│       ├── scheduler.worker.js
+│       ├── sms.worker.js
+│       ├── statusRefresh.worker.js
+│       └── watchdog.worker.js
+├── retail-web-legacy/          ← MOVED from apps/retail-api/apps/web
+│   ├── package.json
+│   ├── src/
+│   └── ...
+├── shopify-api/
+└── web/
+
+Key Changes:
+- apps/retail-api/src/ exists (moved from apps/retail-api/apps/api/src)
+- apps/retail-api/scripts/ merged (from apps/retail-api/apps/api/scripts)
+- apps/retail-worker/ exists (moved from apps/retail-api/apps/worker)
+- apps/retail-web-legacy/ exists (moved from apps/retail-api/apps/web)
+- apps/retail-api/apps/ removed (empty after moves)
+

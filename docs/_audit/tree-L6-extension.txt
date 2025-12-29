@@ -1,0 +1,25 @@
+apps/astronote-shopify-extension/
+├── app/
+│   ├── entry.client.tsx
+│   ├── entry.server.tsx
+│   ├── root.tsx
+│   ├── routes/
+│   ├── shopify.server.ts
+│   └── utils/
+├── checkout-sms-opt-in.disabled/
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── shopify.ui.extension.toml
+│   └── src/
+├── extensions/
+│   └── sms-opt-in-banner/
+│       └── [7 extension files]
+├── node_modules/
+├── package-lock.json
+├── package.json
+├── remix.config.js
+├── remix.env.d.ts
+├── shopify.app.toml
+├── tsconfig.json
+└── vite.config.ts
+

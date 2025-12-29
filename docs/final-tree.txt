@@ -1,0 +1,246 @@
+astronote-shopify-backend/
+├── apps/
+│   ├── retail-api/
+│   │   ├── .eslintrc.cjs
+│   │   └── package.json
+│   ├── shopify-api/
+│   │   ├── .eslintrc.cjs
+│   │   ├── app.js
+│   │   ├── index.js
+│   │   ├── package.json
+│   │   ├── config/
+│   │   │   ├── development.js
+│   │   │   ├── env-validation.js
+│   │   │   ├── production.js
+│   │   │   ├── redis.js
+│   │   │   └── security.js
+│   │   ├── controllers/
+│   │   │   ├── admin-templates.js
+│   │   │   ├── audiences.js
+│   │   │   ├── automation-webhooks.js
+│   │   │   ├── automations.js
+│   │   │   ├── billing.js
+│   │   │   ├── campaigns.js
+│   │   │   ├── contact.js
+│   │   │   ├── contacts-enhanced.js
+│   │   │   ├── dashboard.js
+│   │   │   ├── discounts.js
+│   │   │   ├── mitto-status.js
+│   │   │   ├── mitto.js
+│   │   │   ├── opt-in.js
+│   │   │   ├── reports.js
+│   │   │   ├── segments.js
+│   │   │   ├── settings.js
+│   │   │   ├── shortLinks.js
+│   │   │   ├── stripe-webhooks.js
+│   │   │   ├── subscriptions.js
+│   │   │   ├── templates.js
+│   │   │   └── tracking.js
+│   │   ├── middlewares/
+│   │   │   ├── cache.js
+│   │   │   ├── database-rate-limit.js
+│   │   │   ├── rateLimits.js
+│   │   │   ├── security.js
+│   │   │   ├── shopify-webhook.js
+│   │   │   ├── store-resolution.js
+│   │   │   ├── validate.js
+│   │   │   ├── validation.js
+│   │   │   └── versioning.js
+│   │   ├── prisma/
+│   │   │   ├── schema.prisma
+│   │   │   └── migrations/
+│   │   ├── queue/
+│   │   │   ├── index.js
+│   │   │   ├── database-queue.js
+│   │   │   ├── worker.js
+│   │   │   └── jobs/
+│   │   │       ├── automationTriggers.js
+│   │   │       ├── bulkSms.js
+│   │   │       ├── campaignSend.js
+│   │   │       ├── deliveryStatusUpdate.js
+│   │   │       ├── mittoSend.js
+│   │   │       └── reconciliation.js
+│   │   ├── routes/
+│   │   │   ├── admin-templates.js
+│   │   │   ├── audiences.js
+│   │   │   ├── auth.js
+│   │   │   ├── automation-webhooks.js
+│   │   │   ├── automations.js
+│   │   │   ├── billing.js
+│   │   │   ├── campaigns.js
+│   │   │   ├── contacts-enhanced.js
+│   │   │   ├── core.js
+│   │   │   ├── dashboard.js
+│   │   │   ├── discounts.js
+│   │   │   ├── docs.js
+│   │   │   ├── metrics.js
+│   │   │   ├── mitto-status.js
+│   │   │   ├── mitto-webhooks.js
+│   │   │   ├── mitto.js
+│   │   │   ├── opt-in.js
+│   │   │   ├── reports.js
+│   │   │   ├── settings.js
+│   │   │   ├── shopify.js
+│   │   │   ├── shortLinks.js
+│   │   │   ├── stripe-webhooks.js
+│   │   │   ├── subscriptions.js
+│   │   │   ├── templates.js
+│   │   │   ├── tracking.js
+│   │   │   └── unsubscribe.js
+│   │   ├── schemas/
+│   │   │   ├── automations.schema.js
+│   │   │   ├── billing.schema.js
+│   │   │   ├── campaigns.schema.js
+│   │   │   ├── contacts.schema.js
+│   │   │   ├── opt-in.schema.js
+│   │   │   └── subscription.schema.js
+│   │   ├── services/
+│   │   │   ├── auth.js
+│   │   │   ├── automation-scheduler.js
+│   │   │   ├── automation-variables.js
+│   │   │   ├── automations.js
+│   │   │   ├── billing.js
+│   │   │   ├── campaignAggregates.js
+│   │   │   ├── campaigns.js
+│   │   │   ├── contacts.js
+│   │   │   ├── credit-validation.js
+│   │   │   ├── dashboard.js
+│   │   │   ├── delivery-status.js
+│   │   │   ├── event-automation-mapper.js
+│   │   │   ├── event-deduplication.js
+│   │   │   ├── idempotency.js
+│   │   │   ├── mitto-status.js
+│   │   │   ├── mitto.js
+│   │   │   ├── post-purchase-series.js
+│   │   │   ├── prisma.js
+│   │   │   ├── product-recommendations.js
+│   │   │   ├── rateLimiter.js
+│   │   │   ├── reports-cache.js
+│   │   │   ├── reports.js
+│   │   │   ├── scheduler.js
+│   │   │   ├── segments.js
+│   │   │   ├── settings.js
+│   │   │   ├── shopify-events.js
+│   │   │   ├── shopify-graphql.js
+│   │   │   ├── shopify.js
+│   │   │   ├── shortLinks.js
+│   │   │   ├── smsBulk.js
+│   │   │   ├── stripe.js
+│   │   │   ├── subscription.js
+│   │   │   ├── templates.js
+│   │   │   ├── tracking.js
+│   │   │   ├── wallet.js
+│   │   │   ├── webhook-replay.js
+│   │   │   ├── webhook-registration.js
+│   │   │   ├── welcome-series.js
+│   │   │   └── win-back.js
+│   │   ├── utils/
+│   │   │   ├── cache.js
+│   │   │   ├── enumValidation.js
+│   │   │   ├── errors.js
+│   │   │   ├── frontendUrl.js
+│   │   │   ├── logger.js
+│   │   │   ├── metrics.js
+│   │   │   ├── personalization.js
+│   │   │   ├── pii-redaction.js
+│   │   │   ├── prismaEnums.js
+│   │   │   ├── response.js
+│   │   │   ├── store-scoping.js
+│   │   │   ├── unsubscribe.js
+│   │   │   └── urlShortener.js
+│   │   ├── tests/
+│   │   │   ├── integration/
+│   │   │   └── unit/
+│   │   └── docs/
+│   │       ├── runbooks/
+│   │       └── *.md
+│   └── web/
+│       ├── .eslintrc.cjs
+│       ├── .env.example
+│       ├── index.html
+│       ├── jsconfig.json
+│       ├── package.json
+│       ├── postcss.config.js
+│       ├── tailwind.config.js
+│       ├── vite.config.js
+│       └── src/
+│           ├── api/
+│           │   └── axiosClient.js
+│           ├── app/
+│           │   ├── providers.jsx
+│           │   └── router.jsx
+│           ├── components/
+│           │   ├── common/
+│           │   │   ├── ConfirmDialog.jsx
+│           │   │   ├── DataTable.jsx
+│           │   │   ├── EmptyState.jsx
+│           │   │   ├── ErrorState.jsx
+│           │   │   ├── LoadingBlock.jsx
+│           │   │   └── PageHeader.jsx
+│           │   ├── contacts/
+│           │   │   └── ImportContactsDialog.jsx
+│           │   ├── dashboard/
+│           │   │   └── ReportsWidgets.jsx
+│           │   ├── layout/
+│           │   │   └── AppShell.jsx
+│           │   └── ui/
+│           │       ├── badge.jsx
+│           │       ├── button.jsx
+│           │       ├── card.jsx
+│           │       ├── dialog.jsx
+│           │       ├── dropdown-menu.jsx
+│           │       ├── input.jsx
+│           │       ├── table.jsx
+│           │       ├── tabs.jsx
+│           │       ├── textarea.jsx
+│           │       └── toast.jsx
+│           ├── hooks/
+│           │   ├── useAutomations.js
+│           │   ├── useCampaigns.js
+│           │   ├── useContacts.js
+│           │   ├── useDashboard.js
+│           │   ├── useSegments.js
+│           │   ├── useSettings.js
+│           │   └── useTemplates.js
+│           ├── pages/
+│           │   ├── AutomationsPage.jsx
+│           │   ├── CampaignsPage.jsx
+│           │   ├── ContactsPage.jsx
+│           │   ├── CreateCampaignPage.jsx
+│           │   ├── DashboardPage.jsx
+│           │   ├── ListsPage.jsx
+│           │   ├── SettingsPage.jsx
+│           │   └── TemplatesPage.jsx
+│           ├── store/
+│           │   ├── authSlice.js
+│           │   ├── store.js
+│           │   └── uiSlice.js
+│           ├── utils/
+│           │   ├── formatters.js
+│           │   └── placeholder.js
+│           ├── App.jsx
+│           ├── index.css
+│           ├── lib/
+│           │   └── utils.js
+│           └── main.jsx
+├── docs/
+│   ├── api/
+│   │   └── endpoints.md
+│   ├── deployment/
+│   │   └── render.md
+│   ├── backend-gaps.md
+│   ├── final-tree.txt
+│   ├── frontend-endpoints-map.md
+│   └── phase5-frontend-implementation-summary.md
+├── packages/
+│   └── shared/ (placeholder)
+├── scripts/
+│   └── smoke-test.js
+├── .editorconfig
+├── .eslintrc.cjs
+├── .gitignore
+├── .prettierignore
+├── .prettierrc
+├── package.json
+└── README.md
+

@@ -1,0 +1,27 @@
+{
+  "name": "@astronote/retail-worker",
+  "version": "1.0.0",
+  "main": "src/sms.worker.js",
+  "scripts": {
+    "build": "echo 'No build step required - pure JavaScript'",
+    "start": "node src/sms.worker.js",
+    "dev": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/sms.worker.js",
+    "worker:sms": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/sms.worker.js",
+    "worker:scheduler": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/scheduler.worker.js",
+    "worker:contactImport": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/contactImport.worker.js",
+    "worker:birthday": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/birthday.worker.js",
+    "worker:statusRefresh": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/statusRefresh.worker.js",
+    "worker:piiRetention": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/piiRetention.worker.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pino": "^9.9.5",
+    "pino-pretty": "^13.1.1",
+    "bullmq": "^5.58.5",
+    "ioredis": "^5.7.0"
+  }
+}

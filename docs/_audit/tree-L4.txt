@@ -1,0 +1,64 @@
+astronote-shopify-backend/
+├── apps/
+│   ├── astronote-shopify-extension/
+│   │   ├── app/
+│   │   ├── checkout-sms-opt-in.disabled/
+│   │   ├── extensions/
+│   │   ├── node_modules/
+│   │   ├── package-lock.json
+│   │   ├── package.json
+│   │   └── [config files]
+│   ├── retail-api/
+│   │   ├── apps/
+│   │   │   ├── api/
+│   │   │   │   ├── node_modules/
+│   │   │   │   ├── package.json
+│   │   │   │   ├── scripts/
+│   │   │   │   └── src/
+│   │   │   ├── web/
+│   │   │   │   ├── dist/
+│   │   │   │   ├── node_modules/
+│   │   │   │   ├── package.json
+│   │   │   │   └── src/
+│   │   │   └── worker/
+│   │   │       ├── package.json
+│   │   │       └── src/
+│   │   ├── docs/
+│   │   ├── node_modules/
+│   │   ├── package-lock.json
+│   │   ├── package.json
+│   │   ├── prisma/
+│   │   ├── scripts/
+│   │   └── tests/
+│   ├── shopify-api/
+│   │   ├── config/
+│   │   ├── controllers/
+│   │   ├── docs/
+│   │   ├── middlewares/
+│   │   ├── node_modules/
+│   │   ├── package-lock.json
+│   │   ├── package.json
+│   │   ├── prisma/
+│   │   ├── queue/
+│   │   ├── routes/
+│   │   ├── schemas/
+│   │   ├── scripts/
+│   │   ├── services/
+│   │   ├── tests/
+│   │   ├── utils/
+│   │   └── workers/
+│   └── web/
+│       ├── dist/
+│       ├── node_modules/
+│       ├── package.json
+│       └── src/
+├── docs/
+│   ├── _audit/
+│   └── [other docs]
+├── node_modules/
+├── package-lock.json
+├── package.json
+├── packages/
+│   └── shared/
+└── scripts/
+
