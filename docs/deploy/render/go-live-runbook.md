@@ -48,11 +48,11 @@ Step-by-step guide for deploying all services to Render for the first time.
    - Environment: `Node`
    - Region: Choose closest to users
    - Branch: `main`
-   - Root Directory: `apps/retail-api`
+   - Root Directory: **(EMPTY - leave blank)**
 
 2. **Build & Start Commands:**
-   - Build: `npm ci`
-   - Start: `npm run start`
+   - Build: `git submodule sync --recursive && git submodule update --init --recursive && npm ci && npm -w @astronote/retail-api run build`
+   - Start: `npm -w @astronote/retail-api run start`
 
 3. **Set Environment Variables:**
    - See `docs/deploy/checklists/render-retail-api-env.md`
@@ -143,11 +143,11 @@ Step-by-step guide for deploying all services to Render for the first time.
    - Environment: `Node`
    - Region: Same as shopify-api
    - Branch: `main`
-   - Root Directory: `apps/shopify-worker`
+   - Root Directory: **(EMPTY - leave blank)**
 
 2. **Build & Start Commands:**
    - Build: `npm ci` (no build step needed)
-   - Start: `npm run start`
+   - Start: `npm -w @astronote/shopify-worker run start`
 
 3. **Set Environment Variables:**
    - Use **same env vars as shopify-api**:
@@ -173,11 +173,11 @@ Step-by-step guide for deploying all services to Render for the first time.
    - Environment: `Node`
    - Region: Choose closest to users
    - Branch: `main`
-   - Root Directory: `apps/web`
+   - Root Directory: **(EMPTY - leave blank)**
 
 2. **Build & Start Commands:**
-   - Build: `npm ci && npm run build`
-   - Start: `npm run start`
+   - Build: `npm ci && npm -w @astronote/web run build`
+   - Start: `npm -w @astronote/web run start`
 
 3. **Set Environment Variables:**
    - See `docs/deploy/checklists/render-web-env.md`
