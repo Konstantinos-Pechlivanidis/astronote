@@ -22,14 +22,17 @@ The `npm -w @astronote/retail-api` command is running before `npm ci` has instal
 
 **Build Command:**
 ```bash
-git submodule sync --recursive \
-&& git submodule update --init --recursive \
+(git submodule sync --recursive || true) \
+&& (git submodule update --init --recursive || true) \
 && npm ci \
 && npm -w @astronote/retail-api run build
 ```
 - Syncs and initializes git submodules (retail-api is a submodule)
+- `|| true` ensures build continues even if submodules fail (non-critical)
 - Installs all workspace dependencies
 - Builds retail-api (runs prisma generate)
+
+**Note:** If submodules are not configured correctly, the build will continue without them. This is safe if `apps/retail-api` is not actually a submodule or if it's already present in the repository.
 
 **Start Command:**
 ```bash
