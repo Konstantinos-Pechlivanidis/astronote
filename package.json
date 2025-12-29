@@ -2,7 +2,21 @@
   "name": "astronote-monorepo",
   "version": "1.0.0",
   "private": true,
-  "description": "Astronote Monorepo - SMS Marketing Platform",
+  "description": "Enterprise-grade SMS Marketing Platform for Shopify and Retail Businesses",
+  "keywords": [
+    "sms",
+    "marketing",
+    "shopify",
+    "retail",
+    "automation",
+    "campaigns",
+    "monorepo"
+  ],
+  "author": "Astronote Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Konstantinos-Pechlivanidis/astronote.git"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
