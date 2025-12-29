@@ -1,10 +1,15 @@
 // apps/worker/src/sms.worker.js
-require('dotenv').config();
+// Only load dotenv if running as standalone process
+if (require.main === module) {
+  require('dotenv').config();
+}
 
 const pino = require('pino');
 const logger = pino({ name: 'sms-worker' });
 
-if (process.env.QUEUE_DISABLED === '1') {
+// Only exit if running as standalone process
+// When imported for embedded mode, QUEUE_DISABLED is handled by the API
+if (require.main === module && process.env.QUEUE_DISABLED === '1') {
   logger.warn('Disabled via QUEUE_DISABLED=1');
   process.exit(0);
 }
@@ -36,19 +41,95 @@ const { getUnsubscribeBaseUrl, getOfferBaseUrl } = require('../../retail-api/src
 const UNSUBSCRIBE_BASE_URL = getUnsubscribeBaseUrl();
 const OFFER_BASE_URL = getOfferBaseUrl();
 
-const connection = getRedisClient();
+// Only create worker if running as standalone process
+// When imported for embedded mode, worker is created by start-workers.js
+let worker = null;
+let connection = null;
 
-if (!connection) {
-  logger.warn('Redis client could not be created, SMS worker disabled');
-  process.exit(0);
+if (require.main === module) {
+  // Running as standalone process
+  connection = getRedisClient();
+
+  if (!connection) {
+    logger.warn('Redis client could not be created, SMS worker disabled');
+    process.exit(0);
+  }
+
+  // With lazyConnect: true, Redis connects on first command
+  // BullMQ will handle the connection, so we don't need to wait for 'ready' here
+  // Just ensure we have a client instance
+  logger.info('Starting SMS worker (Redis will connect on first use)...');
+
+  const concurrency = Number(process.env.WORKER_CONCURRENCY || 5);
+
+  worker = new Worker(
+    'smsQueue',
+    async (job) => {
+      // Campaigns always use bulk SMS (sendBulkSMS job type)
+      // Individual jobs (sendSMS) are only for automations and test messages
+      if (job.name === 'sendBulkSMS') {
+        // Process campaign batch job
+        const { campaignId, ownerId, messageIds } = job.data;
+        
+        if (!campaignId || !ownerId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+          logger.error({ jobId: job.id, data: job.data }, 'Invalid batch job data');
+          return;
+        }
+
+        await processBatchJob(campaignId, ownerId, messageIds, job);
+      } else if (job.name === 'sendSMS') {
+        // Process individual job (for automations and test messages only)
+      const { messageId } = job.data;
+        await processIndividualJob(messageId, job);
+      } else {
+        logger.warn({ jobId: job.id, jobName: job.name }, 'Unknown job type, skipping');
+      }
+    },
+    { connection, concurrency }
+  );
+
+  // Only attach event handlers if running as standalone process
+  // When imported for embedded mode, event handling is managed by start-workers.js
+  worker.on('ready', () => {
+    logger.info('Ready and listening for jobs');
+  });
+
+  worker.on('active', (job) => {
+    if (job.name === 'sendBulkSMS') {
+      logger.info({ jobId: job.id, campaignId: job.data.campaignId, messageCount: job.data.messageIds?.length }, `Processing ${job.name}`);
+    } else {
+    logger.info({ jobId: job.id, messageId: job.data.messageId }, `Processing ${job.name}`);
+    }
+  });
+
+  worker.on('completed', (job) => {
+    logger.info({ jobId: job.id }, `Completed ${job.name}`);
+  });
+
+  worker.on('failed', (job, err) => {
+    logger.error({ jobId: job?.id, err: err?.message }, `Failed ${job?.name}`);
+  });
+
+  worker.on('error', (err) => {
+    logger.error({ err: err.message }, 'Worker error');
+  });
+
+  // Handle graceful shutdown (only if running as standalone process)
+  // When imported for embedded mode, shutdown is handled by the API process
+  process.on('SIGTERM', async () => {
+    logger.info('SIGTERM received, closing worker...');
+    await worker.close();
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+
+  process.on('SIGINT', async () => {
+    logger.info('SIGINT received, closing worker...');
+    await worker.close();
+    await prisma.$disconnect();
+    process.exit(0);
+  });
 }
-
-// With lazyConnect: true, Redis connects on first command
-// BullMQ will handle the connection, so we don't need to wait for 'ready' here
-// Just ensure we have a client instance
-logger.info('Starting SMS worker (Redis will connect on first use)...');
-
-const concurrency = Number(process.env.WORKER_CONCURRENCY || 5);
 
 function isRetryable(err) {
   // Check for rate limit errors from our rate limiter (Phase 2.1)
@@ -63,32 +144,6 @@ function isRetryable(err) {
   if (status === 429) return true; // rate limited (HTTP 429)
   return false;                    // 4xx hard fail
 }
-
-const worker = new Worker(
-  'smsQueue',
-  async (job) => {
-    // Campaigns always use bulk SMS (sendBulkSMS job type)
-    // Individual jobs (sendSMS) are only for automations and test messages
-    if (job.name === 'sendBulkSMS') {
-      // Process campaign batch job
-      const { campaignId, ownerId, messageIds } = job.data;
-      
-      if (!campaignId || !ownerId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
-        logger.error({ jobId: job.id, data: job.data }, 'Invalid batch job data');
-        return;
-      }
-
-      await processBatchJob(campaignId, ownerId, messageIds, job);
-    } else if (job.name === 'sendSMS') {
-      // Process individual job (for automations and test messages only)
-    const { messageId } = job.data;
-      await processIndividualJob(messageId, job);
-    } else {
-      logger.warn({ jobId: job.id, jobName: job.name }, 'Unknown job type, skipping');
-    }
-  },
-  { connection, concurrency }
-);
 
 /**
  * Process individual message job (legacy)
@@ -732,41 +787,9 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
   }
 }
 
-worker.on('ready', () => {
-  logger.info('Ready and listening for jobs');
-});
-
-worker.on('active', (job) => {
-  if (job.name === 'sendBulkSMS') {
-    logger.info({ jobId: job.id, campaignId: job.data.campaignId, messageCount: job.data.messageIds?.length }, `Processing ${job.name}`);
-  } else {
-  logger.info({ jobId: job.id, messageId: job.data.messageId }, `Processing ${job.name}`);
-  }
-});
-
-worker.on('completed', (job) => {
-  logger.info({ jobId: job.id }, `Completed ${job.name}`);
-});
-
-worker.on('failed', (job, err) => {
-  logger.error({ jobId: job?.id, err: err?.message }, `Failed ${job?.name}`);
-});
-
-worker.on('error', (err) => {
-  logger.error({ err: err.message }, 'Worker error');
-});
-
-// Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, closing worker...');
-  await worker.close();
-  await prisma.$disconnect();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, closing worker...');
-  await worker.close();
-  await prisma.$disconnect();
-  process.exit(0);
-});
+// Export processing functions for embedded mode
+// These are used by apps/retail-api/src/lib/start-workers.js when WORKER_MODE=embedded
+module.exports = {
+  processBatchJob,
+  processIndividualJob,
+};

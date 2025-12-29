@@ -30,6 +30,7 @@ class MockWorker {
     this.name = name;
     this.processor = processor;
     this.options = options;
+    this.isMock = true; // Flag to identify mock workers
   }
   async close() {
     return Promise.resolve();

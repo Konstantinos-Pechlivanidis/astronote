@@ -6,29 +6,9 @@ import app from './app.js';
 import { logger } from './utils/logger.js';
 import { validateAndLogEnvironment } from './config/env-validation.js';
 import { closeRedisConnections } from './config/redis.js';
-
-// START_WORKER toggle: defaults to true (backward compatible for dev)
-// Set START_WORKER=false or START_WORKER=0 in production to disable workers
-const startWorker =
-  process.env.START_WORKER !== 'false' && process.env.START_WORKER !== '0';
-
-// Conditionally start workers (only if START_WORKER is enabled)
-// Using top-level await (ESM module with "type": "module")
-if (startWorker) {
-  // Dynamic import to avoid loading worker code if disabled
-  await import('./queue/worker.js'); // starts BullMQ worker
-  logger.info('Workers enabled (START_WORKER=true)');
-} else {
-  logger.info('Workers disabled (START_WORKER=false) - API mode only');
-}
-
-import {
-  startPeriodicStatusUpdates,
-  startScheduledCampaignsProcessor,
-  startBirthdayAutomationScheduler,
-  startReconciliationScheduler,
-} from './services/scheduler.js';
-import { startEventPoller } from './workers/event-poller.js';
+import { getWorkerMode, shouldStartWorkers } from './config/worker-mode.js';
+import { startWorkers, stopWorkers } from './queue/start-workers.js';
+import prisma from './services/prisma.js';
 
 // Validate environment variables on startup
 try {
@@ -40,20 +20,71 @@ try {
   process.exit(1);
 }
 
+// Validate worker mode early (fail fast)
+let workerMode;
+try {
+  workerMode = await getWorkerMode();
+  logger.info('Worker mode resolved', { mode: workerMode });
+} catch (error) {
+  logger.error('Worker mode validation failed', {
+    error: error.message,
+  });
+  process.exit(1);
+}
+
+// Import schedulers (they queue jobs, workers process them)
+import {
+  startPeriodicStatusUpdates,
+  startScheduledCampaignsProcessor,
+  startBirthdayAutomationScheduler,
+  startReconciliationScheduler,
+} from './services/scheduler.js';
+import { startEventPoller } from './workers/event-poller.js';
+
 const PORT = process.env.PORT || 8080;
 
-const server = app.listen(PORT, () => {
+// ========= BOOT SEQUENCE =========
+// A) Load env (done)
+// B) Validate env (done)
+// C) Connect Prisma + ping (lazy, on first query)
+// D) Connect Redis + ping (lazy, on first command)
+// E) Start HTTP server
+// F) Start workers (if WORKER_MODE=embedded)
+
+const server = app.listen(PORT, async () => {
   logger.info('Server started', {
     port: PORT,
     environment: process.env.NODE_ENV || 'development',
     nodeVersion: process.version,
-    workersEnabled: startWorker,
-    mode: startWorker ? 'API + Workers' : 'API only (workers disabled)',
+    workerMode,
+    mode: workerMode === 'embedded' ? 'API + Workers (embedded)' : workerMode === 'separate' ? 'API only (workers separate)' : 'API only (workers off)',
   });
 
-  // Only start schedulers/pollers if workers are enabled
-  // (These are lightweight schedulers that queue jobs, not the workers themselves)
-  if (startWorker) {
+  // F) Start workers (if WORKER_MODE=embedded)
+  if (workerMode === 'embedded') {
+    try {
+      await startWorkers();
+      logger.info('Workers started successfully (embedded mode)');
+    } catch (error) {
+      logger.error('Failed to start workers', {
+        error: error.message,
+        stack: error.stack,
+      });
+      // In production, fail fast if workers fail to start
+      if (process.env.NODE_ENV === 'production') {
+        logger.error('CRITICAL: Workers failed to start in production. Exiting.');
+        process.exit(1);
+      } else {
+        logger.warn('Workers failed to start (non-production, continuing without workers)');
+      }
+    }
+  } else {
+    logger.info(`Workers not started (WORKER_MODE=${workerMode})`);
+  }
+
+  // Start schedulers/pollers (they queue jobs, workers process them)
+  // Only start if workers are enabled (embedded) or separate (workers will process)
+  if (workerMode === 'embedded' || workerMode === 'separate') {
     // Start periodic delivery status updates
     startPeriodicStatusUpdates();
 
@@ -68,14 +99,26 @@ const server = app.listen(PORT, () => {
 
     // Start reconciliation scheduler (runs every 10 minutes)
     startReconciliationScheduler();
+    
+    logger.info('Schedulers and pollers started');
   } else {
-    logger.info('Schedulers and pollers disabled (START_WORKER=false)');
+    logger.info('Schedulers and pollers disabled (WORKER_MODE=off)');
   }
 });
 
 // Graceful shutdown handler
 const gracefulShutdown = async signal => {
   logger.info(`Received ${signal}, starting graceful shutdown...`);
+
+  // Stop workers first (if embedded mode)
+  if (workerMode === 'embedded') {
+    try {
+      await stopWorkers();
+      logger.info('Workers stopped');
+    } catch (error) {
+      logger.error('Error stopping workers', { error: error.message });
+    }
+  }
 
   // Stop accepting new requests
   server.close(async () => {
@@ -86,7 +129,6 @@ const gracefulShutdown = async signal => {
       await closeRedisConnections();
 
       // Close Prisma connection
-      const prisma = (await import('./services/prisma.js')).default;
       await prisma.$disconnect();
       logger.info('Database connection closed');
 

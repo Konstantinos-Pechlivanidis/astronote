@@ -11,7 +11,7 @@ import { createShortLink } from '../services/shortLinks.js';
  * 4. Fallback to original URL if shortening fails
  */
 
-const SHORTENER_TYPE = process.env.URL_SHORTENER_TYPE || 'backend'; // 'backend', 'custom', 'bitly', 'tinyurl', 'none'
+const SHORTENER_TYPE = process.env.URL_SHORTENER_TYPE || 'custom'; // 'custom', 'bitly', 'tinyurl', 'none' (backend is deprecated, use 'custom')
 const SHORTENER_BASE_URL = process.env.URL_SHORTENER_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-shopify-frontend.onrender.com';
 const BITLY_API_TOKEN = process.env.BITLY_API_TOKEN;
 const TINYURL_API_KEY = process.env.TINYURL_API_KEY;
@@ -164,8 +164,15 @@ export async function shortenUrl(originalUrl, options = {}) {
 
   try {
     switch (SHORTENER_TYPE) {
-    case 'backend':
-      return await shortenBackend(originalUrl, options);
+    case 'custom':
+      // 'custom' uses backend shortener (database-backed) for production
+      // Fallback to custom encoding if backend fails
+      try {
+        return await shortenBackend(originalUrl, options);
+      } catch (err) {
+        logger.warn({ err: err.message }, 'Backend shortener failed, using custom encoding');
+        return shortenCustom(originalUrl);
+      }
     case 'bitly':
       return await shortenBitly(originalUrl);
     case 'tinyurl':

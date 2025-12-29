@@ -16,6 +16,65 @@ r.get('/', (req, res) => {
   res.json({ ok: true, message: 'Astronote API', time: Date.now() });
 });
 r.get('/health', (req, res) => res.json({ ok: true, t: Date.now() }));
+r.get('/healthz', (req, res) => res.json({ status: 'ok' }));
+r.get('/readiness', async (req, res) => {
+  const checks = {
+    database: false,
+    redis: false,
+    workers: false,
+  };
+
+  // Check database
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    checks.database = true;
+  } catch (err) {
+    return res.status(500).json({ 
+      status: 'not ready', 
+      checks,
+      message: 'Database connection failed',
+      code: 'HEALTH_CHECK_ERROR' 
+    });
+  }
+
+  // Check Redis
+  try {
+    const { queueRedis } = await import('../config/redis.js');
+    if (queueRedis) {
+      await queueRedis.ping();
+      checks.redis = true;
+    }
+  } catch (err) {
+    // Redis check failed, but continue
+  }
+
+  // Check workers (if embedded mode)
+  try {
+    const { getWorkerMode } = await import('../config/worker-mode.js');
+    const { areWorkersStarted } = await import('../queue/start-workers.js');
+    const mode = await getWorkerMode();
+    if (mode === 'embedded') {
+      checks.workers = areWorkersStarted();
+    } else {
+      checks.workers = true; // Not required in separate/off mode
+    }
+  } catch (err) {
+    // Worker check failed, but continue
+  }
+
+  const allReady = checks.database && checks.redis && checks.workers;
+  
+  if (allReady) {
+    res.json({ status: 'ready', checks });
+  } else {
+    res.status(500).json({ 
+      status: 'not ready', 
+      checks,
+      message: 'One or more checks failed',
+      code: 'READINESS_CHECK_FAILED' 
+    });
+  }
+});
 r.get('/health/config', (req, res) =>
   res.json({
     ok: true,
@@ -71,6 +130,32 @@ r.get('/health/full', async (req, res) => {
     out.checks.redis = { status: 'unhealthy', error: String(e.message) };
     out.ok = false;
     metrics.recordError(e, { component: 'redis' });
+  }
+
+  // Workers health (if embedded mode)
+  try {
+    const { getWorkerMode } = await import('../config/worker-mode.js');
+    const { areWorkersStarted } = await import('../queue/start-workers.js');
+    const mode = await getWorkerMode();
+    if (mode === 'embedded') {
+      const workersStarted = areWorkersStarted();
+      out.checks.workers = {
+        status: workersStarted ? 'healthy' : 'unhealthy',
+        mode: 'embedded',
+        started: workersStarted,
+      };
+      if (!workersStarted) {
+        out.ok = false;
+      }
+    } else {
+      out.checks.workers = {
+        status: 'healthy',
+        mode,
+        note: 'Workers run in separate process or are disabled',
+      };
+    }
+  } catch (e) {
+    out.checks.workers = { status: 'unknown', error: String(e.message) };
   }
 
   // Cache health
