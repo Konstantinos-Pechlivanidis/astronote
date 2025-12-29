@@ -70,13 +70,10 @@ const server = app.listen(PORT, async () => {
         error: error.message,
         stack: error.stack,
       });
-      // In production, fail fast if workers fail to start
-      if (process.env.NODE_ENV === 'production') {
-        logger.error('CRITICAL: Workers failed to start in production. Exiting.');
-        process.exit(1);
-      } else {
-        logger.warn('Workers failed to start (non-production, continuing without workers)');
-      }
+      // In production, log error but continue - API can run without workers
+      // Workers may be running in another instance or will start on next deploy
+      logger.warn('Workers failed to start - API will continue without workers. Check logs for details.');
+      // Don't exit - allow API to serve requests even if workers don't start
     }
   } else {
     logger.info(`Workers not started (WORKER_MODE=${workerMode})`);

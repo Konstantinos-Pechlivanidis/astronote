@@ -44,11 +44,15 @@ export async function startWorkers() {
       // Acquire distributed lock to prevent double execution
       const lockAcquired = await acquireWorkerLock('shopify-api');
       if (!lockAcquired) {
-        throw new Error(
+        // In production, log warning but don't crash - allow API to start without workers
+        // This handles cases where lock is stale or another instance is starting
+        logger.warn(
           'Worker lock already held by another process. ' +
-          'This indicates workers are already running. ' +
-          'If this is intentional, ensure only one instance has WORKER_MODE=embedded.'
+          'Workers will not start in this instance. ' +
+          'If this is unexpected, check for duplicate services or stale locks in Redis.'
         );
+        // Don't throw - allow API to start without workers
+        return;
       }
 
       // Import worker module (this creates Worker instances)
