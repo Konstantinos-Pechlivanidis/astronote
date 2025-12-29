@@ -24,6 +24,7 @@
   "scripts": {
     "dev": "concurrently -n shopify-api,web -c blue,green \"npm run dev:shopify\" \"npm run dev:web\"",
     "dev:shopify": "npm -w @astronote/shopify-api run dev",
+    "dev:shopify-worker": "npm -w @astronote/shopify-worker run dev",
     "dev:retail": "npm -w @astronote/retail-api run dev",
     "dev:web": "npm -w @astronote/web run dev",
     "build": "npm -ws --if-present run build",

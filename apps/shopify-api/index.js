@@ -6,7 +6,22 @@ import app from './app.js';
 import { logger } from './utils/logger.js';
 import { validateAndLogEnvironment } from './config/env-validation.js';
 import { closeRedisConnections } from './config/redis.js';
-import './queue/worker.js'; // starts BullMQ worker
+
+// START_WORKER toggle: defaults to true (backward compatible for dev)
+// Set START_WORKER=false or START_WORKER=0 in production to disable workers
+const startWorker =
+  process.env.START_WORKER !== 'false' && process.env.START_WORKER !== '0';
+
+// Conditionally start workers (only if START_WORKER is enabled)
+// Using top-level await (ESM module with "type": "module")
+if (startWorker) {
+  // Dynamic import to avoid loading worker code if disabled
+  await import('./queue/worker.js'); // starts BullMQ worker
+  logger.info('Workers enabled (START_WORKER=true)');
+} else {
+  logger.info('Workers disabled (START_WORKER=false) - API mode only');
+}
+
 import {
   startPeriodicStatusUpdates,
   startScheduledCampaignsProcessor,
@@ -32,22 +47,30 @@ const server = app.listen(PORT, () => {
     port: PORT,
     environment: process.env.NODE_ENV || 'development',
     nodeVersion: process.version,
+    workersEnabled: startWorker,
+    mode: startWorker ? 'API + Workers' : 'API only (workers disabled)',
   });
 
-  // Start periodic delivery status updates
-  startPeriodicStatusUpdates();
+  // Only start schedulers/pollers if workers are enabled
+  // (These are lightweight schedulers that queue jobs, not the workers themselves)
+  if (startWorker) {
+    // Start periodic delivery status updates
+    startPeriodicStatusUpdates();
 
-  // Start scheduled campaigns processor
-  startScheduledCampaignsProcessor();
+    // Start scheduled campaigns processor
+    startScheduledCampaignsProcessor();
 
-  // Start event poller for automation triggers
-  startEventPoller();
+    // Start event poller for automation triggers
+    startEventPoller();
 
-  // Start birthday automation scheduler (runs daily at midnight UTC)
-  startBirthdayAutomationScheduler();
+    // Start birthday automation scheduler (runs daily at midnight UTC)
+    startBirthdayAutomationScheduler();
 
-  // Start reconciliation scheduler (runs every 10 minutes)
-  startReconciliationScheduler();
+    // Start reconciliation scheduler (runs every 10 minutes)
+    startReconciliationScheduler();
+  } else {
+    logger.info('Schedulers and pollers disabled (START_WORKER=false)');
+  }
 });
 
 // Graceful shutdown handler

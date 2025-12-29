@@ -1,7 +1,9 @@
 {
   "name": "@astronote/retail-worker",
   "version": "1.0.0",
+  "description": "Retail API Background Worker - Processes BullMQ jobs for SMS, campaigns, automations, and scheduled tasks",
   "main": "src/sms.worker.js",
+  "private": true,
   "scripts": {
     "build": "echo 'No build step required - pure JavaScript'",
     "start": "node src/sms.worker.js",
@@ -13,10 +15,18 @@
     "worker:statusRefresh": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/statusRefresh.worker.js",
     "worker:piiRetention": "DOTENV_CONFIG_PATH=../.env node -r dotenv/config src/piiRetention.worker.js"
   },
-  "keywords": [],
-  "author": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "worker",
+    "bullmq",
+    "retail",
+    "background-jobs",
+    "sms"
+  ],
+  "author": "Astronote Team",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "dotenv": "^16.4.7",
     "pino": "^9.9.5",

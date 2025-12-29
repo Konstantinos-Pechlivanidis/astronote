@@ -114,6 +114,7 @@ Step-by-step guide for deploying all services to Render for the first time.
    - **Critical:** Set `CORS_ALLOWLIST=https://astronote.onrender.com`
    - **Critical:** Set `HOST=https://astronote-shopify.onrender.com`
    - **Critical:** Set `URL_SHORTENER_TYPE=custom`
+   - **Critical:** Set `START_WORKER=false` (workers run in separate service)
 
 4. **Run Prisma Migrations:**
    - Open Render Shell
@@ -127,6 +128,7 @@ Step-by-step guide for deploying all services to Render for the first time.
 5. **Verify:**
    - Health: `curl https://astronote-shopify.onrender.com/health`
    - Full health: `curl https://astronote-shopify.onrender.com/health/full`
+   - Check logs: Should show "Workers disabled (START_WORKER=false) - API mode only"
 
 6. **Configure Shopify OAuth:**
    - In Shopify Partners dashboard, set OAuth redirect URL:
@@ -134,7 +136,37 @@ Step-by-step guide for deploying all services to Render for the first time.
 
 ---
 
-### 5. Web Frontend (Last)
+### 5. Shopify Worker
+
+1. **Create Background Worker:**
+   - Name: `astronote-shopify-worker`
+   - Environment: `Node`
+   - Region: Same as shopify-api
+   - Branch: `main`
+   - Root Directory: `apps/shopify-worker`
+
+2. **Build & Start Commands:**
+   - Build: `npm ci` (no build step needed)
+   - Start: `npm run start`
+
+3. **Set Environment Variables:**
+   - Use **same env vars as shopify-api**:
+     - `DATABASE_URL`, `DIRECT_URL`
+     - `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`
+     - `MITTO_API_KEY`, `MITTO_TRAFFIC_ACCOUNT_ID`, etc.
+     - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+     - `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`
+   - **Critical:** Set `START_WORKER=true` (or omit, defaults to true)
+   - **Critical:** Set `RUN_SCHEDULER=true` (for schedulers)
+
+4. **Verify:**
+   - Check Render logs (should show "Shopify worker started successfully")
+   - Check logs: Should show "Worker mode (no HTTP server)"
+   - Verify workers are processing jobs (check queue stats if available)
+
+---
+
+### 6. Web Frontend (Last)
 
 1. **Create Web Service:**
    - Name: `astronote-web`

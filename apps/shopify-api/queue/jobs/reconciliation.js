@@ -46,7 +46,6 @@ async function findStuckCampaigns(staleMinutes = 15) {
           id: true,
           status: true,
           mittoMessageId: true,
-          updatedAt: true,
         },
       },
     },

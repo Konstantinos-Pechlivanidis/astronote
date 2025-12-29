@@ -214,6 +214,7 @@ npm run start
 **Βασικές:**
 ```
 NODE_ENV=production
+START_WORKER=false
 DATABASE_URL=<το Neon PostgreSQL connection string>
 DIRECT_URL=<το Neon direct connection string>
 REDIS_HOST=<Redis host>
@@ -228,6 +229,8 @@ CORS_ALLOWLIST=https://astronote.onrender.com
 URL_SHORTENER_TYPE=custom
 URL_SHORTENER_BASE_URL=https://astronote-shopify.onrender.com
 ```
+
+**Σημαντικό:** Set `START_WORKER=false` γιατί οι workers θα τρέξουν σε ξεχωριστό service.
 
 **Για πλήρη λίστα:** Δες `docs/deploy/checklists/render-shopify-api-env.md`
 
@@ -248,7 +251,49 @@ npm run prisma:migrate:deploy
 
 ---
 
-## Βήμα 7: Ενημέρωση URLs
+## Βήμα 7: Shopify Worker (apps/shopify-worker)
+
+### 7.1. Δημιουργία Service
+
+1. **New** → **Background Worker**
+2. Σύνδεσε το ίδιο GitHub repo
+3. **Settings:**
+   - **Name:** `astronote-shopify-worker`
+   - **Environment:** `Node`
+   - **Region:** Ίδια με shopify-api
+   - **Branch:** `main`
+   - **Root Directory:** `apps/shopify-worker`
+
+### 7.2. Build & Start Commands
+
+**Build Command:**
+```bash
+npm ci
+```
+
+**Start Command:**
+```bash
+npm run start
+```
+
+### 7.3. Environment Variables
+
+**Χρησιμοποίησε ΤΑ ΙΔΙΑ** με shopify-api:
+- `DATABASE_URL`, `DIRECT_URL`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`
+- `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`
+- `MITTO_API_KEY`, `MITTO_TRAFFIC_ACCOUNT_ID`
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+- `START_WORKER=true` (ή άφησε το default)
+- `RUN_SCHEDULER=true`
+
+**Για πλήρη λίστα:** Δες `docs/deploy/checklists/render-shopify-worker-env.md`
+
+**Σημείωση:** Ο worker χρειάζεται τα ίδια credentials με το API γιατί επεξεργάζεται jobs από το queue.
+
+---
+
+## Βήμα 8: Ενημέρωση URLs
 
 Μετά το deploy όλων των services, πήγαινε στο **Web Frontend** service και ενημέρωσε τα URLs:
 
@@ -262,7 +307,7 @@ VITE_SHOPIFY_API_BASE_URL=<το πραγματικό URL του shopify-api>
 
 ---
 
-## Βήμα 8: Verification
+## Βήμα 9: Verification
 
 ### 8.1. Health Checks
 
@@ -295,6 +340,7 @@ curl https://astronote-shopify.onrender.com/health
 | **Retail API** | `apps/retail-api` | `npm ci` | `npm run start` |
 | **Retail Worker** | `apps/retail-worker` | `npm ci` | `npm run start` |
 | **Shopify API** | `apps/shopify-api` | `npm ci && npm run build` | `npm run start` |
+| **Shopify Worker** | `apps/shopify-worker` | `npm ci` | `npm run start` |
 
 ---
 

@@ -8,6 +8,7 @@
 | **Retail API** | `apps/retail-api` | `npm ci` | `npm run start` |
 | **Retail Worker** | `apps/retail-worker` | `npm ci` | `npm run start` |
 | **Shopify API** | `apps/shopify-api` | `npm ci && npm run build` | `npm run start` |
+| **Shopify Worker** | `apps/shopify-worker` | `npm ci` | `npm run start` |
 
 ---
 
@@ -41,6 +42,7 @@ CORS_ALLOWLIST=https://astronote.onrender.com
 ### Shopify API (Minimum Required)
 ```
 NODE_ENV=production
+START_WORKER=false
 DATABASE_URL=<Neon PostgreSQL>
 DIRECT_URL=<Neon Direct>
 REDIS_HOST=<Redis host>
@@ -55,6 +57,12 @@ CORS_ALLOWLIST=https://astronote.onrender.com
 URL_SHORTENER_TYPE=custom
 URL_SHORTENER_BASE_URL=https://astronote-shopify.onrender.com
 ```
+
+### Shopify Worker (Same as Shopify API)
+- Use same env vars as Shopify API
+- Set `START_WORKER=true` (or omit, defaults to true)
+- Set `RUN_SCHEDULER=true`
+- No HTTP-related vars needed (PORT, HOST, CORS_ALLOWLIST, etc.)
 
 ---
 
@@ -92,8 +100,9 @@ npm run prisma:migrate:deploy
 
 1. **Retail API** (first backend)
 2. **Retail Worker** (depends on Retail API)
-3. **Shopify API** (independent)
-4. **Web Frontend** (depends on both APIs)
+3. **Shopify API** (independent, set START_WORKER=false)
+4. **Shopify Worker** (depends on Shopify API)
+5. **Web Frontend** (depends on both APIs)
 
 ---
 
