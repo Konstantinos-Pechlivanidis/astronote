@@ -104,11 +104,11 @@ Step-by-step guide for deploying all services to Render for the first time.
    - Environment: `Node`
    - Region: Choose closest to users
    - Branch: `main`
-   - Root Directory: `apps/shopify-api`
+   - Root Directory: **(EMPTY - leave blank)**
 
 2. **Build & Start Commands:**
-   - Build: `npm ci && npm run build`
-   - Start: `npm run start`
+   - Build: `npm ci && npm -w @astronote/shopify-api run build`
+   - Start: `npm -w @astronote/shopify-api run start`
 
 3. **Set Environment Variables:**
    - See `docs/deploy/checklists/render-shopify-api-env.md`
