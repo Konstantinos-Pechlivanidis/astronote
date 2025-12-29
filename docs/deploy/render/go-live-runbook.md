@@ -17,6 +17,7 @@ Step-by-step guide for deploying all services to Render for the first time.
 - [ ] Stripe account configured
 - [ ] Shopify Partners app created
 - [ ] Mitto SMS account configured
+- [ ] **Node.js version:** Render will use Node 20 LTS (configured in `package.json` engines: `>=20 <21`)
 
 ---
 
