@@ -1,5 +1,5 @@
 // apps/api/src/server.js
-require('dotenv').config();
+// Environment is loaded by config/env.js (which uses loadEnv.js)
 
 const express = require('express');
 const cors = require('cors');
