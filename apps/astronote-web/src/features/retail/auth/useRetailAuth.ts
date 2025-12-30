@@ -28,13 +28,21 @@ export function useRetailAuth(): UseRetailAuthReturn {
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
     if (token) {
+      // Set a timeout to prevent infinite loading
+      const timeout = setTimeout(() => {
+        setLoading(false);
+      }, 5000); // Max 5 seconds for auth check
+
       // Verify token by fetching /api/me
       meApi
         .get()
         .then((res) => {
+          clearTimeout(timeout);
           setUser(res.data.user);
+          setLoading(false);
         })
         .catch((error: any) => {
+          clearTimeout(timeout);
           // If 401, token is invalid - clear it
           if (error?.response?.status === 401) {
             if (typeof window !== 'undefined') {
@@ -45,8 +53,6 @@ export function useRetailAuth(): UseRetailAuthReturn {
               }
             }
           }
-        })
-        .finally(() => {
           setLoading(false);
         });
     } else {

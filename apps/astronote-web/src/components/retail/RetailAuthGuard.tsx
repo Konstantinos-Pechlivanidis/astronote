@@ -1,21 +1,32 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRetailAuth } from '@/src/features/retail/auth/useRetailAuth';
 
 export function RetailAuthGuard({ children }: { children: ReactNode }) {
   const { user, loading } = useRetailAuth();
   const router = useRouter();
+  const [hasChecked, setHasChecked] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
+    // Set a timeout to prevent infinite loading state
+    const timeout = setTimeout(() => {
+      setHasChecked(true);
+    }, 5000); // Max 5 seconds for auth check
+
+    return () => clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user && hasChecked) {
       router.push('/auth/retail/login');
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, hasChecked]);
 
-  if (loading) {
+  // Show loading only for initial check, not forever
+  if (loading && !hasChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -26,10 +37,14 @@ export function RetailAuthGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) {
+  // If loading takes too long or user is not authenticated, allow navigation to proceed
+  // The redirect will happen via useEffect
+  if (!user && hasChecked) {
     return null; // Will redirect
   }
 
+  // If we have a user or are still in initial loading, render children
+  // This ensures navigation is never blocked indefinitely
   return <>{children}</>;
 }
 
