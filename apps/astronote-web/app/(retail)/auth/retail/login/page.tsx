@@ -35,7 +35,7 @@ export default function RetailLoginPage() {
 
     try {
       const authResponse = await login(data.email, data.password);
-      
+
       // Log token storage (development only)
       if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
         const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
@@ -46,7 +46,7 @@ export default function RetailLoginPage() {
       }
 
       toast.success('Login successful');
-      
+
       // Verify token by calling /api/me (development only)
       if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
         try {
@@ -59,7 +59,7 @@ export default function RetailLoginPage() {
           console.error('[Login] /api/me verification failed:', meError?.response?.status, meError?.response?.data);
         }
       }
-      
+
       router.push('/app/retail/dashboard');
     } catch (err: any) {
       const errorMessage =
