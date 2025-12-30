@@ -8,7 +8,7 @@ export default function ProfileCard({ user, isLoading }) {
         <User className="w-5 h-5 text-gray-600" />
         <h2 className="text-lg font-semibold text-gray-900">Account / Profile</h2>
       </div>
-      
+
       {isLoading ? (
         <div className="space-y-4">
           <div className="h-4 bg-gray-200 rounded animate-pulse"></div>

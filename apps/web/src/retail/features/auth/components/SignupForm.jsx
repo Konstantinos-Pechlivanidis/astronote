@@ -30,7 +30,7 @@ export default function SignupForm() {
         data.email,
         data.password,
         data.senderName || undefined,
-        data.company || undefined
+        data.company || undefined,
       );
       navigate('/retail/dashboard');
     } catch (err) {

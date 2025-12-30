@@ -16,7 +16,7 @@ export default function PackageCard({ pkg }) {
         onError: () => {
           setIsPurchasing(false);
         },
-      }
+      },
     );
   };
 

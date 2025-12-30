@@ -34,9 +34,9 @@ const uiSlice = createSlice({
   },
 });
 
-export const { 
-  setTheme, 
-  toggleSidebar, 
+export const {
+  setTheme,
+  toggleSidebar,
   setSidebarOpen,
   setSidebarCollapsed,
   toggleMobileDrawer,

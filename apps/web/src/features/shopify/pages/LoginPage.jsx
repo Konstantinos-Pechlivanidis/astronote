@@ -63,7 +63,7 @@ export default function ShopifyLoginPage() {
             </Button>
           </form>
           <p className="mt-4 text-xs text-gray-500 text-center">
-            Don't have a token? Contact your administrator.
+            Don&apos;t have a token? Contact your administrator.
           </p>
         </CardContent>
       </Card>

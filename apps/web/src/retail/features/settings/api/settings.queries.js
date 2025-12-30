@@ -56,7 +56,7 @@ export function useChangePassword() {
     onError: (error) => {
       const code = error.response?.data?.code;
       const message = error.response?.data?.message || 'Failed to change password';
-      
+
       if (code === 'AUTHENTICATION_ERROR') {
         toast.error('Invalid current password');
       } else {

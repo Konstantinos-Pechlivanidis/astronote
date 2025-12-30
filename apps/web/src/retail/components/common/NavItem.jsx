@@ -10,7 +10,7 @@ export default function NavItem({ to, icon: Icon, label, collapsed = false }) {
           'flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
           isActive
             ? 'bg-blue-50 text-blue-700'
-            : 'text-gray-700 hover:bg-gray-100'
+            : 'text-gray-700 hover:bg-gray-100',
         )
       }
       title={collapsed ? label : undefined}

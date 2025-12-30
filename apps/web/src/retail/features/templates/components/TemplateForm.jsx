@@ -26,21 +26,21 @@ export default function TemplateForm({ template, onSubmit, isLoading, onCancel, 
     resolver: zodResolver(templateSchema),
     defaultValues: template
       ? {
-          name: template.name || '',
-          text: template.text || '',
-          category: template.category || 'generic',
-          goal: template.goal || '',
-          suggestedMetrics: template.suggestedMetrics || '',
-          language: template.language || 'en',
-        }
+        name: template.name || '',
+        text: template.text || '',
+        category: template.category || 'generic',
+        goal: template.goal || '',
+        suggestedMetrics: template.suggestedMetrics || '',
+        language: template.language || 'en',
+      }
       : {
-          name: '',
-          text: '',
-          category: 'generic',
-          goal: '',
-          suggestedMetrics: '',
-          language: 'en',
-        },
+        name: '',
+        text: '',
+        category: 'generic',
+        goal: '',
+        suggestedMetrics: '',
+        language: 'en',
+      },
   });
 
   const textValue = watch('text') || '';
@@ -59,7 +59,7 @@ export default function TemplateForm({ template, onSubmit, isLoading, onCancel, 
   }
 
   const unsupportedPlaceholders = foundPlaceholders.filter(
-    (p) => !SUPPORTED_PLACEHOLDERS.includes(p.toLowerCase())
+    (p) => !SUPPORTED_PLACEHOLDERS.includes(p.toLowerCase()),
   );
 
   const handleFormSubmit = (data) => {

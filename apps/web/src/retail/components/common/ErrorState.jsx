@@ -3,7 +3,7 @@ import { getErrorMessage } from '../../api/errors';
 
 export default function ErrorState({ error, onRetry, title = 'Something went wrong' }) {
   const message = getErrorMessage(error);
-  
+
   return (
     <div className="text-center py-12 px-4">
       <div className="flex justify-center mb-4">

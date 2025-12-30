@@ -47,7 +47,7 @@ export default function ConversionTagPage() {
         onSuccess: () => {
           setSubmitted(true);
         },
-      }
+      },
     );
   };
 
@@ -74,10 +74,10 @@ export default function ConversionTagPage() {
               isNotFound
                 ? 'This conversion tag is not found or is no longer active.'
                 : isInactive
-                ? 'This conversion tag is currently inactive. Please contact the store.'
-                : isInvalidType
-                ? 'This tag is not configured for visit confirmation.'
-                : 'This link is invalid or expired. Please contact the store for help.'
+                  ? 'This conversion tag is currently inactive. Please contact the store.'
+                  : isInvalidType
+                    ? 'This tag is not configured for visit confirmation.'
+                    : 'This link is invalid or expired. Please contact the store for help.'
             }
           />
         </PublicCard>

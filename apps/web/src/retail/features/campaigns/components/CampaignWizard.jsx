@@ -51,10 +51,10 @@ export default function CampaignWizard({ onComplete }) {
     } else if (currentStep === 2) {
       // Audience step - can proceed without preview
       setCurrentStep(3);
-        } else if (currentStep === 3) {
-          // Schedule step - can always proceed (draft is valid)
-          setCurrentStep(4);
-        }
+    } else if (currentStep === 3) {
+      // Schedule step - can always proceed (draft is valid)
+      setCurrentStep(4);
+    }
   };
 
   const handleBack = () => {
@@ -103,8 +103,8 @@ export default function CampaignWizard({ onComplete }) {
                     currentStep > step.id
                       ? 'bg-green-600 text-white'
                       : currentStep === step.id
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 text-gray-600'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-600'
                   }`}
                 >
                   {currentStep > step.id ? (

@@ -12,13 +12,13 @@ export function useNfcSubmit() {
       toast.success(
         data.action === 'created'
           ? 'Thank you! You have been added to our list.'
-          : 'Your information has been updated. Thank you!'
+          : 'Your information has been updated. Thank you!',
       );
     },
     onError: (error) => {
       const code = error.response?.data?.code;
       const message = error.response?.data?.message || 'Failed to submit. Please try again.';
-      
+
       if (code === 'INVALID_PHONE') {
         toast.error('Please enter a valid phone number');
       } else if (code === 'CONSENT_REQUIRED') {

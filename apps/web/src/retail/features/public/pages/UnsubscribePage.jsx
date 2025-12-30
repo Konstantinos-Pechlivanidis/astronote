@@ -30,7 +30,7 @@ export default function UnsubscribePage() {
         onSuccess: () => {
           setConfirmed(true);
         },
-      }
+      },
     );
   };
 

@@ -22,7 +22,7 @@ export function useSubscribe() {
     onError: (error) => {
       const code = error.response?.data?.code;
       const message = error.response?.data?.message || 'Failed to initiate subscription';
-      
+
       if (code === 'ALREADY_SUBSCRIBED') {
         toast.error('You already have an active subscription');
       } else {

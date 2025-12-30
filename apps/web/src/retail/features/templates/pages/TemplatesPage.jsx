@@ -85,14 +85,14 @@ export default function TemplatesPage() {
             setFormOpen(false);
             setEditingTemplate(null);
           },
-        }
+        },
       );
     } else {
       // Create new template (from scratch or duplicate)
       createMutation.mutate(
         {
           ...data,
-          language: language, // Use current language selection
+          language, // Use current language selection
         },
         {
           onSuccess: () => {
@@ -101,7 +101,7 @@ export default function TemplatesPage() {
             // Switch to "My Templates" tab to show the new template
             setTab('my');
           },
-        }
+        },
       );
     }
   };

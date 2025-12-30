@@ -12,19 +12,19 @@ import { queryKeys } from '../../../lib/queryKeys';
  * @param {string} options.category - Optional, category filter
  * @param {string} options.tab - Optional, "system" | "my" - filters client-side by ownerId
  */
-export function useTemplates({ 
-  language = 'en', 
-  page = 1, 
-  pageSize = 50, 
-  q = '', 
+export function useTemplates({
+  language = 'en',
+  page = 1,
+  pageSize = 50,
+  q = '',
   category = '',
-  tab = null // "system" | "my" - filters client-side
+  tab = null, // "system" | "my" - filters client-side
 } = {}) {
   // For tab filtering, we need to fetch all items and paginate client-side
   // because backend doesn't support filtering by ownerId
   // Use larger pageSize when filtering by tab to get all items
   const fetchPageSize = tab ? 100 : pageSize; // Fetch more if filtering by tab
-  
+
   const params = {
     language,
     page: tab ? 1 : page, // Always fetch from page 1 if filtering by tab
@@ -37,27 +37,27 @@ export function useTemplates({
     queryKey: queryKeys.templates.list({ ...params, tab }), // Include tab in query key
     queryFn: async () => {
       const res = await templatesApi.list(params);
-      
+
       // System templates have ownerId = SYSTEM_USER_ID (typically 1)
       // TODO: Get SYSTEM_USER_ID from backend/context if available
       // For now, assume system templates have ownerId = 1 (default from backend config)
       const SYSTEM_USER_ID = 1;
-      
+
       let allItems = res.data.items || [];
-      
+
       // Filter by tab (system vs my) client-side
       if (tab === 'system') {
         allItems = allItems.filter(t => t.ownerId === SYSTEM_USER_ID);
       } else if (tab === 'my') {
         allItems = allItems.filter(t => t.ownerId !== SYSTEM_USER_ID);
       }
-      
+
       // Client-side pagination if filtering by tab
       const total = allItems.length;
       const start = tab ? (page - 1) * pageSize : 0;
       const end = tab ? start + pageSize : allItems.length;
       const paginatedItems = tab ? allItems.slice(start, end) : allItems;
-      
+
       return {
         items: paginatedItems,
         total,

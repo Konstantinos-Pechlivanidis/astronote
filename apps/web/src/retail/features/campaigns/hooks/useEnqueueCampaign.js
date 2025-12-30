@@ -9,11 +9,11 @@ import { toast } from 'sonner';
 function generateIdempotencyKey(campaignId, campaignStatus) {
   const storageKey = `enqueue-idempotency-key:${campaignId}`;
   const statusKey = `enqueue-idempotency-status:${campaignId}`;
-  
+
   // Check if campaign status changed (allows re-enqueue)
   const lastStatus = sessionStorage.getItem(statusKey);
   const canEnqueue = ['draft', 'scheduled', 'paused'].includes(campaignStatus);
-  
+
   // Clear key if:
   // 1. Campaign status changed to a non-enqueueable state (completed/failed)
   // 2. Campaign can be enqueued but we don't have a key (new attempt)
@@ -28,13 +28,13 @@ function generateIdempotencyKey(campaignId, campaignStatus) {
       sessionStorage.removeItem(storageKey);
     }
   }
-  
+
   // Store current status
   sessionStorage.setItem(statusKey, campaignStatus);
-  
+
   // Generate new key if not exists or if campaign can be enqueued
   let idempotencyKey = sessionStorage.getItem(storageKey);
-  
+
   if (!idempotencyKey || canEnqueue) {
     // Generate new key for this enqueue attempt
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -49,7 +49,7 @@ function generateIdempotencyKey(campaignId, campaignStatus) {
     }
     sessionStorage.setItem(storageKey, idempotencyKey);
   }
-  
+
   return idempotencyKey;
 }
 
@@ -67,24 +67,24 @@ export function useEnqueueCampaign() {
     retry: false, // Explicitly disable retry for mutations (already default, but making it explicit)
     onSuccess: async (data, variables) => {
       const { id } = variables;
-      
+
       // CRITICAL FIX: Immediately refetch campaign detail to update status
       // This ensures the button disables immediately after enqueue
-      await queryClient.refetchQueries({ 
+      await queryClient.refetchQueries({
         queryKey: queryKeys.campaigns.detail(id),
-        exact: true
+        exact: true,
       });
-      
+
       // Also invalidate other related queries
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'list'] });
       queryClient.invalidateQueries({ queryKey: queryKeys.campaigns.status(id) });
-      
+
       toast.success(`Campaign enqueued. ${data.queued || 0} messages will be sent.`);
     },
     onError: (error) => {
       const code = error.response?.data?.code;
       const message = error.response?.data?.message || 'Failed to enqueue campaign';
-      
+
       if (code === 'INVALID_STATUS') {
         toast.error('Campaign cannot be sent in its current state');
       } else if (code === 'NO_RECIPIENTS') {

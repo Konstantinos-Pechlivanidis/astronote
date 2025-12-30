@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  ShoppingBag, 
-  Store, 
-  MessageSquare, 
-  BarChart3, 
-  Users, 
+import {
+  ShoppingBag,
+  Store,
+  MessageSquare,
+  BarChart3,
+  Users,
   Zap,
   Check,
   ArrowRight,
@@ -26,7 +26,7 @@ export default function LandingPage() {
               <span className="block text-blue-400">Made Simple</span>
             </h1>
             <p className="text-xl text-gray-300 max-w-2xl mx-auto mb-8">
-              Reach your customers instantly with powerful SMS campaigns. 
+              Reach your customers instantly with powerful SMS campaigns.
               Built for retail stores and Shopify merchants.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">

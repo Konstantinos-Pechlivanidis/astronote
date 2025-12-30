@@ -7,7 +7,7 @@ export const listsApi = {
    * Returns lists with isSystem flag to identify system-generated lists
    */
   list: (params) => api.get(endpoints.lists.list, { params }),
-  
+
   /**
    * Get system lists only (filtered client-side or use predefined lists)
    * For read-only UI, we only want system lists

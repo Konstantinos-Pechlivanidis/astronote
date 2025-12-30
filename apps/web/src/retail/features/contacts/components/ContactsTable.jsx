@@ -112,7 +112,7 @@ export default function ContactsTable({ contacts, onEdit, onDelete }) {
           }
         }}
         title="Delete Contact"
-        message={`Are you sure you want to delete this contact? This action cannot be undone.`}
+        message={'Are you sure you want to delete this contact? This action cannot be undone.'}
         confirmText="Delete"
         cancelText="Cancel"
         variant="danger"

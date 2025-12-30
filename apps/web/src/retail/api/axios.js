@@ -67,17 +67,17 @@ api.interceptors.response.use(
     // Don't auto-refresh token for auth endpoints (login, register, refresh)
     // These should handle their own errors without redirecting
     const requestUrl = originalRequest?.url || '';
-    const isAuthEndpoint = requestUrl.includes('/auth/login') || 
+    const isAuthEndpoint = requestUrl.includes('/auth/login') ||
                           requestUrl.includes('/auth/register') ||
                           requestUrl.includes('/auth/refresh') ||
                           requestUrl.includes('/api/auth/login') ||
                           requestUrl.includes('/api/auth/register') ||
                           requestUrl.includes('/api/auth/refresh');
-    
+
     if (import.meta.env.DEV) {
       console.log('[Axios Interceptor] 401 error - isAuthEndpoint:', isAuthEndpoint, 'URL:', requestUrl);
     }
-    
+
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
@@ -103,7 +103,7 @@ api.interceptors.response.use(
         const response = await axios.post(
           `${import.meta.env.VITE_RETAIL_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'}${endpoints.auth.refresh}`,
           {},
-          { withCredentials: true }
+          { withCredentials: true },
         );
         const { accessToken } = response.data;
         localStorage.setItem('retail_accessToken', accessToken);
@@ -123,10 +123,10 @@ api.interceptors.response.use(
         // Only redirect if not already on login/register page and not an auth endpoint
         const currentPath = window.location.pathname;
         const isOnAuthPage = currentPath === '/retail/login' || currentPath === '/retail/signup' || currentPath === '/login' || currentPath === '/signup';
-        const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') || 
+        const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') ||
                               originalRequest?.url?.includes('/auth/register') ||
                               originalRequest?.url?.includes('/auth/refresh');
-        
+
         if (!isOnAuthPage && !isAuthEndpoint) {
           // Add delay to allow error to be displayed before redirect
           setTimeout(() => {
@@ -140,7 +140,7 @@ api.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;

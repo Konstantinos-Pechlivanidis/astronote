@@ -11,7 +11,7 @@ export default function LandingPage() {
             SMS Marketing Made Simple
           </h1>
           <p className="text-xl text-gray-600 mb-8">
-            Reach your customers instantly with powerful SMS campaigns. 
+            Reach your customers instantly with powerful SMS campaigns.
             Built for retail stores who want to grow their business.
           </p>
           <div className="flex gap-4 justify-center">

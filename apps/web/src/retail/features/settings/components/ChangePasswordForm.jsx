@@ -31,7 +31,7 @@ export default function ChangePasswordForm() {
         onSuccess: () => {
           reset(); // Clear form on success
         },
-      }
+      },
     );
   };
 

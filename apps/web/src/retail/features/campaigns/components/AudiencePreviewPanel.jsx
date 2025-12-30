@@ -6,7 +6,7 @@ import { preparePreviewPayload } from '../lib/audienceFilters';
 
 /**
  * AudiencePreviewPanel - Shared component for previewing campaign audience
- * 
+ *
  * @param {Object} props
  * @param {Object} props.filters - Filter values { filterGender, filterAgeGroup, nameSearch? }
  * @param {Function} props.onCountResolved - Optional callback when count is resolved (count) => void
@@ -22,7 +22,7 @@ export default function AudiencePreviewPanel({ filters, onCountResolved }) {
     }
 
     const payload = preparePreviewPayload(filters);
-    
+
     previewMutation.mutate(payload, {
       onSuccess: (data) => {
         setHasPreviewed(true);

@@ -36,7 +36,7 @@ const nfcFormSchema = z.object({
       },
       {
         message: 'Birthday must be a valid date in the past',
-      }
+      },
     )
     .or(z.literal('')),
   consent: z.boolean().refine((val) => val === true, {
@@ -82,7 +82,7 @@ export default function NfcOptInPage() {
         onSuccess: () => {
           setSubmitted(true);
         },
-      }
+      },
     );
   };
 
@@ -108,8 +108,8 @@ export default function NfcOptInPage() {
               isNotFound
                 ? 'This NFC tag is not found or is no longer active.'
                 : isInactive
-                ? 'This NFC tag is currently inactive. Please contact the store.'
-                : 'This link is invalid or expired. Please contact the store for help.'
+                  ? 'This NFC tag is currently inactive. Please contact the store.'
+                  : 'This link is invalid or expired. Please contact the store for help.'
             }
           />
         </PublicCard>

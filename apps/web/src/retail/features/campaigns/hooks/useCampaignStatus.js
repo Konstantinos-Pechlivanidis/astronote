@@ -14,12 +14,12 @@ export function useCampaignStatus(id) {
       // Poll every 3 seconds if campaign is sending or scheduled (within 1 hour)
       const data = query.state.data;
       if (!data) return false;
-      
+
       const status = data.campaign?.status;
       if (status === 'sending') {
         return 3000; // Poll every 3 seconds while sending
       }
-      
+
       if (status === 'scheduled' && data.campaign?.scheduledAt) {
         const scheduledAt = new Date(data.campaign.scheduledAt);
         const now = new Date();
@@ -29,7 +29,7 @@ export function useCampaignStatus(id) {
           return 3000;
         }
       }
-      
+
       // Stop polling for completed, failed, paused, draft
       return false;
     },

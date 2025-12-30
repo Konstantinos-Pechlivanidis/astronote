@@ -20,7 +20,7 @@ export function useCustomerPortal() {
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.balance });
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.wallet });
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.packages });
-      
+
       // Redirect to Stripe customer portal
       if (data.portalUrl) {
         window.location.assign(data.portalUrl);
@@ -32,7 +32,7 @@ export function useCustomerPortal() {
     onError: (error) => {
       const code = error.response?.data?.code;
       const message = error.response?.data?.message || 'Failed to load customer portal';
-      
+
       if (code === 'MISSING_CUSTOMER_ID') {
         toast.error('No payment account found. Please subscribe to a plan first.');
       } else if (code === 'DEV_ONLY_CUSTOMER') {
@@ -46,7 +46,7 @@ export function useCustomerPortal() {
       } else {
         toast.error(message);
       }
-      
+
       // Log error for debugging (only in dev)
       if (import.meta.env.DEV || localStorage.getItem('DEBUG_BILLING') === 'true') {
         console.error('[Billing] Portal error:', {

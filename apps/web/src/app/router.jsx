@@ -70,6 +70,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: 'register',
+        element: (
+          <PublicOnlyGuard>
+            <RetailSignupPage />
+          </PublicOnlyGuard>
+        ),
+      },
+      {
         path: 'landing',
         element: (
           <PublicOnlyGuard>

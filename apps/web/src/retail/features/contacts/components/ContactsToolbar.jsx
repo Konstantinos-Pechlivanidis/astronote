@@ -29,7 +29,7 @@ export default function ContactsToolbar({ search, onSearchChange, onAddClick, li
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-        
+
         {/* List Filter */}
         <div className="sm:w-64">
           <select
@@ -65,7 +65,7 @@ export default function ContactsToolbar({ search, onSearchChange, onAddClick, li
           </button>
         </div>
       </div>
-      
+
       {/* Clear Filter Hint */}
       {listId && (
         <div className="text-sm text-gray-600">

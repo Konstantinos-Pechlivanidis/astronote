@@ -14,7 +14,7 @@ export function useConversionSubmit() {
     onError: (error) => {
       const code = error.response?.data?.code;
       const message = error.response?.data?.message || 'Failed to confirm visit. Please try again.';
-      
+
       if (code === 'PHONE_REQUIRED') {
         toast.error('Phone number is required');
       } else if (code === 'INVALID_PHONE') {

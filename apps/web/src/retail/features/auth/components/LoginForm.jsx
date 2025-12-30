@@ -52,7 +52,7 @@ export default function LoginForm() {
       console.error('Error response status:', err?.response?.status);
       console.error('Error stack:', err?.stack);
       console.error('==================');
-      
+
       const normalized = normalizeError(err);
       // Always show actual error message (not generic) so user can see what went wrong
       setError(normalized.message || 'Invalid email or password');

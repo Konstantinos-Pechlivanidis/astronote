@@ -42,11 +42,11 @@ const authSlice = createSlice({
   },
 });
 
-export const { 
-  setRetailToken, 
-  clearRetailToken, 
-  setShopifyToken, 
-  clearShopifyToken, 
+export const {
+  setRetailToken,
+  clearRetailToken,
+  setShopifyToken,
+  clearShopifyToken,
   setShop,
   setToken, // Legacy
   clearToken, // Legacy

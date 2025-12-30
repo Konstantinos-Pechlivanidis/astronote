@@ -48,8 +48,8 @@ export function useUpdateAutomation() {
       queryClient.invalidateQueries({ queryKey: queryKeys.automations.list });
       queryClient.invalidateQueries({ queryKey: queryKeys.automations.detail(variables.type) });
       queryClient.invalidateQueries({ queryKey: queryKeys.automations.stats(variables.type) });
-      
-      const action = variables.data.isActive !== undefined 
+
+      const action = variables.data.isActive !== undefined
         ? (variables.data.isActive ? 'enabled' : 'disabled')
         : 'updated';
       toast.success(`Automation ${action} successfully`);
@@ -78,7 +78,7 @@ export function useToggleAutomation() {
       queryClient.invalidateQueries({ queryKey: queryKeys.automations.list });
       queryClient.invalidateQueries({ queryKey: queryKeys.automations.detail(variables.type) });
       queryClient.invalidateQueries({ queryKey: queryKeys.automations.stats(variables.type) });
-      
+
       toast.success(`Automation ${variables.isActive ? 'enabled' : 'disabled'} successfully`);
     },
     onError: (error) => {

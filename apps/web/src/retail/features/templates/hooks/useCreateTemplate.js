@@ -19,7 +19,7 @@ export function useCreateTemplate() {
     onError: (error) => {
       const message = error.response?.data?.message || 'Failed to create template';
       const code = error.response?.data?.code;
-      
+
       if (code === 'DUPLICATE_RESOURCE') {
         toast.error('A template with this name already exists');
       } else if (code === 'VALIDATION_ERROR') {

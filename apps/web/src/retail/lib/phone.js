@@ -20,25 +20,25 @@ export function isValidE164(phone) {
  */
 export function normalizeToE164(phone) {
   if (!phone || typeof phone !== 'string') return null;
-  
+
   const cleaned = phone.trim().replace(/\s+/g, '');
-  
+
   // Already in E.164 format
   if (isValidE164(cleaned)) {
     return cleaned;
   }
-  
+
   // Remove common separators
   const withoutSeparators = cleaned.replace(/[-()]/g, '');
-  
+
   // If starts with 00, replace with +
   if (withoutSeparators.startsWith('00')) {
-    const withPlus = '+' + withoutSeparators.substring(2);
+    const withPlus = `+${withoutSeparators.substring(2)}`;
     if (isValidE164(withPlus)) {
       return withPlus;
     }
   }
-  
+
   // If doesn't start with +, try to add country code
   // For now, return null - let backend handle normalization
   // Frontend should guide user to enter with country code

@@ -45,7 +45,7 @@ export default function EditCampaignPage() {
     if (campaign) {
       const scheduledAt = campaign.scheduledAt ? new Date(campaign.scheduledAt) : null;
       const scheduleType = scheduledAt && scheduledAt > new Date() ? 'later' : 'now';
-      
+
       reset({
         name: campaign.name || '',
         messageText: campaign.messageText || '',
@@ -76,7 +76,7 @@ export default function EditCampaignPage() {
         onSuccess: () => {
           navigate(`/app/campaigns/${campaignId}`);
         },
-      }
+      },
     );
   };
 

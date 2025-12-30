@@ -6,19 +6,19 @@ export const endpoints = {
     refresh: '/api/auth/refresh',
     logout: '/api/auth/logout',
   },
-  
+
   // User
   me: '/api/me',
   user: {
     update: '/api/user',
     changePassword: '/api/user/password',
   },
-  
+
   // Dashboard
   dashboard: {
     kpis: '/api/dashboard/kpis',
   },
-  
+
   // Billing
   billing: {
     balance: '/api/billing/balance',
@@ -30,7 +30,7 @@ export const endpoints = {
     topup: '/api/billing/topup',
     // topupCalculate removed - endpoint deprecated, use credit packs instead
   },
-  
+
   // Subscriptions
   subscriptions: {
     current: '/api/subscriptions/current',
@@ -39,7 +39,7 @@ export const endpoints = {
     cancel: '/api/subscriptions/cancel',
     portal: '/api/subscriptions/portal',
   },
-  
+
   // Automations
   automations: {
     list: '/api/automations',
@@ -47,7 +47,7 @@ export const endpoints = {
     update: (type) => `/api/automations/${type}`,
     stats: (type) => `/api/automations/${type}/stats`,
   },
-  
+
   // Campaigns
   campaigns: {
     list: '/api/campaigns',
@@ -62,7 +62,7 @@ export const endpoints = {
     preview: (id) => `/api/campaigns/${id}/preview`,
     previewAudience: '/api/campaigns/preview-audience',
   },
-  
+
   // Contacts
   contacts: {
     list: '/api/contacts',
@@ -74,14 +74,14 @@ export const endpoints = {
     importStatus: (jobId) => `/api/contacts/import/${jobId}`,
     importTemplate: '/api/contacts/import/template',
   },
-  
+
   // Lists (read-only, system-generated)
   lists: {
     list: '/api/lists',
     detail: (id) => `/api/lists/${id}`,
     contacts: (id) => `/api/lists/${id}/contacts`,
   },
-  
+
   // Templates (system + user templates)
   templates: {
     list: '/api/templates',
@@ -92,7 +92,7 @@ export const endpoints = {
     render: (id) => `/api/templates/${id}/render`,
     stats: (id) => `/api/templates/${id}/stats`,
   },
-  
+
   // Public (no auth)
   public: {
     // Tracking

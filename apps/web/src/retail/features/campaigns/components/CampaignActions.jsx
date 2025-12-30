@@ -30,11 +30,11 @@ export default function CampaignActions({ campaign, onPreviewMessages, onViewSta
     if (isEnqueuing || enqueueMutation.isPending) {
       return;
     }
-    
+
     // Close confirm dialog immediately to prevent multiple clicks
     setEnqueueConfirm(false);
     setIsEnqueuing(true);
-    
+
     enqueueMutation.mutate({ id: campaign.id, status: campaign.status }, {
       onSuccess: () => {
         setIsEnqueuing(false);
@@ -64,10 +64,10 @@ export default function CampaignActions({ campaign, onPreviewMessages, onViewSta
             subscriptionInactive
               ? 'Active subscription required to send campaigns. Please subscribe in Billing.'
               : !canEnqueue
-              ? 'Campaign is already being sent'
-              : isEnqueuing || enqueueMutation.isPending
-              ? 'Sending campaign...'
-              : 'Send this campaign'
+                ? 'Campaign is already being sent'
+                : isEnqueuing || enqueueMutation.isPending
+                  ? 'Sending campaign...'
+                  : 'Send this campaign'
           }
         >
           <Send className="w-4 h-4" />

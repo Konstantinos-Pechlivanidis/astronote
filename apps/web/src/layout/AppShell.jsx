@@ -42,7 +42,7 @@ export default function AppShell() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const sidebarOpen = useSelector((state) => state.ui.sidebarOpen);
-  
+
   // Determine which area we're in
   const isRetail = location.pathname.startsWith('/retail');
   const isShopify = location.pathname.startsWith('/shopify');

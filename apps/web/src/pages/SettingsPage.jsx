@@ -10,8 +10,8 @@ import { useSelector, useDispatch } from 'react-redux';
 import { setToken } from '@/store/authSlice';
 
 export default function SettingsPage() {
-  const { data: settings, isLoading, error, refetch } = useSettings();
-  const updateSettings = useUpdateSettings();
+  const { data: settings, isLoading, error, refetch } = useShopifySettings();
+  const updateSettings = useUpdateShopifySettings();
   const token = useSelector((state) => state.auth.token);
   const dispatch = useDispatch();
   const [tokenInput, setTokenInput] = useState('');

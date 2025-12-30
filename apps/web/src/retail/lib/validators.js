@@ -55,7 +55,7 @@ export const contactSchema = z.object({
       },
       {
         message: 'Birthday must be a valid date in the past',
-      }
+      },
     )
     .or(z.literal(''))
     .nullable(),
@@ -120,7 +120,7 @@ export const profileUpdateSchema = z.object({
       },
       {
         message: 'Invalid timezone format. Use IANA timezone (e.g. "Europe/Athens")',
-      }
+      },
     )
     .or(z.literal(''))
     .nullable(),

@@ -38,13 +38,13 @@ export default function AutomationCard({ automation }) {
       // Show toast or handle billing gate
       return;
     }
-    
+
     toggleMutation.mutate({
       type: automation.type,
       isActive: !automation.isActive,
     });
   };
-  
+
   const canToggle = billingGate.canSendCampaigns;
 
   return (
@@ -72,15 +72,15 @@ export default function AutomationCard({ automation }) {
                 !canToggle
                   ? 'Subscription required to enable automations'
                   : automation.isActive
-                  ? 'Disable automation'
-                  : 'Enable automation'
+                    ? 'Disable automation'
+                    : 'Enable automation'
               }
               title={
                 !canToggle
                   ? 'Subscription required to enable automations'
                   : automation.isActive
-                  ? 'Disable automation'
-                  : 'Enable automation'
+                    ? 'Disable automation'
+                    : 'Enable automation'
               }
             >
               <span

@@ -17,14 +17,14 @@ export function useTopupCredits() {
       if (!packIdString || !packIdString.startsWith('pack_')) {
         throw new Error(`Invalid pack ID format: ${packId}. Expected format: 'pack_100', 'pack_500', etc.`);
       }
-      
+
       const res = await billingApi.topup({ packId: packIdString });
       return res.data;
     },
     onSuccess: (data) => {
       // Invalidate balance query so credits update after return from Stripe
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.balance });
-      
+
       // Redirect to Stripe checkout
       if (data.checkoutUrl) {
         window.location.href = data.checkoutUrl;
@@ -36,7 +36,7 @@ export function useTopupCredits() {
     onError: (error) => {
       const message = error.response?.data?.message || error.message || 'Failed to initiate credit top-up';
       toast.error(message);
-      
+
       // Log error for debugging (only in dev)
       if (import.meta.env.DEV || localStorage.getItem('DEBUG_BILLING') === 'true') {
         console.error('[Billing] Topup error:', {

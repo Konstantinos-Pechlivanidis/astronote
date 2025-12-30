@@ -22,19 +22,19 @@ export default function ContactsPage() {
   const [editingContact, setEditingContact] = useState(null);
 
   const pageSize = 20;
-  
+
   // Fetch system lists for filter dropdown
   const { data: listsData, isLoading: isLoadingLists } = useSystemLists();
   const systemLists = listsData?.items || [];
-  
+
   // Fetch contacts with optional list filter
-  const { data, isLoading, error, refetch } = useContacts({ 
-    page, 
-    pageSize, 
+  const { data, isLoading, error, refetch } = useContacts({
+    page,
+    pageSize,
     q: search,
-    listId 
+    listId,
   });
-  
+
   // Reset to page 1 when filter changes
   const handleListChange = (newListId) => {
     setListId(newListId);
@@ -67,7 +67,7 @@ export default function ContactsPage() {
             setFormOpen(false);
             setEditingContact(null);
           },
-        }
+        },
       );
     } else {
       createMutation.mutate(data, {
@@ -147,10 +147,10 @@ export default function ContactsPage() {
               <EmptyState
                 icon={Users}
                 title={
-                  listId 
-                    ? 'No contacts in this list' 
-                    : search 
-                      ? 'No contacts found' 
+                  listId
+                    ? 'No contacts in this list'
+                    : search
+                      ? 'No contacts found'
                       : 'No contacts yet'
                 }
                 description={

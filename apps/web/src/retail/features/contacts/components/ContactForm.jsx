@@ -11,25 +11,25 @@ export default function ContactForm({ contact, onSubmit, isLoading }) {
     resolver: zodResolver(contactSchema),
     defaultValues: contact
       ? {
-          phone: contact.phone || '',
-          email: contact.email || '',
-          firstName: contact.firstName || '',
-          lastName: contact.lastName || '',
-          gender: contact.gender || null,
-          birthday: contact.birthday
-            ? new Date(contact.birthday).toISOString().split('T')[0]
-            : '',
-          isSubscribed: contact.isSubscribed !== undefined ? contact.isSubscribed : true,
-        }
+        phone: contact.phone || '',
+        email: contact.email || '',
+        firstName: contact.firstName || '',
+        lastName: contact.lastName || '',
+        gender: contact.gender || null,
+        birthday: contact.birthday
+          ? new Date(contact.birthday).toISOString().split('T')[0]
+          : '',
+        isSubscribed: contact.isSubscribed !== undefined ? contact.isSubscribed : true,
+      }
       : {
-          phone: '',
-          email: '',
-          firstName: '',
-          lastName: '',
-          gender: null,
-          birthday: '',
-          isSubscribed: true,
-        },
+        phone: '',
+        email: '',
+        firstName: '',
+        lastName: '',
+        gender: null,
+        birthday: '',
+        isSubscribed: true,
+      },
   });
 
   const handleFormSubmit = (data) => {

@@ -16,7 +16,7 @@ export default function BillingSuccessPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const sessionId = searchParams.get('session_id');
-  
+
   const [walletData, setWalletData] = useState(null);
   const [isPolling, setIsPolling] = useState(true);
   const [pollAttempts, setPollAttempts] = useState(0);
@@ -31,13 +31,13 @@ export default function BillingSuccessPage() {
       setWalletData(data);
       setLastUpdateTime(new Date());
       setError(null);
-      
+
       // Invalidate React Query cache to ensure fresh data
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.balance });
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.wallet });
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.packages });
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.transactions });
-      
+
       return data;
     } catch (err) {
       setError(err);
@@ -73,7 +73,7 @@ export default function BillingSuccessPage() {
     const intervalId = setInterval(async () => {
       setPollAttempts((prev) => {
         const next = prev + 1;
-        
+
         if (next >= MAX_POLL_ATTEMPTS) {
           setIsPolling(false);
           clearInterval(intervalId);

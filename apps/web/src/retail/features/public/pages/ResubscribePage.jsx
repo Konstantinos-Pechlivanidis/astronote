@@ -22,7 +22,7 @@ export default function ResubscribePage() {
         onSuccess: () => {
           setConfirmed(true);
         },
-      }
+      },
     );
   };
 

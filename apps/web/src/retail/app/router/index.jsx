@@ -57,7 +57,7 @@ export function AppRouter() {
               </PublicOnlyGuard>
             }
           />
-          
+
           {/* Public flows (no auth required) */}
           <Route path="/o/:trackingId" element={<OfferPage />} />
           <Route path="/unsubscribe" element={<UnsubscribePage />} />
@@ -75,16 +75,16 @@ export function AppRouter() {
               </AuthGuard>
             }
           >
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="campaigns" element={<CampaignsPage />} />
-          <Route path="campaigns/new" element={<NewCampaignPage />} />
-          <Route path="campaigns/:id" element={<CampaignDetailPage />} />
-          <Route path="campaigns/:id/edit" element={<EditCampaignPage />} />
-          <Route path="campaigns/:id/status" element={<CampaignStatusPage />} />
-          <Route path="campaigns/:id/stats" element={<CampaignStatsPage />} />
-          <Route path="contacts" element={<ContactsPage />} />
-          <Route path="contacts/import" element={<ContactsImportPage />} />
-          <Route path="templates" element={<TemplatesPage />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="campaigns" element={<CampaignsPage />} />
+            <Route path="campaigns/new" element={<NewCampaignPage />} />
+            <Route path="campaigns/:id" element={<CampaignDetailPage />} />
+            <Route path="campaigns/:id/edit" element={<EditCampaignPage />} />
+            <Route path="campaigns/:id/status" element={<CampaignStatusPage />} />
+            <Route path="campaigns/:id/stats" element={<CampaignStatsPage />} />
+            <Route path="contacts" element={<ContactsPage />} />
+            <Route path="contacts/import" element={<ContactsImportPage />} />
+            <Route path="templates" element={<TemplatesPage />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="billing/success" element={<BillingSuccessPage />} />
             <Route path="automations" element={<AutomationsPage />} />

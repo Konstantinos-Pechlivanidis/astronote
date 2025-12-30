@@ -5,12 +5,12 @@ import { endpoints } from '../endpoints';
  * Normalize billing balance/wallet response to consistent shape
  * Backend returns: { balance: number, subscription: {...} }
  * Normalized: { credits: number, subscription: {...} }
- * 
+ *
  * Exported for testing
  */
 export function normalizeBalanceResponse(data) {
   if (!data) return null;
-  
+
   return {
     credits: data.balance || 0, // Backend returns balance as number
     subscription: data.subscription || { active: false, planType: null },
@@ -25,7 +25,7 @@ export function normalizeBalanceResponse(data) {
  */
 function normalizePackagesResponse(data) {
   if (!Array.isArray(data)) return [];
-  
+
   return data.map(pkg => ({
     ...pkg,
     // Ensure packId is always string for credit packs

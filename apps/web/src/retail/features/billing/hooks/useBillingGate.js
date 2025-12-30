@@ -5,7 +5,7 @@ import { queryKeys } from '../../../lib/queryKeys';
 /**
  * Billing gate hook - provides subscription status and gating logic
  * Used across the app to determine if user can send campaigns
- * 
+ *
  * Returns normalized data: { credits: number, subscription: {...} }
  */
 export function useBillingGate() {

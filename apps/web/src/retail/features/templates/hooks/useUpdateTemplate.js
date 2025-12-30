@@ -20,7 +20,7 @@ export function useUpdateTemplate() {
     onError: (error) => {
       const message = error.response?.data?.message || 'Failed to update template';
       const code = error.response?.data?.code;
-      
+
       if (code === 'RESOURCE_NOT_FOUND') {
         toast.error('Template not found or you do not have permission to update it');
       } else if (code === 'VALIDATION_ERROR') {
