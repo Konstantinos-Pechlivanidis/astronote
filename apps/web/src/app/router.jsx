@@ -42,24 +42,9 @@ import ShopifyAutomationsPage from '@/features/shopify/pages/AutomationsPage';
 import ShopifyTemplatesPage from '@/features/shopify/pages/TemplatesPage';
 import ShopifySettingsPage from '@/features/shopify/pages/SettingsPage';
 
-// Root route component - login-first behavior
-// Note: This component runs outside AuthProvider context, so we check localStorage
-// The AuthProvider will verify the token on mount and set user state
-function RootRoute() {
-  const token = localStorage.getItem('retail_accessToken') || localStorage.getItem('accessToken');
-  if (token) {
-    return <Navigate to="/retail/dashboard" replace />;
-  }
-  return <Navigate to="/retail/login" replace />;
-}
-
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <RootRoute />,
-  },
-  {
-    path: '/marketing',
     element: <LandingPage />,
   },
   // Retail routes
