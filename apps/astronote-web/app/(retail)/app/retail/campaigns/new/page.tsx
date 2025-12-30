@@ -34,8 +34,7 @@ export default function NewCampaignPage() {
     formState: { errors },
     trigger,
   } = useForm<z.infer<typeof campaignSchema>>({
-    // @ts-expect-error - zodResolver type issue with complex schema transforms
-    resolver: zodResolver(campaignSchema),
+    resolver: zodResolver(campaignSchema as any),
     mode: 'onChange',
     defaultValues: {
       name: '',
