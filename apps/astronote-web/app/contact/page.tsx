@@ -28,8 +28,7 @@ export default function ContactPage() {
     formState: { errors },
     reset,
   } = useForm<ContactFormData>({
-    // @ts-expect-error - zodResolver type issue
-    resolver: zodResolver(contactSchema),
+    resolver: zodResolver(contactSchema as any),
   });
 
   const onSubmit = async (_data: ContactFormData) => {

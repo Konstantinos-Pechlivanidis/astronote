@@ -25,8 +25,7 @@ export default function RetailRegisterPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<z.infer<typeof signupSchema>>({
-    // @ts-expect-error - zodResolver type issue
-    resolver: zodResolver(signupSchema),
+    resolver: zodResolver(signupSchema as any),
   });
 
   const onSubmit = async (data: z.infer<typeof signupSchema>) => {

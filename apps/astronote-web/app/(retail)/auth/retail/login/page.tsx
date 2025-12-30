@@ -25,8 +25,7 @@ export default function RetailLoginPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<z.infer<typeof loginSchema>>({
-    // @ts-expect-error - zodResolver type issue
-    resolver: zodResolver(loginSchema),
+    resolver: zodResolver(loginSchema as any),
     mode: 'onChange',
   });
 
