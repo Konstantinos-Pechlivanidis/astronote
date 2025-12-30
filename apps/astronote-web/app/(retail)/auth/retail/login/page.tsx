@@ -34,8 +34,32 @@ export default function RetailLoginPage() {
     setError(null);
 
     try {
-      await login(data.email, data.password);
+      const authResponse = await login(data.email, data.password);
+      
+      // Log token storage (development only)
+      if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+        // eslint-disable-next-line no-console
+        console.log('[Login] Token stored:', token ? 'present' : 'absent');
+        // eslint-disable-next-line no-console
+        console.log('[Login] User data:', authResponse.user);
+      }
+
       toast.success('Login successful');
+      
+      // Verify token by calling /api/me (development only)
+      if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
+        try {
+          const { meApi } = await import('@/src/lib/retail/api/me');
+          const meRes = await meApi.get();
+          // eslint-disable-next-line no-console
+          console.log('[Login] /api/me verification:', meRes.data);
+        } catch (meError: any) {
+          // eslint-disable-next-line no-console
+          console.error('[Login] /api/me verification failed:', meError?.response?.status, meError?.response?.data);
+        }
+      }
+      
       router.push('/app/retail/dashboard');
     } catch (err: any) {
       const errorMessage =

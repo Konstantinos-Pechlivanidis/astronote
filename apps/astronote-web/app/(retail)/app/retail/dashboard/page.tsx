@@ -1,9 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { dashboardApi } from '@/src/lib/retail/api/dashboard';
 import { billingApi } from '@/src/lib/retail/api/billing';
 import { GlassCard } from '@/components/ui/glass-card';
+import { Button } from '@/components/ui/button';
 import { Megaphone, MessageSquare, Send, XCircle, TrendingUp, Target, CreditCard, CheckCircle, XCircle as XCircleIcon } from 'lucide-react';
 
 function KpiCard({
@@ -55,9 +57,9 @@ function CreditsCard() {
   if (isLoading) {
     return (
       <GlassCard>
-        <div className="h-6 bg-surface-light rounded w-32 mb-4 animate-pulse"></div>
-        <div className="h-8 bg-surface-light rounded w-24 mb-2 animate-pulse"></div>
-        <div className="h-4 bg-surface-light rounded w-40 animate-pulse"></div>
+        <div className="h-6 bg-surface-light rounded w-32 mb-4 animate-pulse" />
+        <div className="h-8 bg-surface-light rounded w-24 mb-2 animate-pulse" />
+        <div className="h-4 bg-surface-light rounded w-40 animate-pulse" />
       </GlassCard>
     );
   }
@@ -124,16 +126,83 @@ function CreditsCard() {
 }
 
 export default function RetailDashboardPage() {
+  // Check if token exists before making query
+  const hasToken = typeof window !== 'undefined' ? !!localStorage.getItem('accessToken') : false;
+
+  // Log token status on mount (development only)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+      // eslint-disable-next-line no-console
+      console.log('[Dashboard] Token status:', token ? 'present' : 'absent');
+      // eslint-disable-next-line no-console
+      console.log('[Dashboard] Will fetch KPIs:', hasToken);
+    }
+  }, [hasToken]);
+
   const { data: kpis, isLoading: kpisLoading, error: kpisError, refetch: refetchKPIs } = useQuery({
     queryKey: ['retail-kpis'],
     queryFn: async () => {
+      // Log request attempt (development only)
+      if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[Dashboard] Fetching KPIs...');
+      }
       const res = await dashboardApi.getKPIs();
+      if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log('[Dashboard] KPIs response:', res.data);
+      }
       return res.data;
     },
+    enabled: hasToken, // Only run query if token exists
     staleTime: 30 * 1000, // 30 seconds
+    retry: 1, // Retry once on failure
   });
 
-  if (kpisLoading) {
+  // Show error state but don't block the page - allow navigation
+  if (kpisError) {
+    // Log error details (development only)
+    if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.error('[Dashboard] KPI fetch error:', kpisError);
+      if ((kpisError as any)?.response) {
+        // eslint-disable-next-line no-console
+        console.error('[Dashboard] Error response:', {
+          status: (kpisError as any).response.status,
+          data: (kpisError as any).response.data,
+        });
+      }
+    }
+
+    return (
+      <div className="space-y-6">
+        {/* Error card - doesn't block navigation */}
+        <GlassCard>
+          <div className="flex items-start gap-4">
+            <XCircle className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-text-primary mb-2">Error Loading Dashboard Data</h3>
+              <p className="text-sm text-text-secondary mb-4">
+                {kpisError instanceof Error
+                  ? kpisError.message
+                  : (kpisError as any)?.response?.data?.message || 'Failed to load dashboard KPIs'}
+              </p>
+              <Button onClick={() => refetchKPIs()} variant="outline" size="sm">
+                Retry
+              </Button>
+            </div>
+          </div>
+        </GlassCard>
+
+        {/* Show CreditsCard even on error - don't block entire page */}
+        <CreditsCard />
+      </div>
+    );
+  }
+
+  // Show loading state but don't block navigation
+  if (kpisLoading || !hasToken) {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -144,24 +213,8 @@ export default function RetailDashboardPage() {
             </GlassCard>
           ))}
         </div>
-      </div>
-    );
-  }
-
-  if (kpisError) {
-    return (
-      <div>
-        <GlassCard>
-          <div className="text-center py-8">
-            <p className="text-red-400 mb-4">Error loading dashboard data</p>
-            <button
-              onClick={() => refetchKPIs()}
-              className="text-sm text-accent hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        </GlassCard>
+        {/* Show CreditsCard even while loading */}
+        <CreditsCard />
       </div>
     );
   }
@@ -214,4 +267,3 @@ export default function RetailDashboardPage() {
     </div>
   );
 }
-

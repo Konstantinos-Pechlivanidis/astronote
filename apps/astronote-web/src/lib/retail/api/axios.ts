@@ -20,6 +20,17 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('accessToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      // Log token presence (not the actual token) for debugging
+      if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.log(`[Axios] Request to ${config.url}: Authorization header ${token ? 'present' : 'absent'}`);
+      }
+    } else {
+      // Log missing token for debugging
+      if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_APP_ENV === 'development') {
+        // eslint-disable-next-line no-console
+        console.warn(`[Axios] Request to ${config.url}: No accessToken in localStorage`);
+      }
     }
   }
   return config;
