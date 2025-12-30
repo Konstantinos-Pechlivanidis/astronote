@@ -19,12 +19,12 @@ import { Button } from '@/components/ui/button';
 
 const navItems = [
   { href: '/app/retail/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/app/retail/campaigns', label: 'Campaigns', icon: MessageSquare, disabled: true },
-  { href: '/app/retail/contacts', label: 'Contacts', icon: Users, disabled: true },
-  { href: '/app/retail/templates', label: 'Templates', icon: FileText, disabled: true },
+  { href: '/app/retail/campaigns', label: 'Campaigns', icon: MessageSquare },
+  { href: '/app/retail/contacts', label: 'Contacts', icon: Users },
+  { href: '/app/retail/templates', label: 'Templates', icon: FileText },
   { href: '/app/retail/billing', label: 'Billing', icon: CreditCard },
-  { href: '/app/retail/automations', label: 'Automations', icon: Zap, disabled: true },
-  { href: '/app/retail/settings', label: 'Settings', icon: Settings, disabled: true },
+  { href: '/app/retail/automations', label: 'Automations', icon: Zap },
+  { href: '/app/retail/settings', label: 'Settings', icon: Settings },
 ];
 
 export function RetailShell({ children }: { children: ReactNode }) {
@@ -54,21 +54,6 @@ export function RetailShell({ children }: { children: ReactNode }) {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
-            const isDisabled = item.disabled;
-
-            if (isDisabled) {
-              return (
-                <div
-                  key={item.href}
-                  className={cn(
-                    'flex items-center gap-3 px-4 py-3 rounded-xl transition-colors cursor-not-allowed opacity-50',
-                  )}
-                >
-                  <Icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
-                </div>
-              );
-            }
 
             return (
               <Link
