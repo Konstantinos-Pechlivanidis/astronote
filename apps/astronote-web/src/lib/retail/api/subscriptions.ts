@@ -24,6 +24,6 @@ export const subscriptionsApi = {
     api.post<{ success: boolean }>(endpoints.subscriptions.cancel, {}),
 
   getPortal: () =>
-    api.get<{ url: string }>(endpoints.subscriptions.portal),
+    api.get<{ portalUrl?: string; url?: string }>(endpoints.subscriptions.portal),
 };
 

@@ -112,8 +112,8 @@ function SubscriptionCard({
       return res.data;
     },
     onSuccess: (data) => {
-      if (data.url) {
-        window.location.assign(data.url);
+      if (data.portalUrl || data.url) {
+        window.location.assign(data.portalUrl || data.url!);
       } else {
         toast.error('No portal URL received from server');
       }

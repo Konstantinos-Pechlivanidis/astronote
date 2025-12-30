@@ -3,9 +3,9 @@ import { endpoints } from './endpoints';
 
 export interface Automation {
   id: number
-  type: 'welcome' | 'birthday'
+  type: 'welcome_message' | 'birthday_message'
   messageBody: string
-  enabled: boolean
+  isActive: boolean
   createdAt?: string
   updatedAt?: string
 }

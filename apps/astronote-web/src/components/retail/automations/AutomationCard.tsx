@@ -46,7 +46,7 @@ export function AutomationCard({ automation }: AutomationCardProps) {
 
     updateMutation.mutate({
       type: automation.type,
-      data: { enabled: !automation.enabled },
+      data: { isActive: !automation.isActive },
     });
   };
 
@@ -68,30 +68,30 @@ export function AutomationCard({ automation }: AutomationCardProps) {
           <div className="flex items-center gap-3">
             <span
               className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                automation.enabled
+                automation.isActive
                   ? 'bg-green-100 text-green-800'
                   : 'bg-gray-100 text-gray-800'
               }`}
             >
-              {automation.enabled ? 'Active' : 'Inactive'}
+              {automation.isActive ? 'Active' : 'Inactive'}
             </span>
             <button
               onClick={handleToggle}
               disabled={updateMutation.isPending || !canToggle}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 ${
-                automation.enabled ? 'bg-accent' : 'bg-surface'
+                automation.isActive ? 'bg-accent' : 'bg-surface'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
               aria-label={
                 !canToggle
                   ? 'Subscription required to enable automations'
-                  : automation.enabled
+                  : automation.isActive
                     ? 'Disable automation'
                     : 'Enable automation'
               }
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  automation.enabled ? 'translate-x-6' : 'translate-x-1'
+                  automation.isActive ? 'translate-x-6' : 'translate-x-1'
                 }`}
               />
             </button>
