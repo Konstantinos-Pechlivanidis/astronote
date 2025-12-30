@@ -12,27 +12,31 @@
     "campaigns",
     "monorepo"
   ],
-  "author": "Astronote Team",
+  "author": "Konstantinos Pechlivanidis",
   "repository": {
     "type": "git",
     "url": "https://github.com/Konstantinos-Pechlivanidis/astronote.git"
   },
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/astronote-web",
+    "apps/retail-api",
+    "apps/shopify-api"
   ],
   "scripts": {
-    "dev": "concurrently -n shopify-api,web -c blue,green \"npm run dev:shopify\" \"npm run dev:web\"",
+    "dev": "concurrently -n shopify-api,astronote-web -c blue,green \"npm run dev:shopify\" \"npm run dev:web\"",
     "dev:shopify": "npm -w @astronote/shopify-api run dev",
-    "dev:shopify-worker": "npm -w @astronote/shopify-worker run dev",
     "dev:retail": "npm -w @astronote/retail-api run dev",
-    "dev:web": "npm -w @astronote/web run dev",
-    "build": "npm -ws --if-present run build",
-    "lint": "npm -ws --if-present run lint",
-    "lint:fix": "npm -ws --if-present run lint:fix",
-    "format": "npm -ws --if-present run format",
-    "format:write": "npm -ws --if-present run format:write",
-    "test": "npm -ws --if-present run test",
+    "dev:web": "npm -w @astronote/web-next run dev",
+    "build": "npm -w @astronote/web-next run build && npm -w @astronote/retail-api run build && npm -w @astronote/shopify-api run build",
+    "build:web": "npm -w @astronote/web-next run build",
+    "build:retail": "npm -w @astronote/retail-api run build",
+    "build:shopify": "npm -w @astronote/shopify-api run build",
+    "lint": "npm -w @astronote/web-next run lint --if-present && npm -w @astronote/shopify-api run lint --if-present",
+    "lint:fix": "npm -w @astronote/web-next run lint:fix --if-present && npm -w @astronote/shopify-api run lint:fix --if-present",
+    "format": "npm -w @astronote/shopify-api run format --if-present",
+    "format:write": "npm -w @astronote/shopify-api run format:write --if-present",
+    "test": "npm -w @astronote/shopify-api run test --if-present",
+    "typecheck": "npm -w @astronote/web-next run typecheck --if-present",
     "check": "npm run lint && npm run format && npm run build",
     "verify:builds": "node scripts/verify-builds.js",
     "smoke:api": "node scripts/smoke-test.js",
@@ -46,14 +50,6 @@
     "node": ">=20 <21",
     "npm": ">=8.0.0"
   },
-  "keywords": [
-    "monorepo",
-    "sms",
-    "marketing",
-    "shopify",
-    "retail"
-  ],
-  "author": "Konstantinos Pechlivanidis",
   "license": "ISC"
 }
 

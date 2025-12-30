@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Build Verification Script
- * Verifies that both frontend and backend build processes work correctly
+ * Verifies that workspace packages build correctly
+ * Only targets: astronote-web, retail-api, shopify-api
  */
 
 import { execSync } from 'child_process';
@@ -12,53 +13,69 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const rootDir = join(__dirname, '..');
 
-console.log('🔍 Verifying build commands...\n');
+console.log('🔍 Verifying workspace builds...\n');
 
 const results = {
-  frontend: { success: false, error: null },
-  backend: { success: false, error: null },
+  web: { success: false, error: null },
+  retail: { success: false, error: null },
+  shopify: { success: false, error: null },
 };
 
-// 1. Frontend Build (Vite)
-console.log('1. Building frontend (apps/web)...');
+// 1. Frontend Build (astronote-web)
+console.log('1. Building frontend (apps/astronote-web)...');
 try {
   execSync('npm run build', {
-    cwd: join(rootDir, 'apps/web'),
+    cwd: join(rootDir, 'apps/astronote-web'),
     stdio: 'inherit',
   });
-  results.frontend.success = true;
+  results.web.success = true;
   console.log('   ✅ Frontend build successful\n');
 } catch (error) {
-  results.frontend.success = false;
-  results.frontend.error = error.message;
+  results.web.success = false;
+  results.web.error = error.message;
   console.log(`   ❌ Frontend build failed: ${error.message}\n`);
 }
 
-// 2. Backend Prisma Generation (equivalent to build)
-console.log('2. Generating Prisma client (apps/shopify-api)...');
+// 2. Retail API Build (Prisma generation)
+console.log('2. Building retail-api (apps/retail-api)...');
 try {
-  execSync('npm run prisma:generate', {
+  execSync('npm run build', {
+    cwd: join(rootDir, 'apps/retail-api'),
+    stdio: 'inherit',
+  });
+  results.retail.success = true;
+  console.log('   ✅ Retail API build successful\n');
+} catch (error) {
+  results.retail.success = false;
+  results.retail.error = error.message;
+  console.log(`   ❌ Retail API build failed: ${error.message}\n`);
+}
+
+// 3. Shopify API Build (Prisma generation)
+console.log('3. Building shopify-api (apps/shopify-api)...');
+try {
+  execSync('npm run build', {
     cwd: join(rootDir, 'apps/shopify-api'),
     stdio: 'inherit',
   });
-  results.backend.success = true;
-  console.log('   ✅ Prisma client generation successful\n');
+  results.shopify.success = true;
+  console.log('   ✅ Shopify API build successful\n');
 } catch (error) {
-  results.backend.success = false;
-  results.backend.error = error.message;
-  console.log(`   ❌ Prisma client generation failed: ${error.message}\n`);
+  results.shopify.success = false;
+  results.shopify.error = error.message;
+  console.log(`   ❌ Shopify API build failed: ${error.message}\n`);
 }
 
 // Summary
 console.log('📊 Build Verification Summary:');
-console.log(`   Frontend: ${results.frontend.success ? '✅ PASS' : '❌ FAIL'}`);
-console.log(`   Backend:  ${results.backend.success ? '✅ PASS' : '❌ FAIL'}`);
+console.log(`   Frontend (astronote-web): ${results.web.success ? '✅ PASS' : '❌ FAIL'}`);
+console.log(`   Retail API:                ${results.retail.success ? '✅ PASS' : '❌ FAIL'}`);
+console.log(`   Shopify API:               ${results.shopify.success ? '✅ PASS' : '❌ FAIL'}`);
 
-if (results.frontend.success && results.backend.success) {
-  console.log('\n✅ All builds verified successfully!');
+if (results.web.success && results.retail.success && results.shopify.success) {
+  console.log('\n✅ All workspace builds verified successfully!');
   process.exit(0);
 } else {
   console.log('\n❌ Some builds failed. See errors above.');
   process.exit(1);
 }
-

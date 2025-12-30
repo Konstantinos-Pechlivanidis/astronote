@@ -44,52 +44,71 @@ const allowlist = (process.env.CORS_ALLOWLIST || '')
   .filter(Boolean);
 
 // Add default retail frontend URL if not in allowlist
-const defaultRetailFrontend = 'https://astronote-retail-frontend.onrender.com';
+const defaultRetailFrontend = 'https://astronote.onrender.com';
 if (!allowlist.includes(defaultRetailFrontend) && !allowlist.some(a => defaultRetailFrontend.startsWith(a))) {
   allowlist.push(defaultRetailFrontend);
 }
 
 // Helper function to check if origin is allowed
 function isOriginAllowed(origin) {
-  if (!origin) {
-    return true; // Allow requests with no origin (e.g., Postman, server-to-server)
-  }
-  
-  return allowlist.some((allowed) => {
-    // Exact match
-    if (origin === allowed) {
+  try {
+    if (!origin) {
+      return true; // Allow requests with no origin (e.g., Postman, server-to-server)
+    }
+    
+    // If allowlist is empty, allow all (development mode)
+    if (allowlist.length === 0) {
       return true;
     }
-    // Starts with match (for subpaths)
-    if (origin.startsWith(allowed)) {
-      return true;
-    }
-    // Handle protocol variations
-    const originWithoutProtocol = origin.replace(/^https?:\/\//, '');
-    const allowedWithoutProtocol = allowed.replace(/^https?:\/\//, '');
-    if (originWithoutProtocol === allowedWithoutProtocol || originWithoutProtocol.startsWith(allowedWithoutProtocol)) {
-      return true;
-    }
+    
+    return allowlist.some((allowed) => {
+      if (!allowed) return false;
+      
+      // Exact match
+      if (origin === allowed) {
+        return true;
+      }
+      // Starts with match (for subpaths)
+      if (origin.startsWith(allowed)) {
+        return true;
+      }
+      // Handle protocol variations
+      const originWithoutProtocol = origin.replace(/^https?:\/\//, '');
+      const allowedWithoutProtocol = allowed.replace(/^https?:\/\//, '');
+      if (originWithoutProtocol === allowedWithoutProtocol || originWithoutProtocol.startsWith(allowedWithoutProtocol)) {
+        return true;
+      }
+      return false;
+    });
+  } catch (err) {
+    console.error('[CORS] Error in isOriginAllowed:', err, 'Origin:', origin);
+    // On error, default to false (deny) for security
     return false;
-  });
+  }
 }
 
 // Allow Postman / server-to-server (no Origin)
 const corsOptions = allowlist.length
   ? {
       origin(origin, cb) {
-        const ok = isOriginAllowed(origin);
-        
-        if (!ok && origin) {
-          // Log for debugging
-          console.warn(`[CORS] Blocked origin: ${origin}. Allowed: ${allowlist.join(', ')}`);
+        try {
+          const ok = isOriginAllowed(origin);
+          
+          if (!ok && origin) {
+            // Log for debugging
+            console.warn(`[CORS] Blocked origin: ${origin}. Allowed: ${allowlist.join(', ')}`);
+          }
+          
+          return cb(ok ? null : new Error('Not allowed by CORS'));
+        } catch (err) {
+          console.error('[CORS] Error in origin callback:', err, 'Origin:', origin);
+          // On error, deny for security
+          return cb(new Error('CORS check failed'));
         }
-        
-        return cb(ok ? null : new Error('Not allowed by CORS'));
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID', 'Cookie'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID', 'Cookie', 'Idempotency-Key'],
       exposedHeaders: ['X-Request-ID'],
       maxAge: 86400, // 24 hours
       preflightContinue: false,
@@ -99,7 +118,7 @@ const corsOptions = allowlist.length
       origin: true, 
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID', 'Cookie'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID', 'Cookie', 'Idempotency-Key'],
       exposedHeaders: ['X-Request-ID'],
       preflightContinue: false,
       optionsSuccessStatus: 204,
@@ -115,13 +134,28 @@ app.use((req, res, next) => {
   
   // Handle preflight OPTIONS requests
   if (req.method === 'OPTIONS') {
-    if (isOriginAllowed(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, Cookie');
-      res.setHeader('Access-Control-Max-Age', '86400');
-      return res.status(204).end();
+    try {
+      if (isOriginAllowed(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-ID, Cookie, Idempotency-Key');
+        res.setHeader('Access-Control-Max-Age', '86400');
+        return res.status(204).end();
+      } else {
+        // Origin not allowed - return 403 with CORS headers to prevent browser errors
+        if (origin) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+        }
+        return res.status(403).json({ error: 'CORS: Origin not allowed' });
+      }
+    } catch (err) {
+      // Log error but don't crash - return proper CORS error
+      console.error('[CORS] Error handling OPTIONS request:', err);
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+      }
+      return res.status(500).json({ error: 'CORS preflight error' });
     }
   }
   
