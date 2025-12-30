@@ -54,6 +54,44 @@ export const endpoints = {
     previewAudience: '/api/campaigns/preview-audience',
   },
 
+  // Contacts
+  contacts: {
+    list: '/api/contacts',
+    detail: (id: number) => `/api/contacts/${id}`,
+    create: '/api/contacts',
+    update: (id: number) => `/api/contacts/${id}`,
+    delete: (id: number) => `/api/contacts/${id}`,
+    import: '/api/contacts/import',
+    importStatus: (jobId: string) => `/api/contacts/import/${jobId}`,
+    importTemplate: '/api/contacts/import/template',
+  },
+
+  // Lists (system lists for filtering)
+  lists: {
+    list: '/api/lists',
+    detail: (id: number) => `/api/lists/${id}`,
+    contacts: (id: number) => `/api/lists/${id}/contacts`,
+  },
+
+  // Templates
+  templates: {
+    list: '/api/templates',
+    detail: (id: number) => `/api/templates/${id}`,
+    create: '/api/templates',
+    update: (id: number) => `/api/templates/${id}`,
+    delete: (id: number) => `/api/templates/${id}`,
+    render: (id: number) => `/api/templates/${id}/render`,
+    stats: (id: number) => `/api/templates/${id}/stats`,
+  },
+
+  // Automations
+  automations: {
+    list: '/api/automations',
+    detail: (type: string) => `/api/automations/${type}`,
+    update: (type: string) => `/api/automations/${type}`,
+    stats: (type: string) => `/api/automations/${type}/stats`,
+  },
+
   // Public (no auth)
   public: {
     // Tracking
