@@ -1,20 +1,38 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AppShell from '@/layout/AppShell';
 import LandingPage from '@/features/marketing/pages/LandingPage';
-import RetailLoginPage from '@/features/retail/pages/LoginPage';
+
+// Retail imports - using migrated retail-web-legacy
+import { AuthGuard, PublicOnlyGuard } from '@/retail/app/router/guards';
+import RetailAppShell from '@/retail/components/common/AppShell';
+import RetailErrorBoundary from '@/retail/app/components/ErrorBoundary';
+import RetailLandingPage from '@/retail/features/auth/pages/LandingPage';
+import RetailSignupPage from '@/retail/features/auth/pages/SignupPage';
+import RetailLoginPage from '@/retail/features/auth/pages/LoginPage';
+import RetailDashboardPage from '@/retail/features/dashboard/pages/DashboardPage';
+import RetailCampaignsPage from '@/retail/features/campaigns/pages/CampaignsPage';
+import RetailNewCampaignPage from '@/retail/features/campaigns/pages/NewCampaignPage';
+import RetailCampaignDetailPage from '@/retail/features/campaigns/pages/CampaignDetailPage';
+import RetailCampaignStatusPage from '@/retail/features/campaigns/pages/CampaignStatusPage';
+import RetailCampaignStatsPage from '@/retail/features/campaigns/pages/CampaignStatsPage';
+import RetailEditCampaignPage from '@/retail/features/campaigns/pages/EditCampaignPage';
+import RetailContactsPage from '@/retail/features/contacts/pages/ContactsPage';
+import RetailContactsImportPage from '@/retail/features/contacts/pages/ContactsImportPage';
+import RetailTemplatesPage from '@/retail/features/templates/pages/TemplatesPage';
+import RetailBillingPage from '@/retail/features/billing/pages/BillingPage';
+import RetailBillingSuccessPage from '@/retail/features/billing/pages/BillingSuccessPage';
+import RetailAutomationsPage from '@/retail/features/automations/pages/AutomationsPage';
+import RetailSettingsPage from '@/retail/features/settings/pages/SettingsPage';
+import RetailNotFoundPage from '@/retail/features/public/pages/NotFoundPage';
+import RetailOfferPage from '@/retail/features/public/pages/OfferPage';
+import RetailUnsubscribePage from '@/retail/features/public/pages/UnsubscribePage';
+import RetailResubscribePage from '@/retail/features/public/pages/ResubscribePage';
+import RetailNfcOptInPage from '@/retail/features/public/pages/NfcOptInPage';
+import RetailConversionTagPage from '@/retail/features/public/pages/ConversionTagPage';
+import RetailLinkExpiredPage from '@/retail/features/public/pages/LinkExpiredPage';
+
+// Shopify imports (keep existing)
 import ShopifyLoginPage from '@/features/shopify/pages/LoginPage';
-
-// Import retail pages
-import RetailDashboardPage from '@/features/retail/pages/DashboardPage';
-import RetailCampaignsPage from '@/features/retail/pages/CampaignsPage';
-import RetailCreateCampaignPage from '@/features/retail/pages/CreateCampaignPage';
-import RetailContactsPage from '@/features/retail/pages/ContactsPage';
-import RetailListsPage from '@/features/retail/pages/ListsPage';
-import RetailAutomationsPage from '@/features/retail/pages/AutomationsPage';
-import RetailTemplatesPage from '@/features/retail/pages/TemplatesPage';
-import RetailSettingsPage from '@/features/retail/pages/SettingsPage';
-
-// Import shopify pages
 import ShopifyDashboardPage from '@/features/shopify/pages/DashboardPage';
 import ShopifyCampaignsPage from '@/features/shopify/pages/CampaignsPage';
 import ShopifyCreateCampaignPage from '@/features/shopify/pages/CreateCampaignPage';
@@ -24,25 +42,93 @@ import ShopifyAutomationsPage from '@/features/shopify/pages/AutomationsPage';
 import ShopifyTemplatesPage from '@/features/shopify/pages/TemplatesPage';
 import ShopifySettingsPage from '@/features/shopify/pages/SettingsPage';
 
+// Root route component - login-first behavior
+// Note: This component runs outside AuthProvider context, so we check localStorage
+// The AuthProvider will verify the token on mount and set user state
+function RootRoute() {
+  const token = localStorage.getItem('retail_accessToken') || localStorage.getItem('accessToken');
+  if (token) {
+    return <Navigate to="/retail/dashboard" replace />;
+  }
+  return <Navigate to="/retail/login" replace />;
+}
+
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <LandingPage />,
+    element: <RootRoute />,
   },
   {
-    element: <AppShell />,
+    path: '/marketing',
+    element: <LandingPage />,
+  },
+  // Retail routes
+  {
+    path: '/retail',
+    element: <RetailErrorBoundary />,
     children: [
-      // Retail routes
+      // Public auth routes
       {
-        path: 'retail',
+        path: 'login',
+        element: (
+          <PublicOnlyGuard>
+            <RetailLoginPage />
+          </PublicOnlyGuard>
+        ),
+      },
+      {
+        path: 'signup',
+        element: (
+          <PublicOnlyGuard>
+            <RetailSignupPage />
+          </PublicOnlyGuard>
+        ),
+      },
+      {
+        path: 'landing',
+        element: (
+          <PublicOnlyGuard>
+            <RetailLandingPage />
+          </PublicOnlyGuard>
+        ),
+      },
+      // Public flows (no auth required)
+      {
+        path: 'o/:trackingId',
+        element: <RetailOfferPage />,
+      },
+      {
+        path: 'unsubscribe',
+        element: <RetailUnsubscribePage />,
+      },
+      {
+        path: 'resubscribe',
+        element: <RetailResubscribePage />,
+      },
+      {
+        path: 'nfc/:publicId',
+        element: <RetailNfcOptInPage />,
+      },
+      {
+        path: 'c/:tagPublicId',
+        element: <RetailConversionTagPage />,
+      },
+      {
+        path: 'link-expired',
+        element: <RetailLinkExpiredPage />,
+      },
+      // Protected routes with AppShell
+      {
+        path: '',
+        element: (
+          <AuthGuard>
+            <RetailAppShell />
+          </AuthGuard>
+        ),
         children: [
           {
             index: true,
             element: <Navigate to="/retail/dashboard" replace />,
-          },
-          {
-            path: 'login',
-            element: <RetailLoginPage />,
           },
           {
             path: 'dashboard',
@@ -54,23 +140,47 @@ export const router = createBrowserRouter([
           },
           {
             path: 'campaigns/new',
-            element: <RetailCreateCampaignPage />,
+            element: <RetailNewCampaignPage />,
+          },
+          {
+            path: 'campaigns/:id',
+            element: <RetailCampaignDetailPage />,
+          },
+          {
+            path: 'campaigns/:id/edit',
+            element: <RetailEditCampaignPage />,
+          },
+          {
+            path: 'campaigns/:id/status',
+            element: <RetailCampaignStatusPage />,
+          },
+          {
+            path: 'campaigns/:id/stats',
+            element: <RetailCampaignStatsPage />,
           },
           {
             path: 'contacts',
             element: <RetailContactsPage />,
           },
           {
-            path: 'lists',
-            element: <RetailListsPage />,
-          },
-          {
-            path: 'automations',
-            element: <RetailAutomationsPage />,
+            path: 'contacts/import',
+            element: <RetailContactsImportPage />,
           },
           {
             path: 'templates',
             element: <RetailTemplatesPage />,
+          },
+          {
+            path: 'billing',
+            element: <RetailBillingPage />,
+          },
+          {
+            path: 'billing/success',
+            element: <RetailBillingSuccessPage />,
+          },
+          {
+            path: 'automations',
+            element: <RetailAutomationsPage />,
           },
           {
             path: 'settings',
@@ -78,7 +188,17 @@ export const router = createBrowserRouter([
           },
         ],
       },
-      // Shopify routes
+      // 404
+      {
+        path: '404',
+        element: <RetailNotFoundPage />,
+      },
+    ],
+  },
+  // Shopify routes (keep existing structure)
+  {
+    element: <AppShell />,
+    children: [
       {
         path: 'shopify',
         children: [
@@ -125,5 +245,35 @@ export const router = createBrowserRouter([
         ],
       },
     ],
+  },
+  // Legacy public routes (redirect to retail namespace)
+  {
+    path: '/o/:trackingId',
+    element: <RetailOfferPage />,
+  },
+  {
+    path: '/unsubscribe',
+    element: <RetailUnsubscribePage />,
+  },
+  {
+    path: '/resubscribe',
+    element: <RetailResubscribePage />,
+  },
+  {
+    path: '/nfc/:publicId',
+    element: <RetailNfcOptInPage />,
+  },
+  {
+    path: '/c/:tagPublicId',
+    element: <RetailConversionTagPage />,
+  },
+  {
+    path: '/link-expired',
+    element: <RetailLinkExpiredPage />,
+  },
+  // Catch all - show 404
+  {
+    path: '*',
+    element: <RetailNotFoundPage />,
   },
 ]);

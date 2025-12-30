@@ -1,9 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { Provider } from 'react-redux';
-import { store } from '@/store/store';
-import { Toaster } from 'sonner';
-import { AuthProvider as RetailAuthProvider } from '@/retail/app/providers/AuthProvider';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,7 +13,6 @@ const queryClient = new QueryClient({
         return failureCount < 2;
       },
       staleTime: 5 * 60 * 1000, // 5 minutes
-      refetchOnWindowFocus: false,
     },
     mutations: {
       retry: false, // Never retry mutations
@@ -25,17 +20,12 @@ const queryClient = new QueryClient({
   },
 });
 
-export function Providers({ children }) {
+export function AppQueryClientProvider({ children }) {
   return (
-    <Provider store={store}>
-      <QueryClientProvider client={queryClient}>
-        <RetailAuthProvider>
-          {children}
-          <Toaster position="top-right" />
-          {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
-        </RetailAuthProvider>
-      </QueryClientProvider>
-    </Provider>
+    <QueryClientProvider client={queryClient}>
+      {children}
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+    </QueryClientProvider>
   );
 }
 

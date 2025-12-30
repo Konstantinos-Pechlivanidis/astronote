@@ -3,6 +3,9 @@ import { createSlice } from '@reduxjs/toolkit';
 const initialState = {
   theme: 'light',
   sidebarOpen: true,
+  // Retail-specific UI state
+  sidebarCollapsed: false,
+  mobileDrawerOpen: false,
 };
 
 const uiSlice = createSlice({
@@ -18,9 +21,26 @@ const uiSlice = createSlice({
     setSidebarOpen: (state, action) => {
       state.sidebarOpen = action.payload;
     },
+    // Retail-specific actions
+    setSidebarCollapsed: (state, action) => {
+      state.sidebarCollapsed = action.payload;
+    },
+    toggleMobileDrawer: (state) => {
+      state.mobileDrawerOpen = !state.mobileDrawerOpen;
+    },
+    closeMobileDrawer: (state) => {
+      state.mobileDrawerOpen = false;
+    },
   },
 });
 
-export const { setTheme, toggleSidebar, setSidebarOpen } = uiSlice.actions;
+export const { 
+  setTheme, 
+  toggleSidebar, 
+  setSidebarOpen,
+  setSidebarCollapsed,
+  toggleMobileDrawer,
+  closeMobileDrawer,
+} = uiSlice.actions;
 export default uiSlice.reducer;
 
