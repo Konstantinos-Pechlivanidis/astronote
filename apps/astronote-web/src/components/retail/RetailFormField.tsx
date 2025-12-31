@@ -59,16 +59,30 @@ export function RetailFormField({
         {required && <span className="ml-1 text-red-400">*</span>}
       </label>
 
-      {as === 'input' && (
-        <Input
-          {...(props as InputFieldProps)}
-          id={id}
-          className={cn(
-            (props as InputFieldProps).className,
-            error && 'border-red-300 focus:border-red-400',
-          )}
-        />
-      )}
+      {as === 'input' && (() => {
+        const inputProps = props as InputFieldProps;
+        const existingOnInput = inputProps.onInput;
+        return (
+          <Input
+            {...inputProps}
+            id={id}
+            onInput={(e) => {
+              // Handle autofill: if onChange exists (from register()), call it
+              if (inputProps.onChange) {
+                inputProps.onChange(e as any);
+              }
+              // Also call any custom onInput handler if provided
+              if (existingOnInput) {
+                existingOnInput(e);
+              }
+            }}
+            className={cn(
+              inputProps.className,
+              error && 'border-red-300 focus:border-red-400',
+            )}
+          />
+        );
+      })()}
 
       {as === 'textarea' && (
         <Textarea

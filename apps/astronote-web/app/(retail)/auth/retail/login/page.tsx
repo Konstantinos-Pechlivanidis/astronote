@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
@@ -32,7 +32,16 @@ export default function RetailLoginPage() {
     handleSubmit,
     formState: { errors },
     getValues,
+    trigger,
   } = form;
+
+  // Fix autofill: trigger validation after mount to sync browser autofill values
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      trigger(['email', 'password']);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [trigger]);
 
   const onSubmit = async (data: z.infer<typeof loginSchema>) => {
     // Debug: log form values before submit
@@ -103,6 +112,16 @@ export default function RetailLoginPage() {
                 </RetailCard>
               )}
 
+              {/* Debug: show form errors in development */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="rounded-md bg-gray-100 p-2 text-xs">
+                  <strong>Debug (dev only):</strong>
+                  <pre className="mt-1 overflow-auto">
+                    {JSON.stringify({ errors, values: getValues() }, null, 2)}
+                  </pre>
+                </div>
+              )}
+
               <RetailFormField
                 label="Email"
                 type="email"
@@ -125,8 +144,14 @@ export default function RetailLoginPage() {
                     {...register('password')}
                     type={showPassword ? 'text' : 'password'}
                     id="password"
+                    name="password"
                     autoComplete="current-password"
                     placeholder="Enter your password"
+                    onInput={(e) => {
+                      // Handle autofill: trigger validation on input event
+                      const target = e.target as HTMLInputElement;
+                      register('password').onChange({ target, type: 'change' });
+                    }}
                     className="h-11 w-full rounded-xl border border-border bg-surface px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0"
                   />
                   <button
