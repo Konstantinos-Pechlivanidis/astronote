@@ -12,7 +12,9 @@ import { ContactsTable } from '@/src/components/retail/contacts/ContactsTable';
 import { ContactFormModal } from '@/src/components/retail/contacts/ContactFormModal';
 import { ContactsSkeleton } from '@/src/components/retail/contacts/ContactsSkeleton';
 import { EmptyState } from '@/src/components/retail/EmptyState';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
 import type { Contact } from '@/src/lib/retail/api/contacts';
 import type { z } from 'zod';
@@ -89,113 +91,118 @@ export default function ContactsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <Users className="w-8 h-8 text-accent" />
-        <div>
-          <h1 className="text-3xl font-bold text-text-primary">Contacts</h1>
-          <p className="text-sm text-text-secondary mt-1">Manage your customer contacts</p>
-        </div>
-      </div>
-
-      <ContactsToolbar
-        search={search}
-        onSearchChange={setSearch}
-        onAddClick={handleAddClick}
-        listId={listId}
-        onListChange={handleListChange}
-        systemLists={systemLists}
-        isLoadingLists={isLoadingLists}
-      />
-
-      {isLoading && <ContactsSkeleton />}
-
-      {error && (
-        <GlassCard>
-          <div className="text-center py-8">
-            <p className="text-red-400 mb-4">Error loading contacts</p>
-            <Button onClick={() => refetch()} variant="outline" size="sm">
-              Retry
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
+          title="Contacts"
+          description="Manage your customer contacts"
+          actions={
+            <Button onClick={handleAddClick} size="sm">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Contact
             </Button>
-          </div>
-        </GlassCard>
-      )}
+          }
+        />
 
-      {!isLoading && !error && data && (
-        <>
-          {data.items && data.items.length > 0 ? (
-            <>
-              <ContactsTable
-                contacts={data.items}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-              {/* Pagination */}
-              <div className="mt-4 flex items-center justify-between">
-                <div className="text-sm text-text-secondary">
-                  Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, data.total)} of{' '}
-                  {data.total} contacts
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={page * pageSize >= data.total}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <GlassCard>
-              <EmptyState
-                icon={Users}
-                title={
-                  listId
-                    ? 'No contacts in this list'
-                    : search
-                      ? 'No contacts found'
-                      : 'No contacts yet'
-                }
-                description={
-                  listId
-                    ? 'This list does not contain any contacts matching your criteria.'
-                    : search
-                      ? 'Try adjusting your search terms'
-                      : 'Add your first contact to start building your customer database. Phone numbers must be in E.164 format (e.g., +306912345678).'
-                }
-                action={
-                  !search && !listId && (
-                    <Button onClick={handleAddClick} size="sm">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Contact
+        <ContactsToolbar
+          search={search}
+          onSearchChange={setSearch}
+          onAddClick={handleAddClick}
+          listId={listId}
+          onListChange={handleListChange}
+          systemLists={systemLists}
+          isLoadingLists={isLoadingLists}
+        />
+
+        {isLoading && <ContactsSkeleton />}
+
+        {error && (
+          <RetailCard variant="danger">
+            <div className="py-8 text-center">
+              <p className="mb-4 text-red-400">Error loading contacts</p>
+              <Button onClick={() => refetch()} variant="outline" size="sm">
+                Retry
+              </Button>
+            </div>
+          </RetailCard>
+        )}
+
+        {!isLoading && !error && data && (
+          <>
+            {data.items && data.items.length > 0 ? (
+              <>
+                <ContactsTable
+                  contacts={data.items}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
+                {/* Pagination */}
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-text-secondary">
+                    Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, data.total)} of{' '}
+                    {data.total} contacts
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Previous
                     </Button>
-                  )
-                }
-              />
-            </GlassCard>
-          )}
-        </>
-      )}
+                    <Button
+                      onClick={() => setPage((p) => p + 1)}
+                      disabled={page * pageSize >= data.total}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <RetailCard>
+                <EmptyState
+                  icon={Users}
+                  title={
+                    listId
+                      ? 'No contacts in this list'
+                      : search
+                        ? 'No contacts found'
+                        : 'No contacts yet'
+                  }
+                  description={
+                    listId
+                      ? 'This list does not contain any contacts matching your criteria.'
+                      : search
+                        ? 'Try adjusting your search terms'
+                        : 'Add your first contact to start building your customer database. Phone numbers must be in E.164 format (e.g., +306912345678).'
+                  }
+                  action={
+                    !search && !listId && (
+                      <Button onClick={handleAddClick} size="sm">
+                        <Plus className="mr-2 w-4 h-4" />
+                        Add Contact
+                      </Button>
+                    )
+                  }
+                />
+              </RetailCard>
+            )}
+          </>
+        )}
 
-      <ContactFormModal
-        open={formOpen}
-        onClose={handleCloseForm}
-        contact={editingContact}
-        onSubmit={handleFormSubmit}
-        isLoading={createMutation.isPending || updateMutation.isPending}
-      />
-    </div>
+        <ContactFormModal
+          open={formOpen}
+          onClose={handleCloseForm}
+          contact={editingContact}
+          onSubmit={handleFormSubmit}
+          isLoading={createMutation.isPending || updateMutation.isPending}
+        />
+      </div>
+    </RetailPageLayout>
   );
 }
 

@@ -9,6 +9,45 @@ const router = express.Router();
 const SYSTEM_USER_ID = Number(process.env.SYSTEM_USER_ID || 1);
 
 /**
+ * Helper function to find the actual system user ID
+ * Looks for the user that owns templates with system naming pattern (EN/GR suffix)
+ * Falls back to SYSTEM_USER_ID env var or default 1
+ */
+async function getSystemUserId() {
+  // First try the configured SYSTEM_USER_ID
+  const configuredId = SYSTEM_USER_ID;
+  const user = await prisma.user.findUnique({ where: { id: configuredId } });
+  if (user) {
+    // Check if this user has system templates
+    const templateCount = await prisma.messageTemplate.count({
+      where: { 
+        ownerId: configuredId,
+        name: { contains: ' (EN)' }
+      }
+    });
+    if (templateCount > 0) {
+      return configuredId;
+    }
+  }
+
+  // If configured user doesn't have templates, find the user with most templates
+  const templateOwner = await prisma.messageTemplate.groupBy({
+    by: ['ownerId'],
+    _count: { id: true },
+    orderBy: { _count: { id: 'desc' } },
+    take: 1
+  });
+
+  if (templateOwner.length > 0 && templateOwner[0]._count.id > 10) {
+    // If a user has more than 10 templates, they're likely the system user
+    return templateOwner[0].ownerId;
+  }
+
+  // Fallback to configured ID
+  return configuredId;
+}
+
+/**
  * NOTE:
  * - Templates are managed by the platform (system user).
  * - Owners can only read & use them in campaigns.
@@ -32,7 +71,9 @@ router.get('/templates', requireAuth, async (req, res, next) => {
       });
     }
 
-    const where = { ownerId: SYSTEM_USER_ID, language };
+    // Get the actual system user ID dynamically
+    const actualSystemUserId = await getSystemUserId();
+    const where = { ownerId: actualSystemUserId, language };
     
     if (q) {where.name = { contains: q, mode: 'insensitive' };}
     if (category && ['cafe', 'restaurant', 'gym', 'sports_club', 'generic', 'hotels'].includes(category)) {
@@ -85,8 +126,10 @@ router.get('/templates/:id', requireAuth, async (req, res, next) => {
       });
     }
 
+    // Get the actual system user ID dynamically
+    const actualSystemUserId = await getSystemUserId();
     const t = await prisma.messageTemplate.findFirst({
-      where: { id, ownerId: SYSTEM_USER_ID },
+      where: { id, ownerId: actualSystemUserId },
       select: { 
         id: true, 
         name: true, 

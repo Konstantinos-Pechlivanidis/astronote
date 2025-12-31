@@ -4,7 +4,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { billingApi, type Package } from '@/src/lib/retail/api/billing';
 import { subscriptionsApi } from '@/src/lib/retail/api/subscriptions';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import {
@@ -31,7 +33,7 @@ function BillingHeader({
   const planType = subscription?.planType;
 
   return (
-    <GlassCard className="mb-6">
+    <RetailCard className="mb-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-text-primary">Billing & Subscription</h2>
         <div
@@ -71,7 +73,7 @@ function BillingHeader({
           </p>
         </div>
       )}
-    </GlassCard>
+    </RetailCard>
   );
 }
 
@@ -144,7 +146,7 @@ function SubscriptionCard({
 
   if (isActive) {
     return (
-      <GlassCard>
+      <RetailCard>
         <div className="flex items-center gap-2 mb-4">
           <CheckCircle className="w-5 h-5 text-green-400" />
           <h3 className="text-lg font-semibold text-text-primary">
@@ -165,12 +167,12 @@ function SubscriptionCard({
             {portalMutation.isPending ? 'Loading...' : 'Manage Subscription'}
           </Button>
         </div>
-      </GlassCard>
+      </RetailCard>
     );
   }
 
   return (
-    <GlassCard>
+    <RetailCard>
       <div className="flex items-center gap-2 mb-4">
         <XCircle className="w-5 h-5 text-red-400" />
         <h3 className="text-lg font-semibold text-text-primary">Subscribe to a Plan</h3>
@@ -180,7 +182,7 @@ function SubscriptionCard({
         allocations.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <GlassCard light hover>
+        <RetailCard variant="subtle" hover>
           <h4 className="font-semibold text-text-primary mb-2">Starter Plan</h4>
           <p className="text-sm text-text-secondary mb-4">Perfect for small businesses</p>
           <Button
@@ -192,8 +194,8 @@ function SubscriptionCard({
               ? 'Processing...'
               : 'Subscribe to Starter'}
           </Button>
-        </GlassCard>
-        <GlassCard light hover>
+        </RetailCard>
+        <RetailCard variant="subtle" hover>
           <h4 className="font-semibold text-text-primary mb-2">Pro Plan</h4>
           <p className="text-sm text-text-secondary mb-4">For growing businesses</p>
           <Button
@@ -205,9 +207,9 @@ function SubscriptionCard({
               ? 'Processing...'
               : 'Subscribe to Pro'}
           </Button>
-        </GlassCard>
+        </RetailCard>
       </div>
-    </GlassCard>
+    </RetailCard>
   );
 }
 
@@ -272,27 +274,27 @@ function CreditTopupCard() {
 
   if (packagesLoading) {
     return (
-      <GlassCard>
+      <RetailCard>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-16 bg-surface-light rounded animate-pulse"></div>
           ))}
         </div>
-      </GlassCard>
+      </RetailCard>
     );
   }
 
   if (packagesError) {
     return (
-      <GlassCard>
+      <RetailCard>
         <div className="text-sm text-red-400">Error loading credit packs</div>
-      </GlassCard>
+      </RetailCard>
     );
   }
 
   if (creditPacks.length === 0) {
     return (
-      <GlassCard>
+      <RetailCard>
         <div className="flex items-center gap-2 mb-4">
           <CreditCard className="w-5 h-5 text-accent" />
           <h3 className="text-lg font-semibold text-text-primary">Buy Credits</h3>
@@ -300,7 +302,7 @@ function CreditTopupCard() {
         <p className="text-sm text-text-secondary">
           Credit packs are not available at this time. Please contact support.
         </p>
-      </GlassCard>
+      </RetailCard>
     );
   }
 
@@ -323,7 +325,7 @@ function CreditTopupCard() {
   };
 
   return (
-    <GlassCard>
+    <RetailCard>
       <div className="flex items-center gap-2 mb-4">
         <CreditCard className="w-5 h-5 text-accent" />
         <h3 className="text-lg font-semibold text-text-primary">Buy Credits</h3>
@@ -385,7 +387,7 @@ function CreditTopupCard() {
           </p>
         )}
       </div>
-    </GlassCard>
+    </RetailCard>
   );
 }
 
@@ -434,7 +436,7 @@ function PackageCard({ pkg }: { pkg: Package }) {
   };
 
   return (
-    <GlassCard hover>
+    <RetailCard hover>
       <div className="flex items-center gap-2 mb-3">
         <PackageIcon className="w-5 h-5 text-accent" />
         <h3 className="text-lg font-semibold text-text-primary">{pkg.name || 'Package'}</h3>
@@ -467,35 +469,35 @@ function PackageCard({ pkg }: { pkg: Package }) {
           Stripe checkout not available for this package
         </p>
       )}
-    </GlassCard>
+    </RetailCard>
   );
 }
 
 function TransactionsTable({ transactions, isLoading }: { transactions: any[]; isLoading: boolean }) {
   if (isLoading) {
     return (
-      <GlassCard>
+      <RetailCard>
         <h3 className="text-lg font-semibold text-text-primary mb-4">Transaction History</h3>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-16 bg-surface-light rounded animate-pulse"></div>
           ))}
         </div>
-      </GlassCard>
+      </RetailCard>
     );
   }
 
   if (!transactions || transactions.length === 0) {
     return (
-      <GlassCard>
+      <RetailCard>
         <h3 className="text-lg font-semibold text-text-primary mb-4">Transaction History</h3>
         <p className="text-sm text-text-secondary">No transactions yet.</p>
-      </GlassCard>
+      </RetailCard>
     );
   }
 
   return (
-    <GlassCard>
+    <RetailCard>
       <div className="p-6 border-b border-border">
         <h3 className="text-lg font-semibold text-text-primary">Transaction History</h3>
       </div>
@@ -551,7 +553,7 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
           </tbody>
         </table>
       </div>
-    </GlassCard>
+    </RetailCard>
   );
 }
 
@@ -591,20 +593,32 @@ export default function RetailBillingPage() {
 
   if (balanceLoading) {
     return (
-      <div>
-        <div className="h-8 bg-surface-light rounded w-48 mb-4 animate-pulse"></div>
-        <div className="h-32 bg-surface-light rounded animate-pulse"></div>
-      </div>
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader
+            title="Billing"
+            description="Manage your subscription and credits"
+          />
+          <div className="mb-4 h-8 w-48 animate-pulse rounded bg-surface-light"></div>
+          <div className="h-32 animate-pulse rounded bg-surface-light"></div>
+        </div>
+      </RetailPageLayout>
     );
   }
 
   if (balanceError) {
     return (
-      <div>
-        <GlassCard>
-          <div className="text-sm text-red-400">Error loading billing information</div>
-        </GlassCard>
-      </div>
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader
+            title="Billing"
+            description="Manage your subscription and credits"
+          />
+          <RetailCard variant="danger">
+            <div className="text-sm text-red-400">Error loading billing information</div>
+          </RetailCard>
+        </div>
+      </RetailPageLayout>
     );
   }
 
@@ -612,87 +626,94 @@ export default function RetailBillingPage() {
   const credits = balanceData?.credits || 0;
 
   return (
-    <div>
-      <BillingHeader subscription={subscription} credits={credits} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <SubscriptionCard subscription={subscription} />
-        <CreditTopupCard />
-      </div>
-
-      {subscription.active && (
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <PackageIcon className="w-5 h-5 text-text-secondary" />
-            <h2 className="text-lg font-semibold text-text-primary">Credit Packages</h2>
-          </div>
-          {packagesLoading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map((i) => (
-                <GlassCard key={i}>
-                  <div className="h-20 bg-surface-light rounded animate-pulse"></div>
-                </GlassCard>
-              ))}
-            </div>
-          )}
-          {packagesError && (
-            <GlassCard>
-              <div className="text-sm text-red-400">Error loading packages</div>
-            </GlassCard>
-          )}
-          {!packagesLoading && !packagesError && packages && (
-            <>
-              {packages.filter((pkg) => pkg.type === 'subscription_package').length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {packages
-                    .filter((pkg) => pkg.type === 'subscription_package')
-                    .map((pkg) => (
-                      <PackageCard key={pkg.id} pkg={pkg} />
-                    ))}
-                </div>
-              ) : (
-                <GlassCard>
-                  <p className="text-sm text-text-secondary">No packages available at this time.</p>
-                </GlassCard>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="mb-6">
-        <TransactionsTable
-          transactions={transactionsData?.items || []}
-          isLoading={transactionsLoading}
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
+          title="Billing"
+          description="Manage your subscription and credits"
         />
-        {transactionsData && transactionsData.total > 20 && (
-          <div className="mt-4 flex items-center justify-between">
-            <div className="text-sm text-text-secondary">
-              Showing {(transactionsPage - 1) * 20 + 1} to{' '}
-              {Math.min(transactionsPage * 20, transactionsData.total)} of {transactionsData.total}{' '}
-              transactions
+
+        <BillingHeader subscription={subscription} credits={credits} />
+
+        <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <SubscriptionCard subscription={subscription} />
+          <CreditTopupCard />
+        </div>
+
+        {subscription.active && (
+          <div>
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold text-text-primary">Credit Packages</h2>
+              <p className="mt-1 text-sm text-text-secondary">Purchase additional credit packages</p>
             </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setTransactionsPage((p) => Math.max(1, p - 1))}
-                disabled={transactionsPage === 1}
-                variant="outline"
-                size="sm"
-              >
-                Previous
-              </Button>
-              <Button
-                onClick={() => setTransactionsPage((p) => p + 1)}
-                disabled={transactionsPage * 20 >= transactionsData.total}
-                variant="outline"
-                size="sm"
-              >
-                Next
-              </Button>
-            </div>
+            {packagesLoading && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3].map((i) => (
+                  <RetailCard key={i}>
+                    <div className="h-20 animate-pulse rounded bg-surface-light"></div>
+                  </RetailCard>
+                ))}
+              </div>
+            )}
+            {packagesError && (
+              <RetailCard>
+                <div className="text-sm text-red-400">Error loading packages</div>
+              </RetailCard>
+            )}
+            {!packagesLoading && !packagesError && packages && (
+              <>
+                {packages.filter((pkg) => pkg.type === 'subscription_package').length > 0 ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {packages
+                      .filter((pkg) => pkg.type === 'subscription_package')
+                      .map((pkg) => (
+                        <PackageCard key={pkg.id} pkg={pkg} />
+                      ))}
+                  </div>
+                ) : (
+                  <RetailCard>
+                    <p className="text-sm text-text-secondary">No packages available at this time.</p>
+                  </RetailCard>
+                )}
+              </>
+            )}
           </div>
         )}
+
+        <div className="mb-6">
+          <TransactionsTable
+            transactions={transactionsData?.items || []}
+            isLoading={transactionsLoading}
+          />
+          {transactionsData && transactionsData.total > 20 && (
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-sm text-text-secondary">
+                Showing {(transactionsPage - 1) * 20 + 1} to{' '}
+                {Math.min(transactionsPage * 20, transactionsData.total)} of {transactionsData.total}{' '}
+                transactions
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => setTransactionsPage((p) => Math.max(1, p - 1))}
+                  disabled={transactionsPage === 1}
+                  variant="outline"
+                  size="sm"
+                >
+                  Previous
+                </Button>
+                <Button
+                  onClick={() => setTransactionsPage((p) => p + 1)}
+                  disabled={transactionsPage * 20 >= transactionsData.total}
+                  variant="outline"
+                  size="sm"
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </RetailPageLayout>
   );
 }

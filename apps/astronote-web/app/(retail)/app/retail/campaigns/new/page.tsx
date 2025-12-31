@@ -7,7 +7,7 @@ import { campaignSchema } from '@/src/lib/retail/validators';
 import { z } from 'zod';
 import { useCreateCampaign } from '@/src/features/retail/campaigns/hooks/useCreateCampaign';
 import { AudiencePreviewPanel } from '@/src/features/retail/campaigns/components/AudiencePreviewPanel';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,7 +19,7 @@ const STEPS = [
   { id: 2, name: 'Audience', description: 'Select target audience' },
   { id: 3, name: 'Schedule', description: 'When to send' },
   { id: 4, name: 'Review', description: 'Confirm and create' },
-];
+] as const;
 
 export default function NewCampaignPage() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -47,7 +47,6 @@ export default function NewCampaignPage() {
 
   const createMutation = useCreateCampaign();
 
-  // Get current filter values for preview
   const currentFilters = {
     filterGender: watch('filterGender') || null,
     filterAgeGroup: watch('filterAgeGroup') || null,
@@ -58,21 +57,17 @@ export default function NewCampaignPage() {
     if (currentStep === 1) {
       const isValid = await trigger(['name', 'messageText']);
       if (isValid) setCurrentStep(2);
-    } else if (currentStep === 2) {
-      setCurrentStep(3);
-    } else if (currentStep === 3) {
-      setCurrentStep(4);
+      return;
     }
+    if (currentStep < 4) setCurrentStep((s) => s + 1);
   };
 
   const handleBack = () => {
-    if (currentStep > 1) setCurrentStep(currentStep - 1);
+    if (currentStep > 1) setCurrentStep((s) => s - 1);
   };
 
   const onSubmit = (data: any) => {
-    if (isSubmitting || createMutation.isPending) {
-      return;
-    }
+    if (isSubmitting || createMutation.isPending) return;
 
     const submitData = {
       name: data.name,
@@ -86,83 +81,107 @@ export default function NewCampaignPage() {
 
     setIsSubmitting(true);
     createMutation.mutate(submitData, {
-      onSuccess: () => {
-        setIsSubmitting(false);
-      },
-      onError: () => {
-        setIsSubmitting(false);
-      },
+      onSuccess: () => setIsSubmitting(false),
+      onError: () => setIsSubmitting(false),
     });
   };
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">Create Campaign</h1>
-        <p className="text-sm text-text-secondary mt-1">Set up a new SMS campaign in a few simple steps</p>
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="space-y-1">
+        <h1 className="text-3xl font-semibold tracking-tight text-text-primary">Create Campaign</h1>
+        <p className="text-sm text-text-secondary">
+          Set up a new SMS campaign in a few simple steps.
+        </p>
       </div>
 
-      <div className="max-w-4xl mx-auto">
+      <div className="mx-auto w-full max-w-4xl">
         {/* Step indicator */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
-            {STEPS.map((step, idx) => (
-              <div key={step.id} className="flex items-center flex-1">
-                <div className="flex flex-col items-center flex-1">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-medium ${
-                      currentStep > step.id
-                        ? 'bg-green-500 text-white'
-                        : currentStep === step.id
-                          ? 'bg-accent text-white'
-                          : 'bg-surface-light text-text-tertiary'
-                    }`}
-                  >
-                    {currentStep > step.id ? <Check className="w-5 h-5" /> : step.id}
-                  </div>
-                  <div className="mt-2 text-center">
-                    <div className="text-sm font-medium text-text-primary">{step.name}</div>
-                    <div className="text-xs text-text-secondary">{step.description}</div>
-                  </div>
-                </div>
-                {idx < STEPS.length - 1 && (
-                  <div
-                    className={`flex-1 h-1 mx-2 ${
-                      currentStep > step.id ? 'bg-green-500' : 'bg-surface-light'
-                    }`}
-                  />
-                )}
-              </div>
-            ))}
+          <div className="rounded-2xl border border-border bg-background/60 p-4 backdrop-blur-sm">
+            <ol className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-0">
+              {STEPS.map((step, idx) => {
+                const isFirst = idx === 0;
+                const isLast = idx === STEPS.length - 1;
+                const isDone = currentStep > step.id;
+                const isActive = currentStep === step.id;
+
+                return (
+                  <li key={step.id} className="flex flex-1 items-center">
+                    {/* left connector */}
+                    <div
+                      className={[
+                        'hidden sm:block h-[2px] flex-1 rounded-full',
+                        isFirst ? 'bg-transparent' : isDone ? 'bg-green-500' : 'bg-border',
+                      ].join(' ')}
+                    />
+
+                    {/* step */}
+                    <div className="flex flex-1 items-start gap-3 sm:flex-none sm:flex-col sm:items-center sm:gap-2">
+                      <div
+                        className={[
+                          'relative flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold',
+                          'ring-1 ring-inset transition-colors',
+                          isDone
+                            ? 'bg-green-500 text-white ring-green-500/25'
+                            : isActive
+                              ? 'bg-accent text-white ring-accent/25'
+                              : 'bg-surface-light text-text-tertiary ring-border',
+                        ].join(' ')}
+                      >
+                        {isDone ? <Check className="h-5 w-5" /> : <span>{step.id}</span>}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div
+                          className={[
+                            'text-sm font-semibold',
+                            isActive ? 'text-text-primary' : 'text-text-secondary',
+                          ].join(' ')}
+                        >
+                          {step.name}
+                        </div>
+                        <div className="text-xs text-text-tertiary">{step.description}</div>
+                      </div>
+                    </div>
+
+                    {/* right connector */}
+                    <div
+                      className={[
+                        'hidden sm:block h-[2px] flex-1 rounded-full',
+                        isLast ? 'bg-transparent' : isDone ? 'bg-green-500' : 'bg-border',
+                      ].join(' ')}
+                    />
+                  </li>
+                );
+              })}
+            </ol>
           </div>
         </div>
 
-        <GlassCard>
-          <form onSubmit={handleSubmit(onSubmit)}>
+        <RetailCard>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Step 1: Basics */}
             {currentStep === 1 && (
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-text-primary mb-4">Campaign Basics</h3>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-semibold text-text-primary">Campaign Basics</h3>
+                  <p className="text-sm text-text-secondary">
+                    Give your campaign a clear name and write your SMS message.
+                  </p>
+                </div>
+
                 <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-text-secondary mb-2">
+                  <label htmlFor="name" className="mb-2 block text-sm font-medium text-text-secondary">
                     Campaign Name <span className="text-red-400">*</span>
                   </label>
-                  <Input
-                    {...register('name')}
-                    type="text"
-                    id="name"
-                    maxLength={200}
-                    placeholder="Summer Sale 2025"
-                  />
-                  {errors.name && (
-                    <p className="mt-1 text-sm text-red-400">{(errors.name as any).message}</p>
-                  )}
+                  <Input {...register('name')} type="text" id="name" maxLength={200} placeholder="Summer Sale 2025" />
+                  {errors.name && <p className="mt-1 text-sm text-red-400">{(errors.name as any).message}</p>}
                 </div>
+
                 <div>
-                  <label
-                    htmlFor="messageText"
-                    className="block text-sm font-medium text-text-secondary mb-2"
-                  >
+                  <label htmlFor="messageText" className="mb-2 block text-sm font-medium text-text-secondary">
                     Message Text <span className="text-red-400">*</span>
                   </label>
                   <Textarea
@@ -176,13 +195,12 @@ export default function NewCampaignPage() {
                     Max 2000 characters. Use variables like {'{{'}firstName{'}}'} for personalization.
                   </p>
                   {errors.messageText && (
-                    <p className="mt-1 text-sm text-red-400">
-                      {(errors.messageText as any).message}
-                    </p>
+                    <p className="mt-1 text-sm text-red-400">{(errors.messageText as any).message}</p>
                   )}
                 </div>
+
                 {Object.keys(errors).length > 0 && (errors.name || errors.messageText) && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
                     <p className="text-sm text-red-400">Please fix the errors above before proceeding.</p>
                   </div>
                 )}
@@ -192,54 +210,55 @@ export default function NewCampaignPage() {
             {/* Step 2: Audience */}
             {currentStep === 2 && (
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-text-primary mb-4">Target Audience</h3>
-                <div>
-                  <label
-                    htmlFor="filterGender"
-                    className="block text-sm font-medium text-text-secondary mb-2"
-                  >
-                    Gender Filter
-                  </label>
-                  <Select
-                    {...register('filterGender')}
-                    id="filterGender"
-                  >
-                    <option value="">Any</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </Select>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-semibold text-text-primary">Target Audience</h3>
+                  <p className="text-sm text-text-secondary">
+                    Narrow down who should receive this message.
+                  </p>
                 </div>
-                <div>
-                  <label
-                    htmlFor="filterAgeGroup"
-                    className="block text-sm font-medium text-text-secondary mb-2"
-                  >
-                    Age Group Filter
-                  </label>
-                  <Select
-                    {...register('filterAgeGroup')}
-                    id="filterAgeGroup"
-                  >
-                    <option value="">Any</option>
-                    <option value="18_24">18-24</option>
-                    <option value="25_39">25-39</option>
-                    <option value="40_plus">40+</option>
-                  </Select>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="filterGender" className="mb-2 block text-sm font-medium text-text-secondary">
+                      Gender Filter
+                    </label>
+                    <Select {...register('filterGender')} id="filterGender">
+                      <option value="">Any</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="filterAgeGroup" className="mb-2 block text-sm font-medium text-text-secondary">
+                      Age Group Filter
+                    </label>
+                    <Select {...register('filterAgeGroup')} id="filterAgeGroup">
+                      <option value="">Any</option>
+                      <option value="18_24">18-24</option>
+                      <option value="25_39">25-39</option>
+                      <option value="40_plus">40+</option>
+                    </Select>
+                  </div>
                 </div>
-                <AudiencePreviewPanel
-                  filters={currentFilters}
-                  onCountResolved={setAudienceCount}
-                />
+
+                <AudiencePreviewPanel filters={currentFilters} onCountResolved={setAudienceCount} />
               </div>
             )}
 
             {/* Step 3: Schedule */}
             {currentStep === 3 && (
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-text-primary mb-4">Schedule</h3>
-                <div>
-                  <label className="flex items-center gap-2 mb-4">
+                <div className="space-y-1">
+                  <h3 className="text-lg font-semibold text-text-primary">Schedule</h3>
+                  <p className="text-sm text-text-secondary">
+                    Save as draft or schedule a send time.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2">
                     <input
                       type="radio"
                       {...register('scheduleType')}
@@ -251,27 +270,26 @@ export default function NewCampaignPage() {
                           setValue('scheduledTime', '');
                         }
                       }}
-                      className="w-4 h-4 text-accent"
+                      className="h-4 w-4 accent-[var(--accent)]"
                     />
                     <span className="text-sm font-medium text-text-primary">Save as draft (send later)</span>
                   </label>
+
                   <label className="flex items-center gap-2">
                     <input
                       type="radio"
                       {...register('scheduleType')}
                       value="later"
-                      className="w-4 h-4 text-accent"
+                      className="h-4 w-4 accent-[var(--accent)]"
                     />
                     <span className="text-sm font-medium text-text-primary">Schedule for later</span>
                   </label>
                 </div>
+
                 {watch('scheduleType') === 'later' && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <div>
-                      <label
-                        htmlFor="scheduledDate"
-                        className="block text-sm font-medium text-text-secondary mb-2"
-                      >
+                      <label htmlFor="scheduledDate" className="mb-2 block text-sm font-medium text-text-secondary">
                         Date
                       </label>
                       <Input
@@ -281,23 +299,17 @@ export default function NewCampaignPage() {
                         min={new Date().toISOString().split('T')[0]}
                       />
                       {errors.scheduledDate && (
-                        <p className="mt-1 text-sm text-red-400">
-                          {(errors.scheduledDate as any).message}
-                        </p>
+                        <p className="mt-1 text-sm text-red-400">{(errors.scheduledDate as any).message}</p>
                       )}
                     </div>
+
                     <div>
-                      <label
-                        htmlFor="scheduledTime"
-                        className="block text-sm font-medium text-text-secondary mb-2"
-                      >
+                      <label htmlFor="scheduledTime" className="mb-2 block text-sm font-medium text-text-secondary">
                         Time
                       </label>
                       <Input {...register('scheduledTime')} type="time" id="scheduledTime" />
                       {errors.scheduledTime && (
-                        <p className="mt-1 text-sm text-red-400">
-                          {(errors.scheduledTime as any).message}
-                        </p>
+                        <p className="mt-1 text-sm text-red-400">{(errors.scheduledTime as any).message}</p>
                       )}
                     </div>
                   </div>
@@ -308,49 +320,57 @@ export default function NewCampaignPage() {
             {/* Step 4: Review */}
             {currentStep === 4 && (
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-text-primary mb-4">Review & Create</h3>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-semibold text-text-primary">Review & Create</h3>
+                  <p className="text-sm text-text-secondary">Double-check details before creating.</p>
+                </div>
+
                 {createMutation.isError && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-4">
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
                     <p className="text-sm text-red-400">
                       {(createMutation.error as any)?.response?.data?.message ||
                         'Failed to create campaign. Please try again.'}
                     </p>
                   </div>
                 )}
-                <div className="bg-surface-light rounded-lg p-4 space-y-3">
-                  <div>
+
+                <div className="rounded-xl border border-border bg-surface-light p-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-text-secondary">Campaign Name:</span>
-                    <span className="ml-2 text-sm text-text-primary">{watch('name')}</span>
+                    <span className="text-sm text-text-primary">{watch('name') || '—'}</span>
                   </div>
+
                   <div>
                     <span className="text-sm font-medium text-text-secondary">Message:</span>
-                    <div className="mt-1 text-sm text-text-primary bg-background p-2 rounded border border-border whitespace-pre-wrap">
+                    <div className="mt-2 whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-sm text-text-primary">
                       {watch('messageText') || '—'}
                     </div>
                   </div>
-                  <div>
-                    <span className="text-sm font-medium text-text-secondary">Gender Filter:</span>
-                    <span className="ml-2 text-sm text-text-primary capitalize">
-                      {watch('filterGender') || 'Any'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium text-text-secondary">Age Group:</span>
-                    <span className="ml-2 text-sm text-text-primary">
-                      {watch('filterAgeGroup') ? watch('filterAgeGroup')?.replace('_', '-') || 'Any' : 'Any'}
-                    </span>
-                  </div>
-                  {audienceCount !== null && (
-                    <div>
-                      <span className="text-sm font-medium text-text-secondary">Recipients:</span>
-                      <span className="ml-2 text-sm text-text-primary">
-                        {audienceCount.toLocaleString()}
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-text-secondary">Gender Filter:</span>
+                      <span className="text-sm text-text-primary capitalize">{watch('filterGender') || 'Any'}</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-text-secondary">Age Group:</span>
+                      <span className="text-sm text-text-primary">
+                        {watch('filterAgeGroup') ? watch('filterAgeGroup')?.replace('_', '-') : 'Any'}
                       </span>
                     </div>
+                  </div>
+
+                  {audienceCount !== null && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-text-secondary">Recipients:</span>
+                      <span className="text-sm text-text-primary">{audienceCount.toLocaleString()}</span>
+                    </div>
                   )}
-                  <div>
+
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-text-secondary">Schedule:</span>
-                    <span className="ml-2 text-sm text-text-primary">
+                    <span className="text-sm text-text-primary">
                       {watch('scheduledDate') && watch('scheduledTime')
                         ? `${watch('scheduledDate')} at ${watch('scheduledTime')}`
                         : 'Draft (send later)'}
@@ -361,34 +381,26 @@ export default function NewCampaignPage() {
             )}
 
             {/* Navigation buttons */}
-            <div className="flex justify-between mt-8 pt-6 border-t border-border">
-              <Button
-                type="button"
-                onClick={handleBack}
-                disabled={currentStep === 1}
-                variant="outline"
-              >
-                <ChevronLeft className="w-4 h-4 mr-2" />
+            <div className="flex items-center justify-between border-t border-border pt-6">
+              <Button type="button" onClick={handleBack} disabled={currentStep === 1} variant="outline">
+                <ChevronLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
+
               {currentStep < 4 ? (
                 <Button type="button" onClick={handleNext}>
                   Next
-                  <ChevronRight className="w-4 h-4 ml-2" />
+                  <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : (
-                <Button
-                  type="submit"
-                  disabled={isSubmitting || createMutation.isPending}
-                >
+                <Button type="submit" disabled={isSubmitting || createMutation.isPending}>
                   {isSubmitting || createMutation.isPending ? 'Creating...' : 'Create Campaign'}
                 </Button>
               )}
             </div>
           </form>
-        </GlassCard>
+        </RetailCard>
       </div>
     </div>
   );
 }
-

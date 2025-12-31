@@ -203,8 +203,6 @@ model MessageTemplate {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  campaigns Campaign[]
-
   @@unique([ownerId, name]) // template names unique per owner
   @@index([ownerId])
   @@index([category]) // For filtering by business type
@@ -225,11 +223,8 @@ model Campaign {
   owner   User @relation(name: "CampaignOwner", fields: [ownerId], references: [id], onDelete: Cascade)
 
   name       String
-  templateId Int
-  template   MessageTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
-
-  // Optional custom message text (overrides template text if provided)
-  messageText String? @db.Text
+  // Message text (required - templates are copy-paste library only, no association)
+  messageText String @db.Text
 
   // Legacy list support (optional for backward compatibility)
   listId Int?

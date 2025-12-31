@@ -5,7 +5,9 @@ import { format } from 'date-fns';
 import { useCampaign } from '@/src/features/retail/campaigns/hooks/useCampaign';
 import { useCampaignPreview } from '@/src/features/retail/campaigns/hooks/useCampaignPreview';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { Send, Eye, BarChart3, XCircle } from 'lucide-react';
@@ -31,7 +33,7 @@ function MessagePreviewModal({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4">
         <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-        <GlassCard className="relative max-w-2xl w-full p-6 z-10 max-h-[90vh] overflow-y-auto">
+        <RetailCard className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-text-primary">Message Preview</h2>
             <button
@@ -65,7 +67,7 @@ function MessagePreviewModal({
               <p className="text-sm text-text-secondary">No messages to preview</p>
             </div>
           )}
-        </GlassCard>
+        </RetailCard>
       </div>
     </div>
   );
@@ -216,148 +218,155 @@ export default function CampaignDetailPage() {
 
   if (isLoading) {
     return (
-      <div>
-        <div className="mb-6">
+      <div className="space-y-6">
+        <div>
           <div className="h-8 bg-surface-light rounded w-48 mb-2 animate-pulse"></div>
           <div className="h-4 bg-surface-light rounded w-64 animate-pulse"></div>
         </div>
-        <GlassCard>
-          <div className="h-32 bg-surface-light rounded animate-pulse"></div>
-        </GlassCard>
+        <RetailCard>
+          <div className="h-32 animate-pulse rounded bg-surface-light"></div>
+        </RetailCard>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-text-primary">Campaign</h1>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-text-primary">Campaign</h1>
           <p className="text-sm text-text-secondary mt-1">Error loading campaign</p>
         </div>
-        <GlassCard>
-          <div className="text-center py-8">
-            <p className="text-red-400 mb-4">Error loading campaign details</p>
+        <RetailCard variant="danger">
+          <div className="py-8 text-center">
+            <p className="mb-4 text-red-400">Error loading campaign details</p>
             <Button onClick={() => refetch()} variant="outline" size="sm">
               Retry
             </Button>
           </div>
-        </GlassCard>
+        </RetailCard>
       </div>
     );
   }
 
   if (!campaign) {
     return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-text-primary">Campaign</h1>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-text-primary">Campaign</h1>
           <p className="text-sm text-text-secondary mt-1">Campaign not found</p>
         </div>
-        <GlassCard>
-          <div className="text-center py-8">
+        <RetailCard>
+          <div className="py-8 text-center">
             <p className="text-text-secondary">Campaign not found</p>
           </div>
-        </GlassCard>
+        </RetailCard>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">{campaign.name}</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Created {campaign.createdAt ? format(new Date(campaign.createdAt), 'PPpp') : '—'}
-        </p>
-      </div>
-
+    <RetailPageLayout>
       <div className="space-y-6">
-        {/* Campaign Info */}
-        <GlassCard>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-text-primary">Campaign Details</h2>
-            <StatusBadge status={campaign.status} />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <span className="text-sm text-text-secondary">Total Recipients</span>
-              <div className="text-lg font-medium text-text-primary">{campaign.total || 0}</div>
+        <RetailPageHeader
+          title={campaign.name}
+          description={`Created ${campaign.createdAt ? format(new Date(campaign.createdAt), 'PPpp') : '—'}`}
+          actions={
+            ['draft', 'scheduled'].includes(campaign.status) ? (
+              <Link href={`/app/retail/campaigns/${campaign.id}/edit`}>
+                <Button variant="outline" size="sm">Edit</Button>
+              </Link>
+            ) : undefined
+          }
+        />
+
+        <div className="space-y-6">
+          {/* Campaign Info */}
+          <RetailCard>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-text-primary">Campaign Details</h2>
+              <StatusBadge status={campaign.status} />
             </div>
-            {campaign.scheduledAt && (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <span className="text-sm text-text-secondary">Scheduled For</span>
-                <div className="text-lg font-medium text-text-primary">
-                  {format(new Date(campaign.scheduledAt), 'PPpp')}
+                <span className="text-sm text-text-secondary">Total Recipients</span>
+                <div className="text-lg font-medium text-text-primary">{campaign.total || 0}</div>
+              </div>
+              {campaign.scheduledAt && (
+                <div>
+                  <span className="text-sm text-text-secondary">Scheduled For</span>
+                  <div className="text-lg font-medium text-text-primary">
+                    {format(new Date(campaign.scheduledAt), 'PPpp')}
+                  </div>
+                </div>
+              )}
+              {campaign.startedAt && (
+                <div>
+                  <span className="text-sm text-text-secondary">Started At</span>
+                  <div className="text-lg font-medium text-text-primary">
+                    {format(new Date(campaign.startedAt), 'PPpp')}
+                  </div>
+                </div>
+              )}
+              {campaign.finishedAt && (
+                <div>
+                  <span className="text-sm text-text-secondary">Finished At</span>
+                  <div className="text-lg font-medium text-text-primary">
+                    {format(new Date(campaign.finishedAt), 'PPpp')}
+                  </div>
+                </div>
+              )}
+            </div>
+          </RetailCard>
+
+          {/* Message Preview */}
+          {campaign.messageText && (
+            <RetailCard>
+              <h3 className="mb-2 text-lg font-semibold text-text-primary">Message</h3>
+              <div className="rounded-lg bg-surface-light p-4">
+                <p className="whitespace-pre-wrap text-sm text-text-primary">{campaign.messageText}</p>
+              </div>
+            </RetailCard>
+          )}
+
+          {/* Filters */}
+          <RetailCard>
+            <h3 className="mb-4 text-lg font-semibold text-text-primary">Audience Filters</h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <span className="text-sm text-text-secondary">Gender</span>
+                <div className="text-lg font-medium capitalize text-text-primary">
+                  {campaign.filterGender || 'Any'}
                 </div>
               </div>
-            )}
-            {campaign.startedAt && (
               <div>
-                <span className="text-sm text-text-secondary">Started At</span>
+                <span className="text-sm text-text-secondary">Age Group</span>
                 <div className="text-lg font-medium text-text-primary">
-                  {format(new Date(campaign.startedAt), 'PPpp')}
+                  {campaign.filterAgeGroup || 'Any'}
                 </div>
               </div>
-            )}
-            {campaign.finishedAt && (
-              <div>
-                <span className="text-sm text-text-secondary">Finished At</span>
-                <div className="text-lg font-medium text-text-primary">
-                  {format(new Date(campaign.finishedAt), 'PPpp')}
-                </div>
-              </div>
-            )}
-          </div>
-        </GlassCard>
-
-        {/* Message Preview */}
-        {campaign.messageText && (
-          <GlassCard>
-            <h3 className="text-lg font-semibold text-text-primary mb-2">Message</h3>
-            <div className="bg-surface-light rounded-lg p-4">
-              <p className="text-sm text-text-primary whitespace-pre-wrap">{campaign.messageText}</p>
             </div>
-          </GlassCard>
-        )}
+          </RetailCard>
 
-        {/* Filters */}
-        <GlassCard>
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Audience Filters</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <span className="text-sm text-text-secondary">Gender</span>
-              <div className="text-lg font-medium text-text-primary capitalize">
-                {campaign.filterGender || 'Any'}
-              </div>
-            </div>
-            <div>
-              <span className="text-sm text-text-secondary">Age Group</span>
-              <div className="text-lg font-medium text-text-primary">
-                {campaign.filterAgeGroup || 'Any'}
-              </div>
-            </div>
-          </div>
-        </GlassCard>
+          {/* Actions */}
+          <RetailCard>
+            <h3 className="mb-4 text-lg font-semibold text-text-primary">Actions</h3>
+            <CampaignActions
+              campaign={campaign}
+              onPreviewMessages={() => setPreviewOpen(true)}
+              onViewStats={() => router.push(`/app/retail/campaigns/${id}/stats`)}
+            />
+          </RetailCard>
+        </div>
 
-        {/* Actions */}
-        <GlassCard>
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Actions</h3>
-          <CampaignActions
-            campaign={campaign}
-            onPreviewMessages={() => setPreviewOpen(true)}
-            onViewStats={() => router.push(`/app/retail/campaigns/${id}/stats`)}
-          />
-        </GlassCard>
+        <MessagePreviewModal
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          messages={previewData?.sample}
+          isLoading={previewLoading}
+        />
       </div>
-
-      <MessagePreviewModal
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        messages={previewData?.sample}
-        isLoading={previewLoading}
-      />
-    </div>
+    </RetailPageLayout>
   );
 }
 

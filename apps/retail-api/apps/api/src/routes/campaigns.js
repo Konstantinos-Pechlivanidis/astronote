@@ -29,7 +29,7 @@ function msUntil(dateStr) {
  * POST /api/campaigns
  * Create a new campaign with optional filters and scheduling
  * @param {string} name - Campaign name (required, max 200 chars)
- * @param {number} templateId - Template ID (required)
+ * @param {string} messageText - Message text (required)
  * @param {string|null} filterGender - Gender filter: 'male', 'female', 'other', 'prefer_not_to_say', or null
  * @param {string|null} filterAgeGroup - Age group filter: '18_24', '25_39', '40_plus', or null
  * @param {string|null} scheduledAt - ISO date string for scheduled campaigns
@@ -126,7 +126,7 @@ function convertLocalToUTC(dateStr, timeStr, timezone) {
 router.post("/campaigns", requireAuth, async (req, res, next) => {
   try {
     const { sanitizeString } = require('../lib/sanitize');
-    const { name, templateId, messageText, filterGender, filterAgeGroup, scheduledAt, scheduledDate, scheduledTime } = req.body || {};
+    const { name, messageText, filterGender, filterAgeGroup, scheduledAt, scheduledDate, scheduledTime } = req.body || {};
     
     // Sanitize name
     const sanitizedName = name ? sanitizeString(name, { maxLength: 200 }) : null;
@@ -139,69 +139,16 @@ router.post("/campaigns", requireAuth, async (req, res, next) => {
       });
     }
 
-    // Validate messageText is provided if no templateId
-    if (!templateId && !messageText) {
+    // Validate messageText is required (templates are copy-paste library only)
+    if (!messageText || !messageText.trim()) {
       return res.status(400).json({ 
-        message: "Please provide either a template or a custom message", 
+        message: "Message text is required", 
         code: 'VALIDATION_ERROR' 
       });
     }
 
-    let templateIdNum = null;
-    let tpl = null;
-
-    // If templateId is provided, validate it
-    if (templateId) {
-      templateIdNum = Number(templateId);
-      if (!templateIdNum || isNaN(templateIdNum)) {
-        return res.status(400).json({ 
-          message: "Invalid template ID", 
-          code: 'VALIDATION_ERROR' 
-        });
-      }
-
-      // Validate template (system or owner)
-      tpl = await prisma.messageTemplate.findFirst({
-        where: {
-          id: templateIdNum,
-          ownerId: { in: [req.user.id, SYSTEM_USER_ID] },
-        },
-      });
-      if (!tpl) {
-        return res.status(404).json({ 
-          message: "Template not found", 
-          code: 'RESOURCE_NOT_FOUND' 
-        });
-      }
-    } else {
-      // If no templateId but messageText is provided, find or create a default "Custom Message" template
-      // First, try to find an existing "Custom Message" template for this user
-      tpl = await prisma.messageTemplate.findFirst({
-        where: {
-          ownerId: req.user.id,
-          name: "Custom Message",
-        },
-      });
-
-      // If not found, create a default template for this user
-      if (!tpl) {
-        tpl = await prisma.messageTemplate.create({
-          data: {
-            ownerId: req.user.id,
-            name: "Custom Message",
-            text: messageText?.trim() || "Custom message",
-            category: "generic",
-            language: "en",
-          },
-        });
-      }
-      templateIdNum = tpl.id;
-    }
-
-    // Sanitize and validate messageText (optional, overrides template text if provided)
-    const sanitizedMessageText = messageText && messageText.trim() 
-      ? sanitizeString(messageText, { maxLength: 2000 }) 
-      : null;
+    // Sanitize and validate messageText (required)
+    const sanitizedMessageText = sanitizeString(messageText.trim(), { maxLength: 2000 });
 
     // Validate and normalize filters
     const { normalizeGender, normalizeAgeGroup } = require('../lib/validation');
@@ -290,8 +237,7 @@ router.post("/campaigns", requireAuth, async (req, res, next) => {
       data: {
         ownerId: req.user.id,
         name: sanitizedName,
-        templateId: templateIdNum,
-        messageText: sanitizedMessageText, // Optional custom message text (overrides template)
+        messageText: sanitizedMessageText, // Required message text
         listId: null, // No longer using lists for segmentation
         filterGender: normalizedGender,
         filterAgeGroup: prismaAgeGroup,
@@ -300,7 +246,6 @@ router.post("/campaigns", requireAuth, async (req, res, next) => {
         createdById: req.user.id,
         total,
       },
-      include: { template: true },
     });
 
     // If scheduled -> add delayed scheduler job
@@ -379,7 +324,7 @@ router.get("/campaigns", requireAuth, async (req, res, next) => {
         take: pageSize,
         skip,
         orderBy: { id: "desc" },
-        include: { template: true, list: true },
+        include: { list: true },
       }),
       prisma.campaign.count({ where: { ownerId: req.user.id } }),
     ]);
@@ -435,7 +380,7 @@ router.get("/campaigns/:id", requireAuth, async (req, res, next) => {
 
   const c = await prisma.campaign.findFirst({
     where: { id, ownerId: req.user.id },
-    include: { template: true, list: true },
+    include: { list: true },
   });
   if (!c) {
     return res.status(404).json({ 
@@ -531,7 +476,6 @@ router.get("/campaigns/:id/preview", requireAuth, async (req, res, next) => {
 
   const c = await prisma.campaign.findFirst({
     where: { id, ownerId: req.user.id },
-    include: { template: true },
   });
   if (!c) {
     return res.status(404).json({ 
@@ -798,7 +742,7 @@ router.post("/campaigns/:id/schedule", requireAuth, async (req, res, next) => {
 /* =========================================================
  * PUT /campaigns/:id (protected)
  * Update campaign (only draft and scheduled campaigns can be edited).
- * Body: { name?, templateId?, messageText?, filterGender?, filterAgeGroup?, scheduledDate?, scheduledTime? }
+ * Body: { name?, messageText?, filterGender?, filterAgeGroup?, scheduledDate?, scheduledTime? }
  * ========================================================= */
 router.put("/campaigns/:id", requireAuth, async (req, res, next) => {
   try {
@@ -811,7 +755,7 @@ router.put("/campaigns/:id", requireAuth, async (req, res, next) => {
   }
 
     const { sanitizeString } = require('../lib/sanitize');
-    const { name, templateId, messageText, filterGender, filterAgeGroup, scheduledDate, scheduledTime } = req.body || {};
+    const { name, messageText, filterGender, filterAgeGroup, scheduledDate, scheduledTime } = req.body || {};
 
     // Find campaign and verify ownership
     const existingCampaign = await prisma.campaign.findFirst({
@@ -848,37 +792,15 @@ router.put("/campaigns/:id", requireAuth, async (req, res, next) => {
       updates.name = sanitizedName;
     }
 
-    // Update templateId if provided
-    if (templateId !== undefined) {
-      const templateIdNum = Number(templateId);
-      if (!templateIdNum || isNaN(templateIdNum)) {
+    // Update messageText if provided (required field, cannot be null)
+    if (messageText !== undefined) {
+      if (!messageText || !messageText.trim()) {
         return res.status(400).json({ 
-          message: "Invalid template ID", 
+          message: "Message text is required and cannot be empty", 
           code: 'VALIDATION_ERROR' 
         });
       }
-
-      // Validate template ownership
-      const tpl = await prisma.messageTemplate.findFirst({
-        where: {
-          id: templateIdNum,
-          ownerId: { in: [req.user.id, SYSTEM_USER_ID] },
-        },
-      });
-      if (!tpl) {
-        return res.status(404).json({ 
-          message: "Template not found", 
-          code: 'RESOURCE_NOT_FOUND' 
-        });
-      }
-      updates.templateId = templateIdNum;
-    }
-
-    // Update messageText if provided
-    if (messageText !== undefined) {
-      updates.messageText = messageText && messageText.trim() 
-        ? sanitizeString(messageText, { maxLength: 2000 }) 
-        : null;
+      updates.messageText = sanitizeString(messageText.trim(), { maxLength: 2000 });
     }
 
     // Update filters if provided
@@ -977,7 +899,6 @@ router.put("/campaigns/:id", requireAuth, async (req, res, next) => {
     // Fetch updated campaign for response
     const campaign = await prisma.campaign.findFirst({
       where: { id, ownerId: req.user.id },
-      include: { template: true }
     });
 
     if (!campaign) {

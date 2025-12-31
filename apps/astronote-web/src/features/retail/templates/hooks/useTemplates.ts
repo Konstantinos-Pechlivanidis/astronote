@@ -1,10 +1,34 @@
 import { useQuery } from '@tanstack/react-query';
 import { templatesApi, type TemplatesListParams } from '@/src/lib/retail/api/templates';
 
-const SYSTEM_USER_ID = 1; // Default system user ID
-
 export interface UseTemplatesParams extends TemplatesListParams {
   tab?: 'system' | 'my' | null
+}
+
+/**
+ * Determine system user ID from template data
+ * System templates are those owned by the user with the most templates
+ */
+function getSystemUserId(items: Array<{ ownerId: number }>): number | null {
+  if (!items || items.length === 0) return null;
+
+  // Count templates per ownerId
+  const ownerCounts = new Map<number, number>();
+  items.forEach((item) => {
+    ownerCounts.set(item.ownerId, (ownerCounts.get(item.ownerId) || 0) + 1);
+  });
+
+  // Find the ownerId with the most templates (likely the system user)
+  let maxCount = 0;
+  let systemUserId: number | null = null;
+  ownerCounts.forEach((count, ownerId) => {
+    if (count > maxCount) {
+      maxCount = count;
+      systemUserId = ownerId;
+    }
+  });
+
+  return systemUserId;
 }
 
 /**
@@ -39,11 +63,18 @@ export function useTemplates({
 
       let allItems = res.data.items || [];
 
+      // Determine system user ID from the data (user with most templates)
+      // Filter out items without ownerId before passing to getSystemUserId
+      const itemsWithOwnerId = allItems.filter((item): item is typeof item & { ownerId: number } =>
+        typeof item.ownerId === 'number',
+      );
+      const systemUserId = getSystemUserId(itemsWithOwnerId);
+
       // Filter by tab (system vs my) client-side
-      if (tab === 'system') {
-        allItems = allItems.filter((t) => t.ownerId === SYSTEM_USER_ID);
-      } else if (tab === 'my') {
-        allItems = allItems.filter((t) => t.ownerId !== SYSTEM_USER_ID);
+      if (tab === 'system' && systemUserId !== null) {
+        allItems = allItems.filter((t) => t.ownerId === systemUserId);
+      } else if (tab === 'my' && systemUserId !== null) {
+        allItems = allItems.filter((t) => t.ownerId !== systemUserId);
       }
 
       // Client-side pagination if filtering by tab

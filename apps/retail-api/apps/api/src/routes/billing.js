@@ -547,18 +547,17 @@ r.get('/subscriptions/portal', requireAuth, async (req, res, next) => {
       });
     }
 
-    const portalUrl = await getCustomerPortalUrl({
-      customerId: subscription.stripeCustomerId,
-      returnUrl: (() => {
-        const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'https://astronote-retail-frontend.onrender.com';
-        if (baseUrl.includes('localhost')) {
-          return `${baseUrl}/credits`;
-        }
-        const trimmed = baseUrl.trim().replace(/\/$/, '');
-        const url = trimmed.endsWith('/retail') ? trimmed : `${trimmed}/retail`;
-        return `${url}/credits`;
-      })()
-    });
+    const returnUrl = (() => {
+      const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'https://astronote-retail-frontend.onrender.com';
+      if (baseUrl.includes('localhost')) {
+        return `${baseUrl}/app/retail/billing`;
+      }
+      const trimmed = baseUrl.trim().replace(/\/$/, '');
+      const url = trimmed.endsWith('/retail') ? trimmed : `${trimmed}/retail`;
+      return `${url}/app/retail/billing`;
+    })();
+
+    const portalUrl = await getCustomerPortalUrl(subscription.stripeCustomerId, returnUrl);
 
     res.json({ ok: true, portalUrl });
   } catch (e) {

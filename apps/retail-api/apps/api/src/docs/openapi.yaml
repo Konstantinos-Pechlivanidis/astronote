@@ -78,7 +78,7 @@ components:
         id: { type: integer }
         ownerId: { type: integer }
         name: { type: string }
-        templateId: { type: integer }
+        messageText: { type: string, description: "Message text (required)" }
         listId: { type: integer }
         status:
           type: string
@@ -401,10 +401,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, templateId, listId]
+              required: [name, messageText]
               properties:
                 name: { type: string }
-                templateId: { type: integer }
+                messageText: { type: string, description: "Message text (required)" }
                 listId: { type: integer }
                 scheduledAt: { type: string, format: date-time }
       responses:

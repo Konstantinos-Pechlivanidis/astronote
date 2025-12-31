@@ -3,7 +3,9 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useCampaignStatus } from '@/src/features/retail/campaigns/hooks/useCampaignStatus';
 import { CampaignProgressCard } from '@/src/features/retail/campaigns/components/CampaignProgressCard';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 
@@ -16,76 +18,70 @@ export default function CampaignStatusPage() {
 
   if (isLoading && !data) {
     return (
-      <div>
-        <div className="mb-6">
-          <div className="h-8 bg-surface-light rounded w-48 mb-2 animate-pulse"></div>
-          <div className="h-4 bg-surface-light rounded w-64 animate-pulse"></div>
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader title="Campaign Status" description="Real-time progress" />
+          <RetailCard>
+            <div className="h-32 animate-pulse rounded bg-surface-light"></div>
+          </RetailCard>
         </div>
-        <GlassCard>
-          <div className="h-32 bg-surface-light rounded animate-pulse"></div>
-        </GlassCard>
-      </div>
+      </RetailPageLayout>
     );
   }
 
   if (error) {
     return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-text-primary">Campaign Status</h1>
-          <p className="text-sm text-text-secondary mt-1">Error loading status</p>
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader title="Campaign Status" description="Error loading status" />
+          <RetailCard variant="danger">
+            <div className="py-8 text-center">
+              <p className="mb-4 text-red-400">Error loading campaign status</p>
+              <Button onClick={() => refetch()} variant="outline" size="sm">
+                Retry
+              </Button>
+            </div>
+          </RetailCard>
         </div>
-        <GlassCard>
-          <div className="text-center py-8">
-            <p className="text-red-500 mb-4">Error loading campaign status</p>
-            <Button onClick={() => refetch()} variant="outline" size="sm">
-              Retry
-            </Button>
-          </div>
-        </GlassCard>
-      </div>
+      </RetailPageLayout>
     );
   }
 
   if (!data) {
     return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-text-primary">Campaign Status</h1>
-          <p className="text-sm text-text-secondary mt-1">Status not found</p>
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader title="Campaign Status" description="Status not found" />
+          <RetailCard>
+            <div className="py-8 text-center">
+              <p className="text-text-secondary">Status not found</p>
+            </div>
+          </RetailCard>
         </div>
-        <GlassCard>
-          <div className="text-center py-8">
-            <p className="text-text-secondary">Status not found</p>
-          </div>
-        </GlassCard>
-      </div>
+      </RetailPageLayout>
     );
   }
 
   return (
-    <div>
-      <div className="mb-4">
-        <Button
-          onClick={() => router.push(`/app/retail/campaigns/${id}`)}
-          variant="ghost"
-          size="sm"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Campaign
-        </Button>
-      </div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">Campaign Status</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Real-time progress for {data.campaign?.name || 'campaign'}
-        </p>
-      </div>
-
-      <div className="mt-6">
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={() => router.push(`/app/retail/campaigns/${id}`)}
+            variant="ghost"
+            size="sm"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Campaign
+          </Button>
+        </div>
+        <RetailPageHeader
+          title="Campaign Status"
+          description={`Real-time progress for ${data.campaign?.name || 'campaign'}`}
+        />
         <CampaignProgressCard campaign={data.campaign} metrics={data.metrics} />
       </div>
-    </div>
+    </RetailPageLayout>
   );
 }
 

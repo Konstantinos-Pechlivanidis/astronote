@@ -78,8 +78,10 @@ export function AutomationCard({ automation }: AutomationCardProps) {
             <button
               onClick={handleToggle}
               disabled={updateMutation.isPending || !canToggle}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 ${
-                automation.isActive ? 'bg-accent' : 'bg-surface'
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 border ${
+                automation.isActive
+                  ? 'bg-accent border-accent'
+                  : 'bg-gray-100 text-gray-800'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
               aria-label={
                 !canToggle
@@ -90,7 +92,7 @@ export function AutomationCard({ automation }: AutomationCardProps) {
               }
             >
               <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
                   automation.isActive ? 'translate-x-6' : 'translate-x-1'
                 }`}
               />

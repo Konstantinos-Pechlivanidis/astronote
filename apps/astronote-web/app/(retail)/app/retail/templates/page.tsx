@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FileText, Plus } from 'lucide-react';
 import { useTemplates } from '@/src/features/retail/templates/hooks/useTemplates';
 import { useCreateTemplate } from '@/src/features/retail/templates/hooks/useCreateTemplate';
@@ -12,27 +12,54 @@ import { TemplateFormModal } from '@/src/components/retail/templates/TemplateFor
 import { TemplatePreviewModal } from '@/src/components/retail/templates/TemplatePreviewModal';
 import { TemplatesSkeleton } from '@/src/components/retail/templates/TemplatesSkeleton';
 import { EmptyState } from '@/src/components/retail/EmptyState';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
 import type { Template } from '@/src/lib/retail/api/templates';
 import type { z } from 'zod';
 import { templateSchema } from '@/src/lib/retail/validators';
 
-// System User ID (default: 1, should ideally come from backend/config)
-const SYSTEM_USER_ID = 1;
+/**
+ * Determine system user ID from template data.
+ * NOTE: This is a fallback heuristic. Ideally the backend should return `isSystem`.
+ */
+function getSystemUserId(templates: Template[]): number | null {
+  if (!templates?.length) return null;
+
+  const ownerCounts = new Map<number, number>();
+  for (const t of templates) {
+    if (typeof t.ownerId !== 'number') continue;
+    ownerCounts.set(t.ownerId, (ownerCounts.get(t.ownerId) || 0) + 1);
+  }
+
+  let maxCount = 0;
+  let systemUserId: number | null = null;
+  ownerCounts.forEach((count, ownerId) => {
+    if (count > maxCount) {
+      maxCount = count;
+      systemUserId = ownerId;
+    }
+  });
+
+  return systemUserId;
+}
 
 export default function TemplatesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [language, setLanguage] = useState<'en' | 'gr'>('en');
   const [category, setCategory] = useState('');
   const [tab, setTab] = useState<'system' | 'my'>('system');
+
   const [formOpen, setFormOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
 
   const pageSize = 50;
+
+  // Requirement: no i18n for now; keep everything in English.
+  const language: 'en' = 'en';
 
   const { data, isLoading, error, refetch } = useTemplates({
     language,
@@ -47,16 +74,18 @@ export default function TemplatesPage() {
   const updateMutation = useUpdateTemplate();
   const deleteMutation = useDeleteTemplate();
 
+  const systemUserId = useMemo(() => {
+    return data?.items?.length ? getSystemUserId(data.items) : null;
+  }, [data?.items]);
+
   const handleAddClick = () => {
     setEditingTemplate(null);
     setFormOpen(true);
   };
 
   const handleEdit = (template: Template) => {
-    // Only allow editing user templates
-    if (template.ownerId === SYSTEM_USER_ID) {
-      return; // System templates cannot be edited
-    }
+    // Only allow editing user templates (not system templates)
+    if (systemUserId !== null && template.ownerId === systemUserId) return;
     setEditingTemplate(template);
     setFormOpen(true);
   };
@@ -67,7 +96,12 @@ export default function TemplatesPage() {
   };
 
   const handleDelete = (id: number) => {
-    deleteMutation.mutate(id);
+    deleteMutation.mutate(id, {
+      onSuccess: () => {
+        // Keep it simple: refetch after delete to ensure table stays consistent
+        refetch();
+      },
+    });
   };
 
   const handleDuplicate = (template: Template) => {
@@ -75,40 +109,42 @@ export default function TemplatesPage() {
     setEditingTemplate({
       ...template,
       name: `${template.name} (Copy)`,
-      ownerId: undefined, // Will be set to user.id on create
+      // ownerId should be set by backend on create, not by UI
+      ownerId: undefined as any,
     });
     setFormOpen(true);
   };
 
   const handleFormSubmit = (formData: z.infer<typeof templateSchema>) => {
-    if (editingTemplate && editingTemplate.id && editingTemplate.ownerId !== SYSTEM_USER_ID) {
-      // Update existing user template
+    const isEditingUserTemplate =
+      Boolean(editingTemplate?.id) &&
+      (systemUserId === null || editingTemplate!.ownerId !== systemUserId);
+
+    if (isEditingUserTemplate && editingTemplate?.id) {
       updateMutation.mutate(
         { id: editingTemplate.id, data: formData },
         {
           onSuccess: () => {
             setFormOpen(false);
             setEditingTemplate(null);
+            refetch();
           },
         },
       );
-    } else {
-      // Create new template (from scratch or duplicate)
-      createMutation.mutate(
-        {
-          ...formData,
-          language, // Use current language selection
-        },
-        {
-          onSuccess: () => {
-            setFormOpen(false);
-            setEditingTemplate(null);
-            // Switch to "My Templates" tab to show the new template
-            setTab('my');
-          },
-        },
-      );
+      return;
     }
+
+    createMutation.mutate(
+      { ...formData, language },
+      {
+        onSuccess: () => {
+          setFormOpen(false);
+          setEditingTemplate(null);
+          setTab('my');
+          refetch();
+        },
+      },
+    );
   };
 
   const handleCloseForm = () => {
@@ -116,14 +152,8 @@ export default function TemplatesPage() {
     setEditingTemplate(null);
   };
 
-  // Reset to page 1 when filters change
   const handleTabChange = (newTab: 'system' | 'my') => {
     setTab(newTab);
-    setPage(1);
-  };
-
-  const handleLanguageChange = (newLanguage: 'en' | 'gr') => {
-    setLanguage(newLanguage);
     setPage(1);
   };
 
@@ -132,142 +162,169 @@ export default function TemplatesPage() {
     setPage(1);
   };
 
+  const hasItems = (data?.items?.length || 0) > 0;
+  const isFiltered = Boolean(search || category);
+  const total = data?.total || 0;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <FileText className="w-8 h-8 text-accent" />
-        <div>
-          <h1 className="text-3xl font-bold text-text-primary">Templates</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Browse system templates and manage your custom message templates
-          </p>
-        </div>
-      </div>
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
+          title="Templates"
+          description="Browse system templates, copy text for campaigns, and manage your own message library."
+        />
 
-      <TemplatesToolbar
-        search={search}
-        onSearchChange={setSearch}
-        language={language}
-        onLanguageChange={handleLanguageChange}
-        category={category}
-        onCategoryChange={handleCategoryChange}
-        tab={tab}
-        onTabChange={handleTabChange}
-        onAddClick={handleAddClick}
-      />
+        {/* Toolbar */}
+        <TemplatesToolbar
+          search={search}
+          onSearchChange={setSearch}
+          language={language}
+          onLanguageChange={() => {
+            /* i18n disabled by requirement */
+          }}
+          category={category}
+          onCategoryChange={handleCategoryChange}
+          tab={tab}
+          onTabChange={handleTabChange}
+          onAddClick={handleAddClick}
+        />
 
-      {isLoading && <TemplatesSkeleton />}
+        {/* Loading */}
+        {isLoading && <TemplatesSkeleton />}
 
-      {error && (
-        <GlassCard>
-          <div className="text-center py-8">
-            <p className="text-red-400 mb-4">Error loading templates</p>
-            <Button onClick={() => refetch()} variant="outline" size="sm">
-              Retry
-            </Button>
-          </div>
-        </GlassCard>
-      )}
-
-      {/* Debug Panel (dev-only) */}
-      {process.env.NODE_ENV !== 'production' && data && (
-        <GlassCard className="bg-blue-50 border-blue-200">
-          <div className="text-xs space-y-1">
-            <div><strong>API BaseURL:</strong> {process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'not set'}</div>
-            <div><strong>Templates Total:</strong> {data.total || 0}</div>
-            <div><strong>Items Returned:</strong> {data.items?.length || 0}</div>
-            <div><strong>Language:</strong> {language}</div>
-            <div><strong>Category:</strong> {category || 'all'}</div>
-            <div><strong>Tab:</strong> {tab}</div>
-          </div>
-        </GlassCard>
-      )}
-
-      {!isLoading && !error && data && (
-        <>
-          {data.items && data.items.length > 0 ? (
-            <>
-              <TemplatesTable
-                templates={data.items}
-                systemUserId={SYSTEM_USER_ID}
-                onPreview={handlePreview}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onDuplicate={handleDuplicate}
-              />
-              {/* Pagination */}
-              <div className="mt-4 flex items-center justify-between">
-                <div className="text-sm text-text-secondary">
-                  Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, data.total)} of{' '}
-                  {data.total} templates
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    onClick={() => setPage((p) => p + 1)}
-                    disabled={page * pageSize >= data.total}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Next
-                  </Button>
-                </div>
+        {/* Error */}
+        {error && (
+          <RetailCard variant="danger">
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <div className="text-sm font-semibold text-red-500">Couldn&apos;t load templates</div>
+              <div className="max-w-md text-sm text-text-secondary">
+                Please try again. If the issue persists, confirm the templates seed has been applied to the database.
               </div>
-            </>
-          ) : (
-            <GlassCard>
-              <EmptyState
-                icon={FileText}
-                title={
-                  search || category
-                    ? 'No templates found'
-                    : tab === 'my'
-                      ? 'No custom templates yet'
-                      : 'No system templates available'
-                }
-                description={
-                  search || category
-                    ? 'Try adjusting your filters'
-                    : tab === 'my'
-                      ? 'Create your first template to get started. You can also duplicate system templates to customize them.'
-                      : 'System templates will appear here when available.'
-                }
-                action={
-                  !search && !category && tab === 'my' && (
-                    <Button onClick={handleAddClick} size="sm">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Template
+              <Button onClick={() => refetch()} variant="outline" size="sm">
+                Retry
+              </Button>
+            </div>
+          </RetailCard>
+        )}
+
+        {/* Dev-only Debug Panel */}
+        {process.env.NODE_ENV !== 'production' && data && (
+          <RetailCard className="border-border bg-surface-light/60">
+            <div className="grid gap-1 text-xs text-text-secondary sm:grid-cols-2">
+              <div>
+                <span className="font-medium text-text-primary">API BaseURL:</span>{' '}
+                {process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'not set'}
+              </div>
+              <div>
+                <span className="font-medium text-text-primary">Total:</span> {total}
+              </div>
+              <div>
+                <span className="font-medium text-text-primary">Returned:</span> {data.items?.length || 0}
+              </div>
+              <div>
+                <span className="font-medium text-text-primary">Tab:</span> {tab}
+              </div>
+              <div>
+                <span className="font-medium text-text-primary">Category:</span> {category || 'all'}
+              </div>
+              <div>
+                <span className="font-medium text-text-primary">SystemUserId:</span>{' '}
+                {systemUserId ?? 'null'}
+              </div>
+            </div>
+          </RetailCard>
+        )}
+
+        {/* Content */}
+        {!isLoading && !error && data && (
+          <>
+            {hasItems ? (
+              <>
+                <TemplatesTable
+                  templates={data.items}
+                  systemUserId={systemUserId ?? undefined}
+                  onPreview={handlePreview}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onDuplicate={handleDuplicate}
+                />
+
+                {/* Pagination */}
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm text-text-secondary">
+                    Showing <span className="font-medium text-text-primary">{(page - 1) * pageSize + 1}</span> to{' '}
+                    <span className="font-medium text-text-primary">{Math.min(page * pageSize, total)}</span> of{' '}
+                    <span className="font-medium text-text-primary">{total}</span> templates
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Previous
                     </Button>
-                  )
-                }
-              />
-            </GlassCard>
-          )}
-        </>
-      )}
+                    <Button
+                      onClick={() => setPage((p) => p + 1)}
+                      disabled={page * pageSize >= total}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <RetailCard>
+                <EmptyState
+                  icon={FileText}
+                  title={
+                    isFiltered
+                      ? 'No templates found'
+                      : tab === 'my'
+                        ? 'No custom templates yet'
+                        : 'No system templates available'
+                  }
+                  description={
+                    isFiltered
+                      ? 'Try adjusting search or filters.'
+                      : tab === 'my'
+                        ? 'Create your first template or duplicate a system template to customize.'
+                        : 'System templates will appear here when seeded in the database.'
+                  }
+                  action={
+                    !isFiltered && tab === 'my' ? (
+                      <Button onClick={handleAddClick} size="sm">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Create Template
+                      </Button>
+                    ) : null
+                  }
+                />
+              </RetailCard>
+            )}
+          </>
+        )}
 
-      <TemplateFormModal
-        open={formOpen}
-        onClose={handleCloseForm}
-        template={editingTemplate}
-        onSubmit={handleFormSubmit}
-        isLoading={createMutation.isPending || updateMutation.isPending}
-        systemUserId={SYSTEM_USER_ID}
-      />
+        <TemplateFormModal
+          open={formOpen}
+          onClose={handleCloseForm}
+          template={editingTemplate}
+          onSubmit={handleFormSubmit}
+          isLoading={createMutation.isPending || updateMutation.isPending}
+          systemUserId={systemUserId ?? undefined}
+        />
 
-      <TemplatePreviewModal
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        template={previewTemplate}
-        systemUserId={SYSTEM_USER_ID}
-      />
-    </div>
+        <TemplatePreviewModal
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          template={previewTemplate}
+          systemUserId={systemUserId ?? undefined}
+        />
+      </div>
+    </RetailPageLayout>
   );
 }

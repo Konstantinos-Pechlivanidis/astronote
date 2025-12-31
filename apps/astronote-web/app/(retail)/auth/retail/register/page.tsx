@@ -5,13 +5,14 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Eye, EyeOff } from 'lucide-react';
 import { signupSchema } from '@/src/lib/retail/validators';
 import { z } from 'zod';
 import { useRetailAuth } from '@/src/features/retail/auth/useRetailAuth';
 import { RetailPublicOnlyGuard } from '@/src/components/retail/RetailPublicOnlyGuard';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailFormField } from '@/src/components/retail/RetailFormField';
 import { toast } from 'sonner';
 
 export default function RetailRegisterPage() {
@@ -19,6 +20,8 @@ export default function RetailRegisterPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const {
     register,
@@ -52,113 +55,110 @@ export default function RetailRegisterPage() {
 
   return (
     <RetailPublicOnlyGuard>
-      <div className="min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
-        <div className="max-w-md w-full">
-          <GlassCard>
+      <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+        <div className="w-full max-w-md">
+          <RetailCard className="p-6 sm:p-8">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div>
-                <h2 className="text-3xl font-bold text-center text-text-primary mb-2">
+              <div className="text-center">
+                <h2 className="mb-2 text-3xl font-bold text-text-primary">
                   Create your account
                 </h2>
-                <p className="text-center text-text-secondary">
+                <p className="text-sm text-text-secondary">
                   Start sending SMS campaigns to your customers
                 </p>
               </div>
 
               {error && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg">
-                  {error}
-                </div>
+                <RetailCard variant="danger" className="p-4">
+                  <p className="text-sm text-red-800">{error}</p>
+                </RetailCard>
               )}
 
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-text-secondary mb-2">
-                  Email
-                </label>
-                <Input
-                  {...register('email')}
-                  type="email"
-                  id="email"
-                  placeholder="you@example.com"
-                />
-                {errors.email && (
-                  <p className="mt-1 text-sm text-red-400">{errors.email.message}</p>
-                )}
-              </div>
+              <RetailFormField
+                label="Email"
+                type="email"
+                required
+                placeholder="you@example.com"
+                error={errors.email?.message}
+                {...register('email')}
+              />
 
-              <div>
+              <div className="space-y-2">
                 <label
                   htmlFor="password"
-                  className="block text-sm font-medium text-text-secondary mb-2"
+                  className="block text-sm font-medium text-text-secondary"
                 >
                   Password
                 </label>
-                <Input
-                  {...register('password')}
-                  type="password"
-                  id="password"
-                  placeholder="At least 8 characters"
-                />
+                <div className="relative">
+                  <input
+                    {...register('password')}
+                    type={showPassword ? 'text' : 'password'}
+                    id="password"
+                    placeholder="At least 8 characters"
+                    className="h-11 w-full rounded-xl border border-border bg-surface px-4 py-2 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary transition-colors hover:text-text-primary"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
                 {errors.password && (
-                  <p className="mt-1 text-sm text-red-400">{errors.password.message}</p>
+                  <p className="text-sm text-red-400">{errors.password.message}</p>
                 )}
               </div>
 
-              <div>
+              <div className="space-y-2">
                 <label
                   htmlFor="confirmPassword"
-                  className="block text-sm font-medium text-text-secondary mb-2"
+                  className="block text-sm font-medium text-text-secondary"
                 >
                   Confirm Password
                 </label>
-                <Input
-                  {...register('confirmPassword')}
-                  type="password"
-                  id="confirmPassword"
-                  placeholder="Confirm your password"
-                />
+                <div className="relative">
+                  <input
+                    {...register('confirmPassword')}
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    id="confirmPassword"
+                    placeholder="Confirm your password"
+                    className="h-11 w-full rounded-xl border border-border bg-surface px-4 py-2 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary transition-colors hover:text-text-primary"
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
                 {errors.confirmPassword && (
-                  <p className="mt-1 text-sm text-red-400">{errors.confirmPassword.message}</p>
+                  <p className="text-sm text-red-400">{errors.confirmPassword.message}</p>
                 )}
               </div>
 
-              <div>
-                <label
-                  htmlFor="senderName"
-                  className="block text-sm font-medium text-text-secondary mb-2"
-                >
-                  Sender Name <span className="text-text-tertiary text-xs">(Optional)</span>
-                </label>
-                <Input
-                  {...register('senderName')}
-                  type="text"
-                  id="senderName"
-                  maxLength={11}
-                  placeholder="YourStore (max 11 chars)"
-                />
-                <p className="mt-1 text-xs text-text-tertiary">
-                  SMS sender ID (alphanumeric, max 11 characters)
-                </p>
-                {errors.senderName && (
-                  <p className="mt-1 text-sm text-red-400">{errors.senderName.message}</p>
-                )}
-              </div>
+              <RetailFormField
+                label="Sender Name"
+                type="text"
+                maxLength={11}
+                placeholder="YourStore (max 11 chars)"
+                helper="SMS sender ID (alphanumeric, max 11 characters)"
+                error={errors.senderName?.message}
+                {...register('senderName')}
+              />
 
-              <div>
-                <label htmlFor="company" className="block text-sm font-medium text-text-secondary mb-2">
-                  Company Name <span className="text-text-tertiary text-xs">(Optional)</span>
-                </label>
-                <Input
-                  {...register('company')}
-                  type="text"
-                  id="company"
-                  maxLength={160}
-                  placeholder="Your Store Name"
-                />
-                {errors.company && (
-                  <p className="mt-1 text-sm text-red-400">{errors.company.message}</p>
-                )}
-              </div>
+              <RetailFormField
+                label="Company Name"
+                type="text"
+                maxLength={160}
+                placeholder="Your Store Name"
+                error={errors.company?.message}
+                {...register('company')}
+              />
 
               <Button type="submit" disabled={isLoading} className="w-full" size="lg">
                 {isLoading ? 'Creating account...' : 'Sign Up'}
@@ -166,12 +166,15 @@ export default function RetailRegisterPage() {
 
               <p className="text-center text-sm text-text-secondary">
                 Already have an account?{' '}
-                <Link href="/auth/retail/login" className="font-medium text-accent hover:underline">
+                <Link
+                  href="/auth/retail/login"
+                  className="font-medium text-accent underline underline-offset-4 transition-colors hover:text-accent-hover"
+                >
                   Log in
                 </Link>
               </p>
             </form>
-          </GlassCard>
+          </RetailCard>
         </div>
       </div>
     </RetailPublicOnlyGuard>

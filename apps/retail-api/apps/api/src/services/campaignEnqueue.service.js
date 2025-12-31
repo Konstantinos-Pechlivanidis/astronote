@@ -37,7 +37,6 @@ exports.enqueueCampaign = async (campaignId) => {
   // 0) Fetch campaign and build audience OUTSIDE transaction (heavy work)
   const camp = await prisma.campaign.findUnique({
     where: { id: campaignId },
-    include: { template: true }
   });
   if (!camp) {return { ok: false, reason: 'not_found', enqueuedJobs: 0 };}
 
@@ -155,8 +154,8 @@ exports.enqueueCampaign = async (campaignId) => {
   // 3) Create messages and set totals (short transaction, no heavy work)
   // Note: Credits are NOT debited here - they will be debited per message after successful send
   const ownerId = camp.ownerId;
-  // Use custom messageText if provided, otherwise use template text
-  const messageTemplate = camp.messageText || camp.template?.text;
+  // Use messageText (required field, no template association)
+  const messageTemplate = camp.messageText;
   
   if (!messageTemplate || !messageTemplate.trim()) {
     logger.error({ campaignId: camp.id }, 'Campaign has no message text');

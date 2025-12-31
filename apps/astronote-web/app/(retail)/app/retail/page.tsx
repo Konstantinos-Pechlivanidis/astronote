@@ -1,7 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
+import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { retailClient } from '@/lib/api/retailClient';
 import { TrendingUp, MessageSquare, Users, CreditCard } from 'lucide-react';
 
@@ -30,65 +32,67 @@ export default function RetailDashboardPage() {
   });
 
   return (
-    <div>
-      <h1 className="text-3xl font-bold mb-8">Dashboard</h1>
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader title="Dashboard" description="Overview of your SMS campaigns and performance" />
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <GlassCard>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-text-secondary text-sm mb-1">Credits Balance</p>
-              <p className="text-2xl font-bold">
-                {balanceLoading ? '...' : balance?.balance?.toLocaleString() || 0}
-              </p>
+        <div className="grid gap-4 md:grid-cols-2 md:gap-6 lg:grid-cols-4">
+          <RetailCard>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="mb-1 text-sm text-text-secondary">Credits Balance</p>
+                <p className="text-2xl font-bold">
+                  {balanceLoading ? '...' : balance?.balance?.toLocaleString() || 0}
+                </p>
+              </div>
+              <CreditCard className="h-8 w-8 text-accent" />
             </div>
-            <CreditCard className="w-8 h-8 text-accent" />
-          </div>
-        </GlassCard>
+          </RetailCard>
 
-        <GlassCard>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-text-secondary text-sm mb-1">Total Campaigns</p>
-              <p className="text-2xl font-bold">
-                {kpisLoading ? '...' : kpis?.totalCampaigns?.toLocaleString() || '0'}
-              </p>
+          <RetailCard>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="mb-1 text-sm text-text-secondary">Total Campaigns</p>
+                <p className="text-2xl font-bold">
+                  {kpisLoading ? '...' : kpis?.totalCampaigns?.toLocaleString() || '0'}
+                </p>
+              </div>
+              <MessageSquare className="h-8 w-8 text-accent" />
             </div>
-            <MessageSquare className="w-8 h-8 text-accent" />
-          </div>
-        </GlassCard>
+          </RetailCard>
 
-        <GlassCard>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-text-secondary text-sm mb-1">Messages Sent</p>
-              <p className="text-2xl font-bold">
-                {kpisLoading ? '...' : kpis?.totalMessages?.toLocaleString() || '0'}
-              </p>
+          <RetailCard>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="mb-1 text-sm text-text-secondary">Messages Sent</p>
+                <p className="text-2xl font-bold">
+                  {kpisLoading ? '...' : kpis?.totalMessages?.toLocaleString() || '0'}
+                </p>
+              </div>
+              <Users className="h-8 w-8 text-accent" />
             </div>
-            <Users className="w-8 h-8 text-accent" />
-          </div>
-        </GlassCard>
+          </RetailCard>
 
-        <GlassCard>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-text-secondary text-sm mb-1">Conversions</p>
-              <p className="text-2xl font-bold">
-                {kpisLoading ? '...' : kpis?.conversion?.toLocaleString() || '0'}
-              </p>
+          <RetailCard>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="mb-1 text-sm text-text-secondary">Conversions</p>
+                <p className="text-2xl font-bold">
+                  {kpisLoading ? '...' : kpis?.conversion?.toLocaleString() || '0'}
+                </p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-accent" />
             </div>
-            <TrendingUp className="w-8 h-8 text-accent" />
-          </div>
-        </GlassCard>
+          </RetailCard>
+        </div>
+
+        <RetailCard>
+          <h2 className="mb-4 text-xl font-semibold">Welcome to Astronote</h2>
+          <p className="text-text-secondary">
+            Your dashboard is ready. Start by creating your first campaign or importing contacts.
+          </p>
+        </RetailCard>
       </div>
-
-      <GlassCard>
-        <h2 className="text-xl font-semibold mb-4">Welcome to Astronote</h2>
-        <p className="text-text-secondary">
-          Your dashboard is ready. Start by creating your first campaign or importing contacts.
-        </p>
-      </GlassCard>
-    </div>
+    </RetailPageLayout>
   );
 }

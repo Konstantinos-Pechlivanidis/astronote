@@ -5,13 +5,14 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Eye, EyeOff } from 'lucide-react';
 import { loginSchema } from '@/src/lib/retail/validators';
 import { useRetailAuth } from '@/src/features/retail/auth/useRetailAuth';
 import { z } from 'zod';
 import { RetailPublicOnlyGuard } from '@/src/components/retail/RetailPublicOnlyGuard';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailFormField } from '@/src/components/retail/RetailFormField';
 import { toast } from 'sonner';
 
 export default function RetailLoginPage() {
@@ -19,6 +20,7 @@ export default function RetailLoginPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -73,55 +75,60 @@ export default function RetailLoginPage() {
 
   return (
     <RetailPublicOnlyGuard>
-      <div className="min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full">
-          <GlassCard>
+      <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+        <div className="w-full max-w-md">
+          <RetailCard className="p-6 sm:p-8">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div>
-                <h2 className="text-3xl font-bold text-center text-text-primary mb-2">
+              <div className="text-center">
+                <h2 className="mb-2 text-3xl font-bold text-text-primary">
                   Welcome back
                 </h2>
-                <p className="text-center text-text-secondary">Sign in to your account</p>
+                <p className="text-sm text-text-secondary">Sign in to your account</p>
               </div>
 
               {error && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg">
-                  {error}
-                </div>
+                <RetailCard variant="danger" className="p-4">
+                  <p className="text-sm text-red-800">{error}</p>
+                </RetailCard>
               )}
 
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-text-secondary mb-2">
-                  Email
-                </label>
-                <Input
-                  {...register('email')}
-                  type="email"
-                  id="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                />
-                {errors.email && (
-                  <p className="mt-1 text-sm text-red-400">{errors.email.message}</p>
-                )}
-              </div>
+              <RetailFormField
+                label="Email"
+                type="email"
+                required
+                autoComplete="email"
+                placeholder="you@example.com"
+                error={errors.email?.message}
+                {...register('email')}
+              />
 
-              <div>
+              <div className="space-y-2">
                 <label
                   htmlFor="password"
-                  className="block text-sm font-medium text-text-secondary mb-2"
+                  className="block text-sm font-medium text-text-secondary"
                 >
                   Password
                 </label>
-                <Input
-                  {...register('password')}
-                  type="password"
-                  id="password"
-                  autoComplete="current-password"
-                  placeholder="Enter your password"
-                />
+                <div className="relative">
+                  <input
+                    {...register('password')}
+                    type={showPassword ? 'text' : 'password'}
+                    id="password"
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                    className="h-11 w-full rounded-xl border border-border bg-surface px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary transition-colors hover:text-text-primary"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
                 {errors.password && (
-                  <p className="mt-1 text-sm text-red-400">{errors.password.message}</p>
+                  <p className="text-sm text-red-400">{errors.password.message}</p>
                 )}
               </div>
 
@@ -131,12 +138,15 @@ export default function RetailLoginPage() {
 
               <p className="text-center text-sm text-text-secondary">
                 Don&apos;t have an account?{' '}
-                <Link href="/auth/retail/register" className="font-medium text-accent hover:underline">
+                <Link
+                  href="/auth/retail/register"
+                  className="font-medium text-accent underline underline-offset-4 transition-colors hover:text-accent-hover"
+                >
                   Sign up
                 </Link>
               </p>
             </form>
-          </GlassCard>
+          </RetailCard>
         </div>
       </div>
     </RetailPublicOnlyGuard>

@@ -2,11 +2,14 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { dashboardApi } from '@/src/lib/retail/api/dashboard';
 import { billingApi } from '@/src/lib/retail/api/billing';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
-import { Megaphone, MessageSquare, Send, XCircle, TrendingUp, Target, CreditCard, CheckCircle, XCircle as XCircleIcon } from 'lucide-react';
+import { Megaphone, MessageSquare, Send, XCircle, TrendingUp, Target, CreditCard, CheckCircle, XCircle as XCircleIcon, Plus, ShoppingCart } from 'lucide-react';
 
 function KpiCard({
   title,
@@ -22,10 +25,10 @@ function KpiCard({
   trend?: number
 }) {
   return (
-    <GlassCard hover>
-      <div className="flex items-center justify-between mb-2">
+    <RetailCard hover>
+      <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-medium text-text-secondary">{title}</h3>
-        {Icon && <Icon className="w-5 h-5 text-text-tertiary" />}
+        {Icon && <Icon className="h-5 w-5 text-text-tertiary" />}
       </div>
       <div className="flex items-baseline">
         <p className="text-3xl font-bold text-text-primary">{value}</p>
@@ -40,8 +43,8 @@ function KpiCard({
           </span>
         )}
       </div>
-      {subtitle && <p className="text-xs text-text-tertiary mt-1">{subtitle}</p>}
-    </GlassCard>
+      {subtitle && <p className="mt-1 text-xs text-text-tertiary">{subtitle}</p>}
+    </RetailCard>
   );
 }
 
@@ -56,26 +59,23 @@ function CreditsCard() {
 
   if (isLoading) {
     return (
-      <GlassCard>
-        <div className="h-6 bg-surface-light rounded w-32 mb-4 animate-pulse" />
-        <div className="h-8 bg-surface-light rounded w-24 mb-2 animate-pulse" />
-        <div className="h-4 bg-surface-light rounded w-40 animate-pulse" />
-      </GlassCard>
+      <RetailCard>
+        <div className="mb-4 h-6 w-32 animate-pulse rounded bg-surface-light" />
+        <div className="mb-2 h-8 w-24 animate-pulse rounded bg-surface-light" />
+        <div className="h-4 w-40 animate-pulse rounded bg-surface-light" />
+      </RetailCard>
     );
   }
 
   if (error) {
     return (
-      <GlassCard>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Credits & Subscription</h3>
+      <RetailCard>
+        <h3 className="mb-4 text-lg font-semibold text-text-primary">Credits & Subscription</h3>
         <div className="text-sm text-red-400">Error loading balance</div>
-        <button
-          onClick={() => refetch()}
-          className="mt-2 text-sm text-accent hover:underline"
-        >
+        <Button onClick={() => refetch()} variant="outline" size="sm" className="mt-2">
           Retry
-        </button>
-      </GlassCard>
+        </Button>
+      </RetailCard>
     );
   }
 
@@ -83,36 +83,36 @@ function CreditsCard() {
   const subscription = data?.subscription || { active: false, planType: null };
 
   return (
-    <GlassCard>
-      <div className="flex items-center gap-2 mb-4">
-        <CreditCard className="w-5 h-5 text-accent" />
+    <RetailCard>
+      <div className="mb-4 flex items-center gap-2">
+        <CreditCard className="h-5 w-5 text-accent" />
         <h3 className="text-lg font-semibold text-text-primary">Credits & Subscription</h3>
       </div>
 
       <div className="space-y-4">
         <div>
-          <p className="text-sm text-text-secondary mb-1">Available Credits</p>
+          <p className="mb-1 text-sm text-text-secondary">Available Credits</p>
           <p className="text-3xl font-bold text-text-primary">{balance.toLocaleString()}</p>
         </div>
 
-        <div className="pt-4 border-t border-border">
+        <div className="border-t border-border pt-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-text-secondary mb-1">Subscription Status</p>
               <div className="flex items-center gap-2">
                 {subscription.active ? (
                   <>
-                    <CheckCircle className="w-5 h-5 text-green-400" />
+                    <CheckCircle className="h-5 w-5 text-green-400" />
                     <span className="text-sm font-medium text-green-400">Active</span>
                     {subscription.planType && (
-                      <span className="text-sm text-text-secondary capitalize">
+                      <span className="text-sm capitalize text-text-secondary">
                         ({subscription.planType})
                       </span>
                     )}
                   </>
                 ) : (
                   <>
-                    <XCircleIcon className="w-5 h-5 text-red-400" />
+                    <XCircleIcon className="h-5 w-5 text-red-400" />
                     <span className="text-sm font-medium text-red-400">Inactive</span>
                   </>
                 )}
@@ -121,7 +121,7 @@ function CreditsCard() {
           </div>
         </div>
       </div>
-    </GlassCard>
+    </RetailCard>
   );
 }
 
@@ -177,13 +177,35 @@ export default function RetailDashboardPage() {
 
     return (
       <div className="space-y-6">
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-text-primary">Dashboard</h1>
+            <p className="text-sm text-text-secondary mt-1">Overview of your SMS campaigns and performance</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/app/retail/campaigns/new">
+              <Button size="sm">
+                <Plus className="w-4 h-4 mr-2" />
+                Create Campaign
+              </Button>
+            </Link>
+            <Link href="/app/retail/billing">
+              <Button variant="outline" size="sm">
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                Buy Credits
+              </Button>
+            </Link>
+          </div>
+        </div>
+
         {/* Error card - doesn't block navigation */}
-        <GlassCard>
+        <RetailCard variant="danger">
           <div className="flex items-start gap-4">
-            <XCircle className="w-6 h-6 text-red-400 flex-shrink-0 mt-1" />
+            <XCircle className="mt-1 h-6 w-6 shrink-0 text-red-400" />
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-text-primary mb-2">Error Loading Dashboard Data</h3>
-              <p className="text-sm text-text-secondary mb-4">
+              <h3 className="mb-2 text-lg font-semibold text-text-primary">Error Loading Dashboard Data</h3>
+              <p className="mb-4 text-sm text-text-secondary">
                 {kpisError instanceof Error
                   ? kpisError.message
                   : (kpisError as any)?.response?.data?.message || 'Failed to load dashboard KPIs'}
@@ -193,7 +215,7 @@ export default function RetailDashboardPage() {
               </Button>
             </div>
           </div>
-        </GlassCard>
+        </RetailCard>
 
         {/* Show CreditsCard even on error - don't block entire page */}
         <CreditsCard />
@@ -204,66 +226,113 @@ export default function RetailDashboardPage() {
   // Show loading state but don't block navigation
   if (kpisLoading || !hasToken) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <GlassCard key={i}>
-              <div className="h-6 bg-surface-light rounded w-32 mb-4 animate-pulse"></div>
-              <div className="h-8 bg-surface-light rounded w-24 animate-pulse"></div>
-            </GlassCard>
-          ))}
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader
+            title="Dashboard"
+            description="Overview of your SMS campaigns and performance"
+            actions={
+              <>
+                <Link href="/app/retail/campaigns/new">
+                  <Button size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Campaign
+                  </Button>
+                </Link>
+                <Link href="/app/retail/billing">
+                  <Button variant="outline" size="sm">
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Buy Credits
+                  </Button>
+                </Link>
+              </>
+            }
+          />
+
+          {/* Loading Skeletons */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <RetailCard key={i}>
+                <div className="mb-4 h-6 w-32 animate-pulse rounded bg-surface-light"></div>
+                <div className="h-8 w-24 animate-pulse rounded bg-surface-light"></div>
+              </RetailCard>
+            ))}
+          </div>
+          {/* Show CreditsCard even while loading */}
+          <CreditsCard />
         </div>
-        {/* Show CreditsCard even while loading */}
-        <CreditsCard />
-      </div>
+      </RetailPageLayout>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <KpiCard
-          title="Total Campaigns"
-          value={kpis?.totalCampaigns || 0}
-          subtitle="All time"
-          icon={Megaphone}
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
+          title="Dashboard"
+          description="Overview of your SMS campaigns and performance"
+          actions={
+            <>
+              <Link href="/app/retail/campaigns/new">
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Campaign
+                </Button>
+              </Link>
+              <Link href="/app/retail/billing">
+                <Button variant="outline" size="sm">
+                  <ShoppingCart className="mr-2 h-4 w-4" />
+                  Buy Credits
+                </Button>
+              </Link>
+            </>
+          }
         />
-        <KpiCard
-          title="Total Messages"
-          value={kpis?.totalMessages || 0}
-          subtitle="All time"
-          icon={MessageSquare}
-        />
-        <KpiCard
-          title="Messages Sent"
-          value={kpis?.sent || 0}
-          subtitle={`${kpis?.sentRate ? (kpis.sentRate * 100).toFixed(1) : 0}% success rate`}
-          icon={Send}
-        />
-        <KpiCard
-          title="Messages Failed"
-          value={kpis?.failed || 0}
-          subtitle="Failed deliveries"
-          icon={XCircle}
-        />
-        <KpiCard
-          title="Conversions"
-          value={kpis?.conversion || 0}
-          subtitle="Offer redemptions"
-          icon={Target}
-        />
-        <KpiCard
-          title="Conversion Rate"
-          value={kpis?.conversionRate ? (kpis.conversionRate * 100).toFixed(1) : 0}
-          subtitle="% of sent messages"
-          icon={TrendingUp}
-          trend={kpis?.conversionRate ? kpis.conversionRate * 100 : 0}
-        />
-      </div>
 
-      {/* Credits & Subscription */}
-      <CreditsCard />
-    </div>
+        {/* KPI Cards - Responsive Grid */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+          <KpiCard
+            title="Total Campaigns"
+            value={kpis?.totalCampaigns || 0}
+            subtitle="All time"
+            icon={Megaphone}
+          />
+          <KpiCard
+            title="Total Messages"
+            value={kpis?.totalMessages || 0}
+            subtitle="All time"
+            icon={MessageSquare}
+          />
+          <KpiCard
+            title="Messages Sent"
+            value={kpis?.sent || 0}
+            subtitle={`${kpis?.sentRate ? (kpis.sentRate * 100).toFixed(1) : 0}% success rate`}
+            icon={Send}
+          />
+          <KpiCard
+            title="Messages Failed"
+            value={kpis?.failed || 0}
+            subtitle="Failed deliveries"
+            icon={XCircle}
+          />
+          <KpiCard
+            title="Conversions"
+            value={kpis?.conversion || 0}
+            subtitle="Offer redemptions"
+            icon={Target}
+          />
+          <KpiCard
+            title="Conversion Rate"
+            value={kpis?.conversionRate ? (kpis.conversionRate * 100).toFixed(1) : 0}
+            subtitle="% of sent messages"
+            icon={TrendingUp}
+            trend={kpis?.conversionRate ? kpis.conversionRate * 100 : 0}
+          />
+        </div>
+
+        {/* Credits & Subscription */}
+        <CreditsCard />
+      </div>
+    </RetailPageLayout>
   );
 }
