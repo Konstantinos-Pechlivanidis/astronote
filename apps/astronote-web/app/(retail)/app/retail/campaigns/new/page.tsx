@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { useCreateCampaign } from '@/src/features/retail/campaigns/hooks/useCreateCampaign';
 import { AudiencePreviewPanel } from '@/src/features/retail/campaigns/components/AudiencePreviewPanel';
 import { RetailCard } from '@/src/components/retail/RetailCard';
+import { SmsPhonePreview } from '@/src/components/shared/SmsPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -166,46 +167,64 @@ export default function NewCampaignPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Step 1: Basics */}
             {currentStep === 1 && (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <h3 className="text-lg font-semibold text-text-primary">Campaign Basics</h3>
-                  <p className="text-sm text-text-secondary">
-                    Give your campaign a clear name and write your SMS message.
-                  </p>
-                </div>
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                {/* Form Column */}
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold text-text-primary">Campaign Basics</h3>
+                    <p className="text-sm text-text-secondary">
+                      Give your campaign a clear name and write your SMS message.
+                    </p>
+                  </div>
 
-                <div>
-                  <label htmlFor="name" className="mb-2 block text-sm font-medium text-text-secondary">
-                    Campaign Name <span className="text-red-400">*</span>
-                  </label>
-                  <Input {...register('name')} type="text" id="name" maxLength={200} placeholder="Summer Sale 2025" />
-                  {errors.name && <p className="mt-1 text-sm text-red-400">{(errors.name as any).message}</p>}
-                </div>
+                  <div>
+                    <label htmlFor="name" className="mb-2 block text-sm font-medium text-text-secondary">
+                      Campaign Name <span className="text-red-400">*</span>
+                    </label>
+                    <Input {...register('name')} type="text" id="name" maxLength={200} placeholder="Summer Sale 2025" />
+                    {errors.name && <p className="mt-1 text-sm text-red-400">{(errors.name as any).message}</p>}
+                  </div>
 
-                <div>
-                  <label htmlFor="messageText" className="mb-2 block text-sm font-medium text-text-secondary">
-                    Message Text <span className="text-red-400">*</span>
-                  </label>
-                  <Textarea
-                    {...register('messageText')}
-                    id="messageText"
-                    rows={6}
-                    maxLength={2000}
-                    placeholder="Enter your SMS message here. Use {{firstName}} for personalization."
-                  />
-                  <p className="mt-1 text-xs text-text-tertiary">
-                    Max 2000 characters. Use variables like {'{{'}firstName{'}}'} for personalization.
-                  </p>
-                  {errors.messageText && (
-                    <p className="mt-1 text-sm text-red-400">{(errors.messageText as any).message}</p>
+                  <div>
+                    <label htmlFor="messageText" className="mb-2 block text-sm font-medium text-text-secondary">
+                      Message Text <span className="text-red-400">*</span>
+                    </label>
+                    <Textarea
+                      {...register('messageText')}
+                      id="messageText"
+                      rows={6}
+                      maxLength={2000}
+                      placeholder="Enter your SMS message here. Use {{firstName}} for personalization."
+                    />
+                    <p className="mt-1 text-xs text-text-tertiary">
+                      Max 2000 characters. Use variables like {'{{'}firstName{'}}'} for personalization.
+                    </p>
+                    {errors.messageText && (
+                      <p className="mt-1 text-sm text-red-400">{(errors.messageText as any).message}</p>
+                    )}
+                  </div>
+
+                  {Object.keys(errors).length > 0 && (errors.name || errors.messageText) && (
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
+                      <p className="text-sm text-red-400">Please fix the errors above before proceeding.</p>
+                    </div>
                   )}
                 </div>
 
-                {Object.keys(errors).length > 0 && (errors.name || errors.messageText) && (
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
-                    <p className="text-sm text-red-400">Please fix the errors above before proceeding.</p>
+                {/* Preview Column (Desktop: Sticky, Mobile: Below) */}
+                <div className="lg:col-span-1">
+                  <div className="lg:sticky lg:top-24">
+                    <RetailCard className="p-6">
+                      <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
+                      <SmsPhonePreview
+                        message={watch('messageText') || ''}
+                        senderName="Astronote"
+                        mode="retail"
+                        showCounts={true}
+                      />
+                    </RetailCard>
                   </div>
-                )}
+                </div>
               </div>
             )}
 

@@ -2,6 +2,7 @@ import { Navbar } from '@/components/layout/navbar';
 import { Footer } from '@/components/layout/footer';
 import { Button } from '@/components/ui/button';
 import { GlassCard } from '@/components/ui/glass-card';
+import { SmsPhonePreviewDark } from '@/src/components/marketing/SmsPhonePreviewDark';
 import Link from 'next/link';
 import { ArrowRight, TrendingUp, Zap, MessageSquare, Clock, CheckCircle2 } from 'lucide-react';
 import { marketingCopy } from '@/lib/content/marketingCopy';
@@ -14,25 +15,42 @@ export default function HomePage() {
       <main className="flex-1">
         {/* Hero Section */}
         <section className="pt-32 pb-20 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 animate-fade-in">
-              {marketingCopy.hero.headline}
-            </h1>
-            <p className="text-xl md:text-2xl text-text-secondary mb-8 max-w-2xl mx-auto animate-slide-up">
-              {marketingCopy.hero.subhead}
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center animate-scale-in">
-              <Link href="/pricing">
-                <Button size="lg" className="w-full sm:w-auto">
-                  {marketingCopy.hero.primaryCta}
-                  <ArrowRight className="ml-2 w-5 h-5" />
-                </Button>
-              </Link>
-              <Link href="/how-it-works">
-                <Button variant="outline" size="lg" className="w-full sm:w-auto">
-                  {marketingCopy.hero.secondaryCta}
-                </Button>
-              </Link>
+          <div className="max-w-7xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-12 items-center">
+              {/* Left: Copy */}
+              <div className="text-center lg:text-left">
+                <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold mb-6 animate-fade-in">
+                  {marketingCopy.hero.headline}
+                </h1>
+                <p className="text-xl md:text-2xl text-text-secondary mb-8 max-w-2xl mx-auto lg:mx-0 animate-slide-up">
+                  {marketingCopy.hero.subhead}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start items-center animate-scale-in">
+                  <Link href="/pricing">
+                    <Button size="lg" className="w-full sm:w-auto">
+                      {marketingCopy.hero.primaryCta}
+                      <ArrowRight className="ml-2 w-5 h-5" />
+                    </Button>
+                  </Link>
+                  <Link href="/how-it-works">
+                    <Button variant="outline" size="lg" className="w-full sm:w-auto">
+                      {marketingCopy.hero.secondaryCta}
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Right: Phone Preview */}
+              <div className="flex justify-center lg:justify-end">
+                <div className="w-full max-w-[360px] lg:max-w-[420px]">
+                  <SmsPhonePreviewDark
+                    title="Live preview"
+                    message="Hi Maria — your 15% code is ready: ASTR15. Tap to claim: https://astronote.com/redeem"
+                    senderName="Astronote"
+                    showCounts={true}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </section>

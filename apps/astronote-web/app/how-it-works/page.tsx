@@ -2,6 +2,7 @@ import { Navbar } from '@/components/layout/navbar';
 import { Footer } from '@/components/layout/footer';
 import { GlassCard } from '@/components/ui/glass-card';
 import { Button } from '@/components/ui/button';
+import { SmsPhonePreviewDark } from '@/src/components/marketing/SmsPhonePreviewDark';
 import Link from 'next/link';
 import { CheckCircle2, Clock } from 'lucide-react';
 import { marketingCopy } from '@/lib/content/marketingCopy';
@@ -89,26 +90,39 @@ export default function HowItWorksPage() {
           </div>
 
           {/* What to Send */}
-          <GlassCard className="mb-12">
-            <h2 className="text-2xl font-semibold mb-2">{marketingCopy.howItWorks.whatToSend.title}</h2>
-            <p className="text-text-secondary mb-6">{marketingCopy.howItWorks.whatToSend.subtitle}</p>
-            <div className="space-y-6">
-              {marketingCopy.howItWorks.whatToSend.examples.map((example, idx) => (
-                <div key={idx} className="border-l-2 border-accent pl-4">
-                  <h3 className="font-semibold text-text-primary mb-1">{example.type}</h3>
-                  <p className="text-sm text-text-secondary mb-2">
-                    <strong>Message:</strong> {example.message}
-                  </p>
-                  <p className="text-sm text-text-tertiary italic mb-2">
-                    &quot;{example.example}&quot;
-                  </p>
-                  <p className="text-sm text-text-secondary">
-                    <strong>Why it works:</strong> {example.whyItWorks}
-                  </p>
-                </div>
-              ))}
+          <div className="mb-12">
+            <GlassCard className="mb-8">
+              <h2 className="text-2xl font-semibold mb-2">{marketingCopy.howItWorks.whatToSend.title}</h2>
+              <p className="text-text-secondary mb-6">{marketingCopy.howItWorks.whatToSend.subtitle}</p>
+              <div className="space-y-6">
+                {marketingCopy.howItWorks.whatToSend.examples.map((example, idx) => (
+                  <div key={idx} className="border-l-2 border-accent pl-4">
+                    <h3 className="font-semibold text-text-primary mb-1">{example.type}</h3>
+                    <p className="text-sm text-text-secondary mb-2">
+                      <strong>Message:</strong> {example.message}
+                    </p>
+                    <p className="text-sm text-text-tertiary italic mb-2">
+                      &quot;{example.example}&quot;
+                    </p>
+                    <p className="text-sm text-text-secondary">
+                      <strong>Why it works:</strong> {example.whyItWorks}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+
+            {/* Message Preview */}
+            <div className="flex justify-center">
+              <GlassCard className="p-8 max-w-md w-full">
+                <SmsPhonePreviewDark
+                  message="Hi Maria — your 15% code is ready: ASTR15. Tap to claim: https://astronote.com/redeem"
+                  senderName="Astronote"
+                  showCounts={true}
+                />
+              </GlassCard>
             </div>
-          </GlassCard>
+          </div>
 
           {/* CTA */}
           <div className="text-center">

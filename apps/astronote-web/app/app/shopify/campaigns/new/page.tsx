@@ -9,6 +9,7 @@ import { useAudiences } from '@/src/features/shopify/audiences/hooks/useAudience
 import { useDiscounts } from '@/src/features/shopify/discounts/hooks/useDiscounts';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
+import { SmsPhonePreview } from '@/src/components/shared/SmsPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -398,45 +399,43 @@ export default function NewCampaignPage() {
 
         {/* Preview/Info Sidebar */}
         <div className="lg:col-span-1">
-          <RetailCard className="p-6">
-            <h3 className="text-lg font-semibold text-text-primary mb-4">Campaign Preview</h3>
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">Name</div>
-                <div className="text-text-primary">
-                  {formData.name || <span className="text-text-tertiary">Untitled Campaign</span>}
+          <div className="lg:sticky lg:top-24 space-y-6">
+            {/* Phone Preview */}
+            <RetailCard className="p-6">
+              <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
+              <SmsPhonePreview
+                message={formData.message}
+                senderName="Astronote"
+                mode="shopify"
+                showCounts={true}
+              />
+            </RetailCard>
+
+            {/* Additional Info */}
+            <RetailCard className="p-6">
+              <h3 className="text-lg font-semibold text-text-primary mb-4">Campaign Details</h3>
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-2">Name</div>
+                  <div className="text-text-primary">
+                    {formData.name || <span className="text-text-tertiary">Untitled Campaign</span>}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">Message</div>
-                <div className="p-4 rounded-lg bg-surface-light border border-border">
-                  <p className="text-sm text-text-primary whitespace-pre-wrap">
-                    {formData.message || (
-                      <span className="text-text-tertiary">Your message will appear here...</span>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-2">Schedule</div>
+                  <div className="text-text-primary">
+                    {formData.scheduleType === 'immediate' ? (
+                      'Save as Draft'
+                    ) : formData.scheduleAt ? (
+                      format(new Date(formData.scheduleAt), 'MMM d, yyyy HH:mm')
+                    ) : (
+                      <span className="text-text-tertiary">Select date and time</span>
                     )}
-                  </p>
+                  </div>
                 </div>
               </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">Schedule</div>
-                <div className="text-text-primary">
-                  {formData.scheduleType === 'immediate' ? (
-                    'Save as Draft'
-                  ) : formData.scheduleAt ? (
-                    format(new Date(formData.scheduleAt), 'MMM d, yyyy HH:mm')
-                  ) : (
-                    <span className="text-text-tertiary">Select date and time</span>
-                  )}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">SMS Parts</div>
-                <div className="text-text-primary">
-                  {smsCount} part{smsCount !== 1 ? 's' : ''} ({formData.message.length} characters)
-                </div>
-              </div>
-            </div>
-          </RetailCard>
+            </RetailCard>
+          </div>
         </div>
       </div>
     </div>
