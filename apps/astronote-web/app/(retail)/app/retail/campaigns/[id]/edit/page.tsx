@@ -13,6 +13,7 @@ import { AudiencePreviewPanel } from '@/src/features/retail/campaigns/components
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
+import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -201,166 +202,189 @@ export default function EditCampaignPage() {
           description="Modify your campaign details and schedule"
         />
 
-        <RetailCard className="mx-auto max-w-4xl">
-          <form onSubmit={handleSubmit(onSubmit)}>
-            <div className="space-y-6">
-              {/* Campaign Name */}
-              <div>
-                <label htmlFor="name" className="mb-1 block text-sm font-medium text-text-secondary">
-                  Campaign Name <span className="text-red-400">*</span>
-                </label>
-                <Input {...register('name')} type="text" id="name" maxLength={200} />
-                {errors.name && <p className="mt-1 text-sm text-red-400">{errors.name.message}</p>}
-              </div>
-
-              {/* Message Text */}
-              <div>
-                <label htmlFor="messageText" className="mb-1 block text-sm font-medium text-text-secondary">
-                  Message Text <span className="text-red-400">*</span>
-                </label>
-                <Textarea
-                  {...register('messageText')}
-                  id="messageText"
-                  rows={6}
-                  maxLength={2000}
-                  placeholder="Enter your SMS message here. Use {{firstName}} for personalization."
-                />
-                <p className="mt-1 text-xs text-text-tertiary">
-                  Max 2000 characters. Use variables like {'{{'}firstName{'}}'} for personalization.
-                </p>
-                {errors.messageText && (
-                  <p className="mt-1 text-sm text-red-400">{errors.messageText.message}</p>
-                )}
-              </div>
-
-              {/* Audience Filters */}
-              <div className="border-t border-border pt-6">
-                <h3 className="mb-4 text-lg font-semibold text-text-primary">Target Audience</h3>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {/* Form Column */}
+          <div className="lg:col-span-2">
+            <RetailCard className="mx-auto">
+              <form onSubmit={handleSubmit(onSubmit)}>
+                <div className="space-y-6">
+                  {/* Campaign Name */}
                   <div>
-                    <label htmlFor="filterGender" className="mb-1 block text-sm font-medium text-text-secondary">
-                      Gender Filter
+                    <label htmlFor="name" className="mb-1 block text-sm font-medium text-text-secondary">
+                      Campaign Name <span className="text-red-400">*</span>
                     </label>
-                    <Controller
-                      name="filterGender"
-                      control={control}
-                      render={({ field }) => (
-                        <Select
-                          value={field.value || undefined}
-                          onValueChange={(value) => {
-                            field.onChange(value || null);
-                          }}
-                        >
-                          <SelectTrigger id="filterGender">
-                            <SelectValue placeholder="Any" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="male">Male</SelectItem>
-                            <SelectItem value="female">Female</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
+                    <Input {...register('name')} type="text" id="name" maxLength={200} />
+                    {errors.name && <p className="mt-1 text-sm text-red-400">{errors.name.message}</p>}
                   </div>
-                  <div>
-                    <label htmlFor="filterAgeGroup" className="mb-1 block text-sm font-medium text-text-secondary">
-                      Age Group Filter
-                    </label>
-                    <Controller
-                      name="filterAgeGroup"
-                      control={control}
-                      render={({ field }) => (
-                        <Select
-                          value={field.value || undefined}
-                          onValueChange={(value) => {
-                            field.onChange(value || null);
-                          }}
-                        >
-                          <SelectTrigger id="filterAgeGroup">
-                            <SelectValue placeholder="Any" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="18_24">18-24</SelectItem>
-                            <SelectItem value="25_39">25-39</SelectItem>
-                            <SelectItem value="40_plus">40+</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <AudiencePreviewPanel filters={currentFilters} />
-                </div>
-              </div>
 
-              {/* Schedule */}
-              <div className="border-t border-border pt-6">
-                <h3 className="mb-4 text-lg font-semibold text-text-primary">Schedule</h3>
-                <div className="space-y-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      {...register('scheduleType')}
-                      value="now"
-                      className="h-4 w-4 text-accent"
+                  {/* Message Text */}
+                  <div>
+                    <label htmlFor="messageText" className="mb-1 block text-sm font-medium text-text-secondary">
+                      Message Text <span className="text-red-400">*</span>
+                    </label>
+                    <Textarea
+                      {...register('messageText')}
+                      id="messageText"
+                      rows={6}
+                      maxLength={2000}
+                      placeholder="Enter your SMS message here. Use {{firstName}} for personalization."
                     />
-                    <span className="text-sm font-medium text-text-secondary">Save as draft (send later)</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      {...register('scheduleType')}
-                      value="later"
-                      className="h-4 w-4 text-accent"
-                    />
-                    <span className="text-sm font-medium text-text-secondary">Schedule for later</span>
-                  </label>
-                </div>
-                {watch('scheduleType') === 'later' && (
-                  <div className="mt-4 grid grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="scheduledDate" className="mb-1 block text-sm font-medium text-text-secondary">
-                        Date
-                      </label>
-                      <Input
-                        {...register('scheduledDate')}
-                        type="date"
-                        id="scheduledDate"
-                        min={new Date().toISOString().split('T')[0]}
-                      />
-                      {errors.scheduledDate && (
-                        <p className="mt-1 text-sm text-red-400">{errors.scheduledDate.message}</p>
-                      )}
+                    <p className="mt-1 text-xs text-text-tertiary">
+                      Max 2000 characters. Use variables like {'{{'}firstName{'}}'} for personalization.
+                    </p>
+                    {errors.messageText && (
+                      <p className="mt-1 text-sm text-red-400">{errors.messageText.message}</p>
+                    )}
+                  </div>
+
+                  {/* Audience Filters */}
+                  <div className="border-t border-border pt-6">
+                    <h3 className="mb-4 text-lg font-semibold text-text-primary">Target Audience</h3>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div>
+                        <label htmlFor="filterGender" className="mb-1 block text-sm font-medium text-text-secondary">
+                          Gender Filter
+                        </label>
+                        <Controller
+                          name="filterGender"
+                          control={control}
+                          render={({ field }) => (
+                            <Select
+                              value={field.value || undefined}
+                              onValueChange={(value) => {
+                                field.onChange(value || null);
+                              }}
+                            >
+                              <SelectTrigger id="filterGender">
+                                <SelectValue placeholder="Any" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="male">Male</SelectItem>
+                                <SelectItem value="female">Female</SelectItem>
+                                <SelectItem value="other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="filterAgeGroup" className="mb-1 block text-sm font-medium text-text-secondary">
+                          Age Group Filter
+                        </label>
+                        <Controller
+                          name="filterAgeGroup"
+                          control={control}
+                          render={({ field }) => (
+                            <Select
+                              value={field.value || undefined}
+                              onValueChange={(value) => {
+                                field.onChange(value || null);
+                              }}
+                            >
+                              <SelectTrigger id="filterAgeGroup">
+                                <SelectValue placeholder="Any" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="18_24">18-24</SelectItem>
+                                <SelectItem value="25_39">25-39</SelectItem>
+                                <SelectItem value="40_plus">40+</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label htmlFor="scheduledTime" className="mb-1 block text-sm font-medium text-text-secondary">
-                        Time
-                      </label>
-                      <Input {...register('scheduledTime')} type="time" id="scheduledTime" />
-                      {errors.scheduledTime && (
-                        <p className="mt-1 text-sm text-red-400">{errors.scheduledTime.message}</p>
-                      )}
+                    <div className="mt-4">
+                      <AudiencePreviewPanel filters={currentFilters} />
                     </div>
                   </div>
-                )}
-              </div>
 
-              {/* Submit Buttons */}
-              <div className="flex justify-end gap-4 border-t border-border pt-6">
-                <Link href={`/app/retail/campaigns/${campaignId}`}>
-                  <Button type="button" variant="outline" size="sm">
-                    Cancel
-                  </Button>
-                </Link>
-                <Button type="submit" disabled={updateMutation.isPending} size="sm">
-                  {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-                </Button>
-              </div>
+                  {/* Schedule */}
+                  <div className="border-t border-border pt-6">
+                    <h3 className="mb-4 text-lg font-semibold text-text-primary">Schedule</h3>
+                    <div className="space-y-4">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          {...register('scheduleType')}
+                          value="now"
+                          className="h-4 w-4 text-accent"
+                        />
+                        <span className="text-sm font-medium text-text-secondary">Save as draft (send later)</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          {...register('scheduleType')}
+                          value="later"
+                          className="h-4 w-4 text-accent"
+                        />
+                        <span className="text-sm font-medium text-text-secondary">Schedule for later</span>
+                      </label>
+                    </div>
+                    {watch('scheduleType') === 'later' && (
+                      <div className="mt-4 grid grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="scheduledDate" className="mb-1 block text-sm font-medium text-text-secondary">
+                            Date
+                          </label>
+                          <Input
+                            {...register('scheduledDate')}
+                            type="date"
+                            id="scheduledDate"
+                            min={new Date().toISOString().split('T')[0]}
+                          />
+                          {errors.scheduledDate && (
+                            <p className="mt-1 text-sm text-red-400">{errors.scheduledDate.message}</p>
+                          )}
+                        </div>
+                        <div>
+                          <label htmlFor="scheduledTime" className="mb-1 block text-sm font-medium text-text-secondary">
+                            Time
+                          </label>
+                          <Input {...register('scheduledTime')} type="time" id="scheduledTime" />
+                          {errors.scheduledTime && (
+                            <p className="mt-1 text-sm text-red-400">{errors.scheduledTime.message}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Submit Buttons */}
+                  <div className="flex justify-end gap-4 border-t border-border pt-6">
+                    <Link href={`/app/retail/campaigns/${campaignId}`}>
+                      <Button type="button" variant="outline" size="sm">
+                        Cancel
+                      </Button>
+                    </Link>
+                    <Button type="submit" disabled={updateMutation.isPending} size="sm">
+                      {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            </RetailCard>
+          </div>
+
+          {/* Preview Column (Desktop: Sticky, Mobile: Below) */}
+          <div className="lg:col-span-1">
+            <div className="lg:sticky lg:top-24">
+              <RetailCard className="p-6">
+                <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
+                <div className="flex justify-center lg:justify-start">
+                  <SmsInPhonePreview
+                    message={watch('messageText') || ''}
+                    senderName="Astronote"
+                    variant="retail"
+                    size="md"
+                    showCounts={true}
+                  />
+                </div>
+              </RetailCard>
             </div>
-          </form>
-        </RetailCard>
+          </div>
+        </div>
       </div>
     </RetailPageLayout>
   );

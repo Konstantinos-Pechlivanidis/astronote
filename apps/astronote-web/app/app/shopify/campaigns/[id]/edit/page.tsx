@@ -9,6 +9,7 @@ import { useAudiences } from '@/src/features/shopify/audiences/hooks/useAudience
 import { useDiscounts } from '@/src/features/shopify/discounts/hooks/useDiscounts';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
+import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -438,65 +439,66 @@ export default function EditCampaignPage() {
 
         {/* Preview/Info Sidebar */}
         <div className="lg:col-span-1">
-          <RetailCard className="p-6">
-            <h3 className="text-lg font-semibold text-text-primary mb-4">Campaign Preview</h3>
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">Name</div>
-                <div className="text-text-primary">
-                  {formData.name || <span className="text-text-tertiary">Untitled Campaign</span>}
-                </div>
+          <div className="lg:sticky lg:top-24 space-y-6">
+            {/* Phone Preview */}
+            <RetailCard className="p-6">
+              <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
+              <div className="flex justify-center lg:justify-start">
+                <SmsInPhonePreview
+                  message={formData.message}
+                  senderName="Astronote"
+                  variant="shopify"
+                  size="md"
+                  showCounts={true}
+                />
               </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">Message</div>
-                <div className="p-4 rounded-lg bg-surface-light border border-border">
-                  <p className="text-sm text-text-primary whitespace-pre-wrap">
-                    {formData.message || (
-                      <span className="text-text-tertiary">Your message will appear here...</span>
+            </RetailCard>
+
+            {/* Additional Info */}
+            <RetailCard className="p-6">
+              <h3 className="text-lg font-semibold text-text-primary mb-4">Campaign Details</h3>
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-2">Name</div>
+                  <div className="text-text-primary">
+                    {formData.name || <span className="text-text-tertiary">Untitled Campaign</span>}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-2">Audience</div>
+                  <div className="text-text-primary">
+                    {audiencesData?.audiences?.find((a) => a.id === formData.audience)?.name || 'All Contacts'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-2">Discount</div>
+                  <div className="text-text-primary">
+                    {formData.discountId
+                      ? discountsData?.discounts?.find((d) => d.id === formData.discountId)?.code || 'N/A'
+                      : 'No discount'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-2">Schedule</div>
+                  <div className="text-text-primary">
+                    {formData.scheduleType === 'immediate' ? (
+                      'Save as Draft'
+                    ) : formData.scheduleAt ? (
+                      new Date(formData.scheduleAt).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    ) : (
+                      <span className="text-text-tertiary">Select date and time</span>
                     )}
-                  </p>
+                  </div>
                 </div>
               </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">Audience</div>
-                <div className="text-text-primary">
-                  {audiencesData?.audiences?.find((a) => a.id === formData.audience)?.name || 'All Contacts'}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">Discount</div>
-                <div className="text-text-primary">
-                  {formData.discountId
-                    ? discountsData?.discounts?.find((d) => d.id === formData.discountId)?.code || 'N/A'
-                    : 'No discount'}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">Schedule</div>
-                <div className="text-text-primary">
-                  {formData.scheduleType === 'immediate' ? (
-                    'Save as Draft'
-                  ) : formData.scheduleAt ? (
-                    new Date(formData.scheduleAt).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  ) : (
-                    <span className="text-text-tertiary">Select date and time</span>
-                  )}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-2">SMS Parts</div>
-                <div className="text-text-primary">
-                  {smsCount} part{smsCount !== 1 ? 's' : ''} ({formData.message.length} characters)
-                </div>
-              </div>
-            </div>
-          </RetailCard>
+            </RetailCard>
+          </div>
         </div>
       </div>
     </div>

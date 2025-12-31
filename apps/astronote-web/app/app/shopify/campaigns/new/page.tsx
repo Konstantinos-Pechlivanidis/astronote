@@ -9,7 +9,7 @@ import { useAudiences } from '@/src/features/shopify/audiences/hooks/useAudience
 import { useDiscounts } from '@/src/features/shopify/discounts/hooks/useDiscounts';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
-import { SmsPhonePreview } from '@/src/components/shared/SmsPhonePreview';
+import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -404,7 +404,7 @@ export default function NewCampaignPage() {
             <RetailCard className="p-6">
               <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
               <div className="flex justify-center lg:justify-start">
-                <SmsPhonePreview
+                <SmsInPhonePreview
                   message={formData.message}
                   senderName="Astronote"
                   variant="shopify"
