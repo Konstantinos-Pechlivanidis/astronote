@@ -77,7 +77,16 @@ export function RetailFormField({
               // Autofill doesn't trigger onChange, so we need to manually sync
               if (rhfOnChange) {
                 const target = e.target as HTMLInputElement;
-                rhfOnChange({ target, type: 'change' } as any);
+                // Create a proper synthetic event that RHF expects
+                // RHF onChange expects target to be the actual input element
+                const syntheticEvent = {
+                  target,
+                  currentTarget: target,
+                  type: 'change',
+                  bubbles: true,
+                  cancelable: true,
+                } as React.ChangeEvent<HTMLInputElement>;
+                rhfOnChange(syntheticEvent);
               }
               // Also call any custom onInput handler if provided
               if (customOnInput) {

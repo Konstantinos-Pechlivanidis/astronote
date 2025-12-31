@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
@@ -25,16 +25,19 @@ export default function RetailRegisterPage() {
 
   const form = useForm<z.infer<typeof signupSchema>>({
     resolver: zodResolver(signupSchema as any),
-    mode: 'onChange',
+    mode: 'onBlur', // Validate on blur, not on every change
+    reValidateMode: 'onChange', // Re-validate on change after first submit
   });
 
   const {
     register,
     handleSubmit,
-    formState: { errors },
-    getValues,
+    formState: { errors, isSubmitted, submitCount },
     trigger,
   } = form;
+
+  // Only show errors after first submit attempt
+  const shouldShowErrors = isSubmitted || submitCount > 0;
 
   // Store register results to avoid calling register() multiple times
   const emailRegister = register('email');
@@ -50,16 +53,6 @@ export default function RetailRegisterPage() {
   }, [trigger]);
 
   const onSubmit = async (data: z.infer<typeof signupSchema>) => {
-    // TEMP INSTRUMENTATION: Log submit handler invocation
-    // eslint-disable-next-line no-console
-    console.log('[Register] ✅ handleSubmit invoked - onSubmit called');
-    // eslint-disable-next-line no-console
-    console.log('[Register] Form values:', getValues());
-    // eslint-disable-next-line no-console
-    console.log('[Register] Form errors:', errors);
-    // eslint-disable-next-line no-console
-    console.log('[Register] Validated data:', data);
-
     setIsLoading(true);
     setError(null);
 
@@ -86,19 +79,7 @@ export default function RetailRegisterPage() {
       <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
         <div className="w-full max-w-md">
           <RetailCard className="p-6 sm:p-8">
-            <form
-              onSubmit={(e) => {
-                // TEMP INSTRUMENTATION: Log form submit event
-                // eslint-disable-next-line no-console
-                console.log('[Register] 🔵 FORM SUBMIT EVENT FIRED');
-                // eslint-disable-next-line no-console
-                console.log('[Register] Form errors before handleSubmit:', errors);
-                // eslint-disable-next-line no-console
-                console.log('[Register] Form values before handleSubmit:', getValues());
-                handleSubmit(onSubmit)(e);
-              }}
-              className="space-y-6"
-            >
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               <div className="text-center">
                 <h2 className="mb-2 text-3xl font-bold text-text-primary">
                   Create your account
@@ -114,74 +95,42 @@ export default function RetailRegisterPage() {
                 </RetailCard>
               )}
 
-              {/* TEMP INSTRUMENTATION: Enhanced debug panel */}
-              <div className="rounded-md bg-gray-100 p-2 text-xs">
-                <strong>🔍 DEBUG INSTRUMENTATION:</strong>
-                <pre className="mt-1 overflow-auto">
-                  {(() => {
-                    // Safe JSON stringify that handles circular references
-                    const safeStringify = (obj: any) => {
-                      const seen = new WeakSet();
-                      return JSON.stringify(
-                        obj,
-                        (key, value) => {
-                          // Skip circular references and non-serializable values
-                          if (typeof value === 'object' && value !== null) {
-                            if (seen.has(value)) {
-                              return '[Circular]';
-                            }
-                            seen.add(value);
-                            // Skip DOM elements and React fiber nodes (check if HTMLElement exists for SSR compatibility)
-                            if (
-                              (typeof HTMLElement !== 'undefined' && value instanceof HTMLElement) ||
-                              value.constructor?.name === 'FiberNode' ||
-                              (typeof window !== 'undefined' && value instanceof window.HTMLElement)
-                            ) {
-                              return '[HTMLElement/ReactFiber]';
-                            }
-                          }
-                          return value;
-                        },
-                        2,
-                      );
-                    };
-                    // Convert touchedFields to simple object (just field names)
-                    const touchedFieldsSimple = Object.keys(form.formState.touchedFields).reduce(
-                      (acc, key) => {
-                        acc[key] = true;
-                        return acc;
-                      },
-                      {} as Record<string, boolean>,
-                    );
-                    return safeStringify({
-                      errors,
-                      values: getValues(),
-                      isValid: form.formState.isValid,
-                      isDirty: form.formState.isDirty,
-                      isSubmitting: form.formState.isSubmitting,
-                      touchedFields: touchedFieldsSimple,
-                    });
-                  })()}
-                </pre>
+              <div className="space-y-2">
+                <label
+                  htmlFor="email"
+                  className="block text-sm font-medium text-text-secondary"
+                >
+                  Email
+                  <span className="ml-1 text-red-400">*</span>
+                </label>
+                <input
+                  {...emailRegister}
+                  type="email"
+                  id="email"
+                  name="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  onInput={(e) => {
+                    // Handle autofill: trigger validation on input event
+                    const target = e.target as HTMLInputElement;
+                    emailRegister.onChange({
+                      target,
+                      currentTarget: target,
+                      type: 'change',
+                      bubbles: true,
+                      cancelable: true,
+                    } as React.ChangeEvent<HTMLInputElement>);
+                  }}
+                  className={`h-11 w-full rounded-xl border bg-surface px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0 ${
+                    shouldShowErrors && errors.email
+                      ? 'border-red-300 focus:border-red-400'
+                      : 'border-border focus:border-accent'
+                  }`}
+                />
+                {shouldShowErrors && errors.email && (
+                  <p className="text-sm text-red-400">{errors.email.message}</p>
+                )}
               </div>
-
-              <RetailFormField
-                label="Email"
-                type="email"
-                required
-                autoComplete="email"
-                placeholder="you@example.com"
-                error={errors.email?.message}
-                {...emailRegister}
-                onInput={(e) => {
-                  // TEMP INSTRUMENTATION: Log input event
-                  const target = e.target as HTMLInputElement;
-                  // eslint-disable-next-line no-console
-                  console.log('[Register] Email onInput:', target.value);
-                  // Handle autofill: manually trigger RHF onChange for autofill events
-                  emailRegister.onChange({ target, type: 'change' } as any);
-                }}
-              />
 
               <div className="space-y-2">
                 <label
@@ -199,20 +148,21 @@ export default function RetailRegisterPage() {
                     autoComplete="new-password"
                     placeholder="At least 8 characters"
                     onInput={(e) => {
-                      // TEMP INSTRUMENTATION: Log input event
-                      const target = e.target as HTMLInputElement;
-                      // eslint-disable-next-line no-console
-                      console.log('[Register] Password onInput:', target.value);
                       // Handle autofill: trigger validation on input event
-                      passwordRegister.onChange({ target, type: 'change' } as any);
+                      const target = e.target as HTMLInputElement;
+                      passwordRegister.onChange({
+                        target,
+                        currentTarget: target,
+                        type: 'change',
+                        bubbles: true,
+                        cancelable: true,
+                      } as React.ChangeEvent<HTMLInputElement>);
                     }}
-                    onChange={(e) => {
-                      // TEMP INSTRUMENTATION: Log change event
-                      // eslint-disable-next-line no-console
-                      console.log('[Register] Password onChange:', e.target.value);
-                      passwordRegister.onChange(e);
-                    }}
-                    className="h-11 w-full rounded-xl border border-border bg-surface px-4 py-2 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0"
+                    className={`h-11 w-full rounded-xl border bg-surface px-4 py-2 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0 ${
+                      shouldShowErrors && errors.password
+                        ? 'border-red-300 focus:border-red-400'
+                        : 'border-border focus:border-accent'
+                    }`}
                   />
                   <button
                     type="button"
@@ -223,7 +173,7 @@ export default function RetailRegisterPage() {
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
-                {errors.password && (
+                {shouldShowErrors && errors.password && (
                   <p className="text-sm text-red-400">{errors.password.message}</p>
                 )}
               </div>
@@ -244,20 +194,21 @@ export default function RetailRegisterPage() {
                     autoComplete="new-password"
                     placeholder="Confirm your password"
                     onInput={(e) => {
-                      // TEMP INSTRUMENTATION: Log input event
-                      const target = e.target as HTMLInputElement;
-                      // eslint-disable-next-line no-console
-                      console.log('[Register] ConfirmPassword onInput:', target.value);
                       // Handle autofill: trigger validation on input event
-                      confirmPasswordRegister.onChange({ target, type: 'change' } as any);
+                      const target = e.target as HTMLInputElement;
+                      confirmPasswordRegister.onChange({
+                        target,
+                        currentTarget: target,
+                        type: 'change',
+                        bubbles: true,
+                        cancelable: true,
+                      } as React.ChangeEvent<HTMLInputElement>);
                     }}
-                    onChange={(e) => {
-                      // TEMP INSTRUMENTATION: Log change event
-                      // eslint-disable-next-line no-console
-                      console.log('[Register] ConfirmPassword onChange:', e.target.value);
-                      confirmPasswordRegister.onChange(e);
-                    }}
-                    className="h-11 w-full rounded-xl border border-border bg-surface px-4 py-2 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0"
+                    className={`h-11 w-full rounded-xl border bg-surface px-4 py-2 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0 ${
+                      shouldShowErrors && errors.confirmPassword
+                        ? 'border-red-300 focus:border-red-400'
+                        : 'border-border focus:border-accent'
+                    }`}
                   />
                   <button
                     type="button"
@@ -268,7 +219,7 @@ export default function RetailRegisterPage() {
                     {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
-                {errors.confirmPassword && (
+                {shouldShowErrors && errors.confirmPassword && (
                   <p className="text-sm text-red-400">{errors.confirmPassword.message}</p>
                 )}
               </div>
@@ -279,7 +230,7 @@ export default function RetailRegisterPage() {
                 maxLength={11}
                 placeholder="YourStore (max 11 chars)"
                 helper="SMS sender ID (alphanumeric, max 11 characters)"
-                error={errors.senderName?.message}
+                error={shouldShowErrors ? errors.senderName?.message : undefined}
                 {...register('senderName')}
               />
 
@@ -288,29 +239,11 @@ export default function RetailRegisterPage() {
                 type="text"
                 maxLength={160}
                 placeholder="Your Store Name"
-                error={errors.company?.message}
+                error={shouldShowErrors ? errors.company?.message : undefined}
                 {...register('company')}
               />
 
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="w-full"
-                size="lg"
-                onClick={(e) => {
-                  // TEMP INSTRUMENTATION: Log button click
-                  // eslint-disable-next-line no-console
-                  console.log('[Register] 🟢 BUTTON CLICK - type:', e.currentTarget.type, 'disabled:', isLoading);
-                  // eslint-disable-next-line no-console
-                  console.log('[Register] Form errors on click:', errors);
-                  // eslint-disable-next-line no-console
-                  console.log('[Register] Form values on click:', getValues());
-                  // eslint-disable-next-line no-console
-                  console.log('[Register] Form isValid:', form.formState.isValid);
-                  // eslint-disable-next-line no-console
-                  console.log('[Register] Form isDirty:', form.formState.isDirty);
-                }}
-              >
+              <Button type="submit" disabled={isLoading} className="w-full" size="lg">
                 {isLoading ? 'Creating account...' : 'Sign Up'}
               </Button>
 
