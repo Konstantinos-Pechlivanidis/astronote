@@ -169,6 +169,20 @@ export default function TemplatesPage() {
         </GlassCard>
       )}
 
+      {/* Debug Panel (dev-only) */}
+      {process.env.NODE_ENV !== 'production' && data && (
+        <GlassCard className="bg-blue-50 border-blue-200">
+          <div className="text-xs space-y-1">
+            <div><strong>API BaseURL:</strong> {process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'not set'}</div>
+            <div><strong>Templates Total:</strong> {data.total || 0}</div>
+            <div><strong>Items Returned:</strong> {data.items?.length || 0}</div>
+            <div><strong>Language:</strong> {language}</div>
+            <div><strong>Category:</strong> {category || 'all'}</div>
+            <div><strong>Tab:</strong> {tab}</div>
+          </div>
+        </GlassCard>
+      )}
+
       {!isLoading && !error && data && (
         <>
           {data.items && data.items.length > 0 ? (

@@ -72,18 +72,33 @@ exports.listCampaigns = async ({
 
   const ids = campaigns.map(c => c.id);
 
-  // Aggregations scoped by ownerId
-  const msgs = await prisma.campaignMessage.groupBy({
-    by: ['campaignId', 'status'],
-    where: { ownerId, campaignId: { in: ids } },   // << SCOPE
-    _count: { _all: true }
-  });
+  // Aggregations scoped by ownerId - wrap in try-catch for resilience
+  let msgs = [];
+  let reds = [];
+  
+  try {
+    msgs = await prisma.campaignMessage.groupBy({
+      by: ['campaignId', 'status'],
+      where: { ownerId, campaignId: { in: ids } },   // << SCOPE
+      _count: { _all: true }
+    });
+  } catch (error) {
+    const logger = require('pino')({ name: 'campaignsList.service' });
+    logger.warn({ err: error, ownerId, campaignIds: ids }, 'Error fetching campaign message stats, using defaults');
+    // Continue with empty array - stats will default to 0
+  }
 
-  const reds = await prisma.redemption.groupBy({
-    by: ['campaignId'],
-    where: { ownerId, campaignId: { in: ids } },   // << SCOPE
-    _count: { _all: true }
-  });
+  try {
+    reds = await prisma.redemption.groupBy({
+      by: ['campaignId'],
+      where: { ownerId, campaignId: { in: ids } },   // << SCOPE
+      _count: { _all: true }
+    });
+  } catch (error) {
+    const logger = require('pino')({ name: 'campaignsList.service' });
+    logger.warn({ err: error, ownerId, campaignIds: ids }, 'Error fetching redemption stats, using defaults');
+    // Continue with empty array - stats will default to 0
+  }
 
   // Note: "delivered" status is mapped to "sent" - we only track sent/failed
   const statsMap = new Map();
@@ -91,14 +106,19 @@ exports.listCampaigns = async ({
 
   for (const row of msgs) {
     const s = statsMap.get(row.campaignId);
-    if (row.status === 'sent') {
-      s.sent += row._count._all;
-    } else if (row.status === 'failed') {
-      s.failed += row._count._all;
+    if (s) {
+      if (row.status === 'sent') {
+        s.sent += row._count._all;
+      } else if (row.status === 'failed') {
+        s.failed += row._count._all;
+      }
     }
   }
   for (const row of reds) {
-    statsMap.get(row.campaignId).redemptions = row._count._all;
+    const s = statsMap.get(row.campaignId);
+    if (s) {
+      s.redemptions = row._count._all;
+    }
   }
 
   // Note: "delivered" status is mapped to "sent" - deliveredRate is same as sent rate

@@ -531,6 +531,22 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
 
 // ========= START SERVER =========
 const port = Number(process.env.PORT || 3001);
+
+// Ensure templates are seeded on server startup (idempotent)
+(async () => {
+  try {
+    const { ensureTemplatesSeeded, checkTemplateCount } = require('./lib/ensureTemplatesSeeded');
+    const result = await ensureTemplatesSeeded();
+    const count = await checkTemplateCount();
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Server] Templates seeding: ${result.created} created, ${result.updated} updated, ${count} total templates`);
+    }
+  } catch (error) {
+    // Don't block server startup if seeding fails
+    console.error('[Server] Error seeding templates on startup:', error.message);
+  }
+})();
+
 const server = app.listen(port, () => {
   // use pino-http logger if present
   const logger = app?.logger || console;
