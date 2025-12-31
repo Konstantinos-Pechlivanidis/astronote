@@ -154,12 +154,17 @@ export function ProfileForm({ user }: ProfileFormProps) {
           control={control}
           defaultValue={user?.timezone || ''}
           render={({ field }) => (
-            <Select value={field.value || ''} onValueChange={field.onChange}>
+            <Select
+              value={field.value || undefined}
+              onValueChange={(value) => {
+                // Handle clearing selection - set to empty string if value is undefined
+                field.onChange(value || '');
+              }}
+            >
               <SelectTrigger id="timezone">
                 <SelectValue placeholder="Select timezone..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Select timezone...</SelectItem>
                 {COMMON_TIMEZONES.map((tz) => (
                   <SelectItem key={tz.value} value={tz.value}>
                     {tz.label}

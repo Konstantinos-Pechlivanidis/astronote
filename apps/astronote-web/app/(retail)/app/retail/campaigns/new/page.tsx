@@ -247,12 +247,16 @@ export default function NewCampaignPage() {
                       name="filterGender"
                       control={control}
                       render={({ field }) => (
-                        <Select value={field.value || ''} onValueChange={field.onChange}>
+                        <Select
+                          value={field.value || undefined}
+                          onValueChange={(value) => {
+                            field.onChange(value || null);
+                          }}
+                        >
                           <SelectTrigger id="filterGender">
                             <SelectValue placeholder="Any" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Any</SelectItem>
                             <SelectItem value="male">Male</SelectItem>
                             <SelectItem value="female">Female</SelectItem>
                             <SelectItem value="other">Other</SelectItem>
@@ -270,12 +274,16 @@ export default function NewCampaignPage() {
                       name="filterAgeGroup"
                       control={control}
                       render={({ field }) => (
-                        <Select value={field.value || ''} onValueChange={field.onChange}>
+                        <Select
+                          value={field.value || undefined}
+                          onValueChange={(value) => {
+                            field.onChange(value || null);
+                          }}
+                        >
                           <SelectTrigger id="filterAgeGroup">
                             <SelectValue placeholder="Any" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Any</SelectItem>
                             <SelectItem value="18_24">18-24</SelectItem>
                             <SelectItem value="25_39">25-39</SelectItem>
                             <SelectItem value="40_plus">40+</SelectItem>

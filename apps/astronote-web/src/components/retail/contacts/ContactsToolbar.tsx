@@ -57,7 +57,7 @@ export function ContactsToolbar({
         {/* List Filter */}
         <div className="sm:w-64">
           <Select
-            value={listId ? String(listId) : ''}
+            value={listId ? String(listId) : undefined}
             onValueChange={(value) => onListChange(value ? Number(value) : null)}
             disabled={isLoadingLists}
           >
@@ -65,7 +65,6 @@ export function ContactsToolbar({
               <SelectValue placeholder="All Contacts" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All Contacts</SelectItem>
               {systemLists?.map((list) => (
                 <SelectItem key={list.id} value={String(list.id)}>
                   {list.name} {list.memberCount !== undefined ? `(${list.memberCount})` : ''}

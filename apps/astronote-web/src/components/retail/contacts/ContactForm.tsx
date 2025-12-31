@@ -135,12 +135,16 @@ export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) 
           name="gender"
           control={control}
           render={({ field }) => (
-            <Select value={String(field.value || '')} onValueChange={field.onChange}>
+            <Select
+              value={field.value || undefined}
+              onValueChange={(value) => {
+                field.onChange(value || null);
+              }}
+            >
               <SelectTrigger id="gender">
                 <SelectValue placeholder="Select gender" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Select gender</SelectItem>
                 <SelectItem value="male">Male</SelectItem>
                 <SelectItem value="female">Female</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
