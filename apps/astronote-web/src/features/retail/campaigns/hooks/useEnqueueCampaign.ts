@@ -56,18 +56,26 @@ export function useEnqueueCampaign() {
 
   return useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
         console.log('[useEnqueueCampaign] mutationFn called', { id, status });
       }
       const idempotencyKey = generateIdempotencyKey(id, status);
+      // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
         console.log('[useEnqueueCampaign] Generated idempotency key', idempotencyKey);
       }
+      // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
         console.log('[useEnqueueCampaign] Calling campaignsApi.enqueue', { id, idempotencyKey });
       }
       const res = await campaignsApi.enqueue(id, idempotencyKey);
+      // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
         console.log('[useEnqueueCampaign] API response received', res);
       }
       return res.data;

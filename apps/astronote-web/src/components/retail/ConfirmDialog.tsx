@@ -49,7 +49,9 @@ export function ConfirmDialog({
             </Button>
             <Button
               onClick={() => {
+                // eslint-disable-next-line no-console
                 if (process.env.NODE_ENV !== 'production') {
+                  // eslint-disable-next-line no-console
                   console.log('[ConfirmDialog] Confirm button clicked');
                 }
                 onConfirm();

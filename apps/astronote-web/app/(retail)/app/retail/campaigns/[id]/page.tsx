@@ -95,27 +95,37 @@ function CampaignActions({
   const subscriptionInactive = !billingGate.canSendCampaigns;
 
   const handleEnqueue = () => {
+    // eslint-disable-next-line no-console
     if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
       console.log('[SEND CLICK] handleEnqueue called', { subscriptionInactive, campaignId: campaign.id });
     }
     if (subscriptionInactive) {
+      // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
         console.log('[SEND CLICK] Blocked: subscription inactive');
       }
       return;
     }
+    // eslint-disable-next-line no-console
     if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
       console.log('[SEND CLICK] Opening confirmation dialog');
     }
     setEnqueueConfirm(true);
   };
 
   const handleConfirmEnqueue = () => {
+    // eslint-disable-next-line no-console
     if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
       console.log('[SEND CLICK] handleConfirmEnqueue called', { isEnqueuing, isPending: enqueueMutation.isPending, campaignId: campaign.id });
     }
     if (isEnqueuing || enqueueMutation.isPending) {
+      // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
         console.log('[SEND CLICK] Blocked: already enqueuing or pending');
       }
       return;
@@ -124,7 +134,9 @@ function CampaignActions({
     setEnqueueConfirm(false);
     setIsEnqueuing(true);
 
+    // eslint-disable-next-line no-console
     if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
       console.log('[SEND CLICK] Calling mutation', { id: campaign.id, status: campaign.status });
     }
 
@@ -132,13 +144,17 @@ function CampaignActions({
       { id: campaign.id, status: campaign.status },
       {
         onSuccess: (data) => {
+          // eslint-disable-next-line no-console
           if (process.env.NODE_ENV !== 'production') {
+            // eslint-disable-next-line no-console
             console.log('[SEND CLICK] Mutation success', data);
           }
           setIsEnqueuing(false);
         },
         onError: (error) => {
+          // eslint-disable-next-line no-console
           if (process.env.NODE_ENV !== 'production') {
+            // eslint-disable-next-line no-console
             console.error('[SEND CLICK] Mutation error', error);
           }
           setIsEnqueuing(false);
@@ -152,7 +168,9 @@ function CampaignActions({
       <div className="flex flex-wrap gap-2">
         <Button
           onClick={(e) => {
+            // eslint-disable-next-line no-console
             if (process.env.NODE_ENV !== 'production') {
+              // eslint-disable-next-line no-console
               console.log('[SEND CLICK] Button onClick triggered', {
                 subscriptionInactive,
                 isEnqueuing,
