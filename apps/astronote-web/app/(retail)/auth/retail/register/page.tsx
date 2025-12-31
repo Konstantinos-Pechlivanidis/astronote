@@ -36,6 +36,11 @@ export default function RetailRegisterPage() {
     trigger,
   } = form;
 
+  // Store register results to avoid calling register() multiple times
+  const emailRegister = register('email');
+  const passwordRegister = register('password');
+  const confirmPasswordRegister = register('confirmPassword');
+
   // Fix autofill: trigger validation after mount to sync browser autofill values
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -45,13 +50,15 @@ export default function RetailRegisterPage() {
   }, [trigger]);
 
   const onSubmit = async (data: z.infer<typeof signupSchema>) => {
-    // Debug: log form values before submit
-    if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
-      console.log('[Register] Form values:', getValues());
-      // eslint-disable-next-line no-console
-      console.log('[Register] Form errors:', errors);
-    }
+    // TEMP INSTRUMENTATION: Log submit handler invocation
+    // eslint-disable-next-line no-console
+    console.log('[Register] ✅ handleSubmit invoked - onSubmit called');
+    // eslint-disable-next-line no-console
+    console.log('[Register] Form values:', getValues());
+    // eslint-disable-next-line no-console
+    console.log('[Register] Form errors:', errors);
+    // eslint-disable-next-line no-console
+    console.log('[Register] Validated data:', data);
 
     setIsLoading(true);
     setError(null);
@@ -79,7 +86,19 @@ export default function RetailRegisterPage() {
       <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
         <div className="w-full max-w-md">
           <RetailCard className="p-6 sm:p-8">
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <form
+              onSubmit={(e) => {
+                // TEMP INSTRUMENTATION: Log form submit event
+                // eslint-disable-next-line no-console
+                console.log('[Register] 🔵 FORM SUBMIT EVENT FIRED', e);
+                // eslint-disable-next-line no-console
+                console.log('[Register] Form errors before handleSubmit:', errors);
+                // eslint-disable-next-line no-console
+                console.log('[Register] Form values before handleSubmit:', getValues());
+                handleSubmit(onSubmit)(e);
+              }}
+              className="space-y-6"
+            >
               <div className="text-center">
                 <h2 className="mb-2 text-3xl font-bold text-text-primary">
                   Create your account
@@ -95,15 +114,24 @@ export default function RetailRegisterPage() {
                 </RetailCard>
               )}
 
-              {/* Debug: show form errors in development */}
-              {process.env.NODE_ENV === 'development' && (
-                <div className="rounded-md bg-gray-100 p-2 text-xs">
-                  <strong>Debug (dev only):</strong>
-                  <pre className="mt-1 overflow-auto">
-                    {JSON.stringify({ errors, values: getValues() }, null, 2)}
-                  </pre>
-                </div>
-              )}
+              {/* TEMP INSTRUMENTATION: Enhanced debug panel */}
+              <div className="rounded-md bg-gray-100 p-2 text-xs">
+                <strong>🔍 DEBUG INSTRUMENTATION:</strong>
+                <pre className="mt-1 overflow-auto">
+                  {JSON.stringify(
+                    {
+                      errors,
+                      values: getValues(),
+                      isValid: form.formState.isValid,
+                      isDirty: form.formState.isDirty,
+                      isSubmitting: form.formState.isSubmitting,
+                      touchedFields: form.formState.touchedFields,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
+              </div>
 
               <RetailFormField
                 label="Email"
@@ -112,7 +140,15 @@ export default function RetailRegisterPage() {
                 autoComplete="email"
                 placeholder="you@example.com"
                 error={errors.email?.message}
-                {...register('email')}
+                {...emailRegister}
+                onInput={(e) => {
+                  // TEMP INSTRUMENTATION: Log input event
+                  const target = e.target as HTMLInputElement;
+                  // eslint-disable-next-line no-console
+                  console.log('[Register] Email onInput:', target.value);
+                  // Handle autofill: manually trigger RHF onChange for autofill events
+                  emailRegister.onChange({ target, type: 'change' } as any);
+                }}
               />
 
               <div className="space-y-2">
@@ -124,16 +160,25 @@ export default function RetailRegisterPage() {
                 </label>
                 <div className="relative">
                   <input
-                    {...register('password')}
+                    {...passwordRegister}
                     type={showPassword ? 'text' : 'password'}
                     id="password"
                     name="password"
                     autoComplete="new-password"
                     placeholder="At least 8 characters"
                     onInput={(e) => {
-                      // Handle autofill: trigger validation on input event
+                      // TEMP INSTRUMENTATION: Log input event
                       const target = e.target as HTMLInputElement;
-                      register('password').onChange({ target, type: 'change' });
+                      // eslint-disable-next-line no-console
+                      console.log('[Register] Password onInput:', target.value);
+                      // Handle autofill: trigger validation on input event
+                      passwordRegister.onChange({ target, type: 'change' } as any);
+                    }}
+                    onChange={(e) => {
+                      // TEMP INSTRUMENTATION: Log change event
+                      // eslint-disable-next-line no-console
+                      console.log('[Register] Password onChange:', e.target.value);
+                      passwordRegister.onChange(e);
                     }}
                     className="h-11 w-full rounded-xl border border-border bg-surface px-4 py-2 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0"
                   />
@@ -160,16 +205,25 @@ export default function RetailRegisterPage() {
                 </label>
                 <div className="relative">
                   <input
-                    {...register('confirmPassword')}
+                    {...confirmPasswordRegister}
                     type={showConfirmPassword ? 'text' : 'password'}
                     id="confirmPassword"
                     name="confirmPassword"
                     autoComplete="new-password"
                     placeholder="Confirm your password"
                     onInput={(e) => {
-                      // Handle autofill: trigger validation on input event
+                      // TEMP INSTRUMENTATION: Log input event
                       const target = e.target as HTMLInputElement;
-                      register('confirmPassword').onChange({ target, type: 'change' });
+                      // eslint-disable-next-line no-console
+                      console.log('[Register] ConfirmPassword onInput:', target.value);
+                      // Handle autofill: trigger validation on input event
+                      confirmPasswordRegister.onChange({ target, type: 'change' } as any);
+                    }}
+                    onChange={(e) => {
+                      // TEMP INSTRUMENTATION: Log change event
+                      // eslint-disable-next-line no-console
+                      console.log('[Register] ConfirmPassword onChange:', e.target.value);
+                      confirmPasswordRegister.onChange(e);
                     }}
                     className="h-11 w-full rounded-xl border border-border bg-surface px-4 py-2 pr-10 text-sm text-text-primary placeholder:text-text-tertiary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0"
                   />
@@ -206,7 +260,25 @@ export default function RetailRegisterPage() {
                 {...register('company')}
               />
 
-              <Button type="submit" disabled={isLoading} className="w-full" size="lg">
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full"
+                size="lg"
+                onClick={(e) => {
+                  // TEMP INSTRUMENTATION: Log button click
+                  // eslint-disable-next-line no-console
+                  console.log('[Register] 🟢 BUTTON CLICK - type:', e.currentTarget.type, 'disabled:', isLoading);
+                  // eslint-disable-next-line no-console
+                  console.log('[Register] Form errors on click:', errors);
+                  // eslint-disable-next-line no-console
+                  console.log('[Register] Form values on click:', getValues());
+                  // eslint-disable-next-line no-console
+                  console.log('[Register] Form isValid:', form.formState.isValid);
+                  // eslint-disable-next-line no-console
+                  console.log('[Register] Form isDirty:', form.formState.isDirty);
+                }}
+              >
                 {isLoading ? 'Creating account...' : 'Sign Up'}
               </Button>
 

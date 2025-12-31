@@ -61,19 +61,27 @@ export function RetailFormField({
 
       {as === 'input' && (() => {
         const inputProps = props as InputFieldProps;
-        const existingOnInput = inputProps.onInput;
+        const { onInput: customOnInput, onChange: rhfOnChange, ...restInputProps } = inputProps;
         return (
           <Input
-            {...inputProps}
+            {...restInputProps}
             id={id}
+            onChange={(e) => {
+              // Always call RHF onChange first (from register())
+              if (rhfOnChange) {
+                rhfOnChange(e);
+              }
+            }}
             onInput={(e) => {
-              // Handle autofill: if onChange exists (from register()), call it
-              if (inputProps.onChange) {
-                inputProps.onChange(e as any);
+              // Handle autofill: manually trigger RHF onChange for autofill events
+              // Autofill doesn't trigger onChange, so we need to manually sync
+              if (rhfOnChange) {
+                const target = e.target as HTMLInputElement;
+                rhfOnChange({ target, type: 'change' } as any);
               }
               // Also call any custom onInput handler if provided
-              if (existingOnInput) {
-                existingOnInput(e);
+              if (customOnInput) {
+                customOnInput(e);
               }
             }}
             className={cn(
