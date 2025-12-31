@@ -10,7 +10,7 @@ import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Megaphone, Plus, Search } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -51,16 +51,20 @@ function CampaignsToolbar({
       <div className="w-full sm:w-auto">
         <Select
           value={statusFilter}
-          onChange={(e) => onStatusFilterChange(e.target.value)}
-          className="w-full sm:w-auto"
+          onValueChange={onStatusFilterChange}
         >
-          <option value="all">All Status</option>
-          <option value="draft">Draft</option>
-          <option value="scheduled">Scheduled</option>
-          <option value="sending">Sending</option>
-          <option value="completed">Completed</option>
-          <option value="failed">Failed</option>
-          <option value="paused">Paused</option>
+          <SelectTrigger className="w-full sm:w-auto">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="scheduled">Scheduled</SelectItem>
+            <SelectItem value="sending">Sending</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="paused">Paused</SelectItem>
+          </SelectContent>
         </Select>
       </div>
     </div>

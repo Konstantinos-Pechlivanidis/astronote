@@ -16,7 +16,8 @@ import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Controller } from 'react-hook-form';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
@@ -29,6 +30,7 @@ export default function EditCampaignPage() {
 
   const {
     register,
+    control,
     handleSubmit,
     watch,
     reset,
@@ -239,23 +241,45 @@ export default function EditCampaignPage() {
                     <label htmlFor="filterGender" className="mb-1 block text-sm font-medium text-text-secondary">
                       Gender Filter
                     </label>
-                    <Select {...register('filterGender')} id="filterGender">
-                      <option value="">Any</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </Select>
+                    <Controller
+                      name="filterGender"
+                      control={control}
+                      render={({ field }) => (
+                        <Select value={field.value || ''} onValueChange={field.onChange}>
+                          <SelectTrigger id="filterGender">
+                            <SelectValue placeholder="Any" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">Any</SelectItem>
+                            <SelectItem value="male">Male</SelectItem>
+                            <SelectItem value="female">Female</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
                   </div>
                   <div>
                     <label htmlFor="filterAgeGroup" className="mb-1 block text-sm font-medium text-text-secondary">
                       Age Group Filter
                     </label>
-                    <Select {...register('filterAgeGroup')} id="filterAgeGroup">
-                      <option value="">Any</option>
-                      <option value="18_24">18-24</option>
-                      <option value="25_39">25-39</option>
-                      <option value="40_plus">40+</option>
-                    </Select>
+                    <Controller
+                      name="filterAgeGroup"
+                      control={control}
+                      render={({ field }) => (
+                        <Select value={field.value || ''} onValueChange={field.onChange}>
+                          <SelectTrigger id="filterAgeGroup">
+                            <SelectValue placeholder="Any" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">Any</SelectItem>
+                            <SelectItem value="18_24">18-24</SelectItem>
+                            <SelectItem value="25_39">25-39</SelectItem>
+                            <SelectItem value="40_plus">40+</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
                   </div>
                 </div>
                 <div className="mt-4">

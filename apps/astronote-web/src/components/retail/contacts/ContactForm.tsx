@@ -5,7 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { contactSchema } from '@/src/lib/retail/validators';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Controller } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import type { Contact } from '@/src/lib/retail/api/contacts';
 
@@ -18,6 +19,7 @@ interface ContactFormProps {
 export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) {
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors },
   } = useForm<z.infer<typeof contactSchema>>({
@@ -129,12 +131,23 @@ export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) 
         <label htmlFor="gender" className="block text-sm font-medium text-text-secondary mb-1">
           Gender
         </label>
-        <Select {...register('gender')} id="gender">
-          <option value="">Select gender</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="other">Other</option>
-        </Select>
+        <Controller
+          name="gender"
+          control={control}
+          render={({ field }) => (
+            <Select value={String(field.value || '')} onValueChange={field.onChange}>
+              <SelectTrigger id="gender">
+                <SelectValue placeholder="Select gender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Select gender</SelectItem>
+                <SelectItem value="male">Male</SelectItem>
+                <SelectItem value="female">Female</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        />
         {errors.gender && (
           <p className="mt-1 text-sm text-red-400">{errors.gender.message}</p>
         )}

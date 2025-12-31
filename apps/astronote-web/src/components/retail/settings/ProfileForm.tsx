@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { profileUpdateSchema } from '@/src/lib/retail/validators';
 import { useUpdateUser } from '@/src/features/retail/settings/hooks/useUpdateUser';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Controller } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import type { RetailUser } from '@/src/features/retail/auth/useRetailAuth';
 
@@ -34,6 +35,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
 
   const {
     register,
+    control,
     handleSubmit,
     watch,
     reset,
@@ -147,17 +149,29 @@ export function ProfileForm({ user }: ProfileFormProps) {
         <label htmlFor="timezone" className="block text-sm font-medium text-text-secondary mb-1">
           Timezone
         </label>
-        <Select {...register('timezone')} id="timezone" defaultValue={user?.timezone || ''}>
-          <option value="">Select timezone...</option>
-          {COMMON_TIMEZONES.map((tz) => (
-            <option key={tz.value} value={tz.value}>
-              {tz.label}
-            </option>
-          ))}
-          {user?.timezone && !COMMON_TIMEZONES.find((tz) => tz.value === user.timezone) && (
-            <option value={user.timezone}>{user.timezone} (Current)</option>
+        <Controller
+          name="timezone"
+          control={control}
+          defaultValue={user?.timezone || ''}
+          render={({ field }) => (
+            <Select value={field.value || ''} onValueChange={field.onChange}>
+              <SelectTrigger id="timezone">
+                <SelectValue placeholder="Select timezone..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Select timezone...</SelectItem>
+                {COMMON_TIMEZONES.map((tz) => (
+                  <SelectItem key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </SelectItem>
+                ))}
+                {user?.timezone && !COMMON_TIMEZONES.find((tz) => tz.value === user.timezone) && (
+                  <SelectItem value={user.timezone}>{user.timezone} (Current)</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
           )}
-        </Select>
+        />
         {isCustomTimezone && (
           <p className="mt-1 text-xs text-amber-400">
             Your current timezone is not in the common list. You can keep it or select a new one.

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 
 const CATEGORIES = [
@@ -106,25 +106,33 @@ export function TemplatesToolbar({
           <div className="w-full sm:w-28">
             <Select
               value={language}
-              onChange={(e) => onLanguageChange(e.target.value as 'en' | 'gr')}
-              className="h-10 rounded-xl text-sm"
+              onValueChange={(value) => onLanguageChange(value as 'en' | 'gr')}
             >
-              <option value="en">EN</option>
-              <option value="gr">GR</option>
+              <SelectTrigger className="h-10 rounded-xl text-sm">
+                <SelectValue placeholder="EN" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">EN</SelectItem>
+                <SelectItem value="gr">GR</SelectItem>
+              </SelectContent>
             </Select>
           </div>
 
           <div className="w-full sm:w-44">
             <Select
               value={category}
-              onChange={(e) => onCategoryChange(e.target.value)}
-              className="h-10 rounded-xl text-sm"
+              onValueChange={onCategoryChange}
             >
-              {CATEGORIES.map((cat) => (
-                <option key={cat.value} value={cat.value}>
-                  {cat.label}
-                </option>
-              ))}
+              <SelectTrigger className="h-10 rounded-xl text-sm">
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map((cat) => (
+                  <SelectItem key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
         </div>

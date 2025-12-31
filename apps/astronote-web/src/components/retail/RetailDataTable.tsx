@@ -9,7 +9,7 @@ import { LucideIcon } from 'lucide-react';
 
 interface Column<T> {
   key: string;
-  header: string;
+  header: string | ReactNode;
   render?: (_item: T) => ReactNode;
   className?: string;
   headerClassName?: string;

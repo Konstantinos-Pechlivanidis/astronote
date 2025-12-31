@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Plus, Upload, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import type { List } from '@/src/lib/retail/api/lists';
 
@@ -57,16 +57,21 @@ export function ContactsToolbar({
         {/* List Filter */}
         <div className="sm:w-64">
           <Select
-            value={listId || ''}
-            onChange={(e) => onListChange(e.target.value ? Number(e.target.value) : null)}
+            value={listId ? String(listId) : ''}
+            onValueChange={(value) => onListChange(value ? Number(value) : null)}
             disabled={isLoadingLists}
           >
-            <option value="">All Contacts</option>
-            {systemLists?.map((list) => (
-              <option key={list.id} value={list.id}>
-                {list.name} {list.memberCount !== undefined ? `(${list.memberCount})` : ''}
-              </option>
-            ))}
+            <SelectTrigger>
+              <SelectValue placeholder="All Contacts" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Contacts</SelectItem>
+              {systemLists?.map((list) => (
+                <SelectItem key={list.id} value={String(list.id)}>
+                  {list.name} {list.memberCount !== undefined ? `(${list.memberCount})` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
 

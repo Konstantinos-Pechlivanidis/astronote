@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { templateSchema } from '@/src/lib/retail/validators';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Controller } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import type { Template } from '@/src/lib/retail/api/templates';
 
@@ -34,6 +35,7 @@ export function TemplateForm({ template, onSubmit, isLoading, systemUserId = 1 }
 
   const {
     register,
+    control,
     handleSubmit,
     watch,
     formState: { errors },
@@ -162,13 +164,24 @@ export function TemplateForm({ template, onSubmit, isLoading, systemUserId = 1 }
           <label htmlFor="category" className="block text-sm font-medium text-text-secondary mb-1">
             Category
           </label>
-          <Select {...register('category')} id="category" disabled={isSystem}>
-            {CATEGORIES.map((cat) => (
-              <option key={cat.value} value={cat.value}>
-                {cat.label}
-              </option>
-            ))}
-          </Select>
+          <Controller
+            name="category"
+            control={control}
+            render={({ field }) => (
+              <Select value={field.value || ''} onValueChange={field.onChange} disabled={isSystem}>
+                <SelectTrigger id="category">
+                  <SelectValue placeholder="Select category..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map((cat) => (
+                    <SelectItem key={cat.value} value={cat.value}>
+                      {cat.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
           {errors.category && (
             <p className="mt-1 text-sm text-red-400">{errors.category.message}</p>
           )}
@@ -178,10 +191,21 @@ export function TemplateForm({ template, onSubmit, isLoading, systemUserId = 1 }
           <label htmlFor="language" className="block text-sm font-medium text-text-secondary mb-1">
             Language
           </label>
-          <Select {...register('language')} id="language" disabled={isSystem}>
-            <option value="en">English</option>
-            <option value="gr">Greek</option>
-          </Select>
+          <Controller
+            name="language"
+            control={control}
+            render={({ field }) => (
+              <Select value={field.value || ''} onValueChange={field.onChange} disabled={isSystem}>
+                <SelectTrigger id="language">
+                  <SelectValue placeholder="Select language..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="gr">Greek</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          />
           {errors.language && (
             <p className="mt-1 text-sm text-red-400">{errors.language.message}</p>
           )}

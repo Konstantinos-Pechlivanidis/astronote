@@ -8,7 +8,7 @@ import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   CreditCard,
   CheckCircle,
@@ -340,15 +340,19 @@ function CreditTopupCard() {
             Select Credit Pack
           </label>
           <Select
-            id="creditPack"
             value={selectedPackId || ''}
-            onChange={(e) => setSelectedPackId(e.target.value)}
+            onValueChange={setSelectedPackId}
           >
-            {creditPacks.map((pack) => (
-              <option key={pack.id} value={String(pack.id)}>
-                {getUnits(pack).toLocaleString()} credits - €{getPrice(pack)}
-              </option>
-            ))}
+            <SelectTrigger>
+              <SelectValue placeholder="Select Credit Pack" />
+            </SelectTrigger>
+            <SelectContent>
+              {creditPacks.map((pack) => (
+                <SelectItem key={pack.id} value={String(pack.id)}>
+                  {getUnits(pack).toLocaleString()} credits - €{getPrice(pack)}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
         {selectedPack && (

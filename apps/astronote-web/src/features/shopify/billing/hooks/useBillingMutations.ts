@@ -1,0 +1,72 @@
+'use client';
+
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import {
+  billingApi,
+  type CreatePurchaseRequest,
+  type CreateTopupRequest,
+} from '@/src/lib/shopify/api/billing';
+
+/**
+ * React Query hook for creating a purchase (credit packs)
+ */
+export function useCreatePurchase() {
+  return useMutation({
+    mutationFn: async (data: CreatePurchaseRequest) => {
+      const response = await billingApi.createPurchase(data);
+      return response;
+    },
+    onSuccess: (data) => {
+      // Redirect to Stripe checkout
+      const checkoutUrl = data.checkoutUrl || data.sessionUrl;
+      if (checkoutUrl) {
+        toast.success('Redirecting to payment...');
+        window.location.href = checkoutUrl;
+      } else {
+        toast.error('Failed to get checkout URL. Please try again.');
+      }
+    },
+    onError: (error: any) => {
+      if (error.response?.data?.code === 'SUBSCRIPTION_REQUIRED' || error.code === 'SUBSCRIPTION_REQUIRED') {
+        toast.error('An active subscription is required to purchase credit packs.');
+      } else {
+        const message = error.response?.data?.message || 'Failed to initiate purchase';
+        toast.error(message);
+      }
+    },
+  });
+}
+
+/**
+ * React Query hook for creating a top-up checkout session
+ */
+export function useCreateTopup() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: CreateTopupRequest) => {
+      const response = await billingApi.createTopup(data);
+      return response;
+    },
+    onSuccess: (data) => {
+      // Invalidate balance
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'balance'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'history'] });
+
+      // Redirect to Stripe checkout
+      const checkoutUrl = data.checkoutUrl || data.sessionUrl;
+      if (checkoutUrl) {
+        toast.success('Redirecting to payment...');
+        window.location.href = checkoutUrl;
+      } else {
+        toast.error('Failed to get checkout URL. Please try again.');
+      }
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.message || 'Failed to initiate top-up';
+      toast.error(message);
+    },
+  });
+}
+

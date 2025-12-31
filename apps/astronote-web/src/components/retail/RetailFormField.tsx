@@ -4,7 +4,7 @@ import React, { ReactNode, InputHTMLAttributes, TextareaHTMLAttributes } from 'r
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select } from '@/components/ui/select';
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface BaseFormFieldProps {
   label: string;
@@ -32,7 +32,8 @@ interface SelectFieldProps extends BaseFormFieldProps {
   as: 'select';
   children: ReactNode;
   value?: string;
-  onChange?: (_e: React.ChangeEvent<HTMLSelectElement>) => void;
+  onValueChange?: (_value: string) => void;
+  placeholder?: string;
 }
 
 type RetailFormFieldProps = InputFieldProps | TextareaFieldProps | SelectFieldProps;
@@ -76,11 +77,15 @@ export function RetailFormField({
 
       {as === 'select' && (
         <Select
-          id={id}
-          {...(props as SelectFieldProps)}
-          className={cn(error && 'border-red-300 focus:border-red-400')}
+          value={(props as SelectFieldProps).value || ''}
+          onValueChange={(props as SelectFieldProps).onValueChange}
         >
-          {props.children}
+          <SelectTrigger id={id} className={cn(error && 'border-red-300 focus:border-red-400')}>
+            <SelectValue placeholder={(props as SelectFieldProps).placeholder || 'Select...'} />
+          </SelectTrigger>
+          <SelectContent>
+            {props.children}
+          </SelectContent>
         </Select>
       )}
 
