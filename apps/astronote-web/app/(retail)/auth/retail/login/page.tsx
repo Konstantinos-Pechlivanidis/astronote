@@ -108,7 +108,7 @@ export default function RetailLoginPage() {
               onSubmit={(e) => {
                 // TEMP INSTRUMENTATION: Log form submit event
                 // eslint-disable-next-line no-console
-                console.log('[Login] 🔵 FORM SUBMIT EVENT FIRED', e);
+                console.log('[Login] 🔵 FORM SUBMIT EVENT FIRED');
                 // eslint-disable-next-line no-console
                 console.log('[Login] Form errors before handleSubmit:', errors);
                 // eslint-disable-next-line no-console
@@ -134,18 +134,46 @@ export default function RetailLoginPage() {
               <div className="rounded-md bg-gray-100 p-2 text-xs">
                 <strong>🔍 DEBUG INSTRUMENTATION:</strong>
                 <pre className="mt-1 overflow-auto">
-                  {JSON.stringify(
-                    {
+                  {(() => {
+                    // Safe JSON stringify that handles circular references
+                    const safeStringify = (obj: any) => {
+                      const seen = new WeakSet();
+                      return JSON.stringify(
+                        obj,
+                        (key, value) => {
+                          // Skip circular references and non-serializable values
+                          if (typeof value === 'object' && value !== null) {
+                            if (seen.has(value)) {
+                              return '[Circular]';
+                            }
+                            seen.add(value);
+                            // Skip DOM elements and React fiber nodes
+                            if (value instanceof HTMLElement || value.constructor?.name === 'FiberNode') {
+                              return '[HTMLElement/ReactFiber]';
+                            }
+                          }
+                          return value;
+                        },
+                        2,
+                      );
+                    };
+                    // Convert touchedFields to simple object (just field names)
+                    const touchedFieldsSimple = Object.keys(form.formState.touchedFields).reduce(
+                      (acc, key) => {
+                        acc[key] = true;
+                        return acc;
+                      },
+                      {} as Record<string, boolean>,
+                    );
+                    return safeStringify({
                       errors,
                       values: getValues(),
                       isValid: form.formState.isValid,
                       isDirty: form.formState.isDirty,
                       isSubmitting: form.formState.isSubmitting,
-                      touchedFields: form.formState.touchedFields,
-                    },
-                    null,
-                    2,
-                  )}
+                      touchedFields: touchedFieldsSimple,
+                    });
+                  })()}
                 </pre>
               </div>
 
