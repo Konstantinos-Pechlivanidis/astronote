@@ -2,7 +2,7 @@
 
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 
 interface ConfirmDialogProps {
   open: boolean
@@ -31,7 +31,7 @@ export function ConfirmDialog({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4">
         <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-        <GlassCard className="relative max-w-md w-full p-6 z-10">
+        <RetailCard className="relative max-w-md w-full p-6 z-10">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
             <button
@@ -48,7 +48,12 @@ export function ConfirmDialog({
               {cancelText}
             </Button>
             <Button
-              onClick={onConfirm}
+              onClick={() => {
+                if (process.env.NODE_ENV !== 'production') {
+                  console.log('[ConfirmDialog] Confirm button clicked');
+                }
+                onConfirm();
+              }}
               variant={variant === 'danger' ? 'default' : 'default'}
               size="sm"
               className={variant === 'danger' ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' : ''}
@@ -56,7 +61,7 @@ export function ConfirmDialog({
               {confirmText}
             </Button>
           </div>
-        </GlassCard>
+        </RetailCard>
       </div>
     </div>
   );

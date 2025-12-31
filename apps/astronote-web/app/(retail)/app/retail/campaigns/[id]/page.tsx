@@ -95,27 +95,52 @@ function CampaignActions({
   const subscriptionInactive = !billingGate.canSendCampaigns;
 
   const handleEnqueue = () => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[SEND CLICK] handleEnqueue called', { subscriptionInactive, campaignId: campaign.id });
+    }
     if (subscriptionInactive) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[SEND CLICK] Blocked: subscription inactive');
+      }
       return;
+    }
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[SEND CLICK] Opening confirmation dialog');
     }
     setEnqueueConfirm(true);
   };
 
   const handleConfirmEnqueue = () => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[SEND CLICK] handleConfirmEnqueue called', { isEnqueuing, isPending: enqueueMutation.isPending, campaignId: campaign.id });
+    }
     if (isEnqueuing || enqueueMutation.isPending) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[SEND CLICK] Blocked: already enqueuing or pending');
+      }
       return;
     }
 
     setEnqueueConfirm(false);
     setIsEnqueuing(true);
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[SEND CLICK] Calling mutation', { id: campaign.id, status: campaign.status });
+    }
+
     enqueueMutation.mutate(
       { id: campaign.id, status: campaign.status },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[SEND CLICK] Mutation success', data);
+          }
           setIsEnqueuing(false);
         },
-        onError: () => {
+        onError: (error) => {
+          if (process.env.NODE_ENV !== 'production') {
+            console.error('[SEND CLICK] Mutation error', error);
+          }
           setIsEnqueuing(false);
         },
       },
@@ -126,7 +151,21 @@ function CampaignActions({
     <>
       <div className="flex flex-wrap gap-2">
         <Button
-          onClick={handleEnqueue}
+          onClick={(e) => {
+            if (process.env.NODE_ENV !== 'production') {
+              console.log('[SEND CLICK] Button onClick triggered', {
+                subscriptionInactive,
+                isEnqueuing,
+                isPending: enqueueMutation.isPending,
+                canEnqueue,
+                campaignId: campaign.id,
+                campaignStatus: campaign.status,
+              });
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            handleEnqueue();
+          }}
           disabled={subscriptionInactive || isEnqueuing || enqueueMutation.isPending || !canEnqueue}
           title={
             subscriptionInactive
@@ -138,6 +177,7 @@ function CampaignActions({
                   : 'Send this campaign'
           }
           aria-label="Send campaign"
+          type="button"
         >
           <Send className="w-4 h-4 mr-2" aria-hidden="true" />
           {isEnqueuing || enqueueMutation.isPending ? 'Sending...' : 'Send Campaign'}

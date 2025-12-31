@@ -56,8 +56,20 @@ export function useEnqueueCampaign() {
 
   return useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[useEnqueueCampaign] mutationFn called', { id, status });
+      }
       const idempotencyKey = generateIdempotencyKey(id, status);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[useEnqueueCampaign] Generated idempotency key', idempotencyKey);
+      }
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[useEnqueueCampaign] Calling campaignsApi.enqueue', { id, idempotencyKey });
+      }
       const res = await campaignsApi.enqueue(id, idempotencyKey);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[useEnqueueCampaign] API response received', res);
+      }
       return res.data;
     },
     retry: false, // Explicitly disable retry to prevent double-enqueue
