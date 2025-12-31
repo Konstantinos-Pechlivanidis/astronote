@@ -8,15 +8,15 @@ function isValidE164(phone: string): boolean {
 }
 
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().min(1, 'Email is required').email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
 });
 
 export const signupSchema = z
   .object({
-    email: z.string().email('Invalid email address'),
+    email: z.string().min(1, 'Email is required').email('Invalid email address'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
-    confirmPassword: z.string(),
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
     senderName: z.string().max(11, 'Sender name must be 11 characters or less').optional().or(z.literal('')),
     company: z.string().max(160, 'Company name must be 160 characters or less').optional().or(z.literal('')),
   })

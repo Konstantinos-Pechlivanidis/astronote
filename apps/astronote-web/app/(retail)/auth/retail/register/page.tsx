@@ -23,15 +23,27 @@ export default function RetailRegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  const form = useForm<z.infer<typeof signupSchema>>({
+    resolver: zodResolver(signupSchema as any),
+    mode: 'onChange',
+  });
+
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<z.infer<typeof signupSchema>>({
-    resolver: zodResolver(signupSchema as any),
-  });
+    getValues,
+  } = form;
 
   const onSubmit = async (data: z.infer<typeof signupSchema>) => {
+    // Debug: log form values before submit
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.log('[Register] Form values:', getValues());
+      // eslint-disable-next-line no-console
+      console.log('[Register] Form errors:', errors);
+    }
+
     setIsLoading(true);
     setError(null);
 

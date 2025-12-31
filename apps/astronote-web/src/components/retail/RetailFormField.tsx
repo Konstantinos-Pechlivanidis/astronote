@@ -61,9 +61,12 @@ export function RetailFormField({
 
       {as === 'input' && (
         <Input
-          id={id}
           {...(props as InputFieldProps)}
-          className={cn(error && 'border-red-300 focus:border-red-400')}
+          id={id}
+          className={cn(
+            (props as InputFieldProps).className,
+            error && 'border-red-300 focus:border-red-400',
+          )}
         />
       )}
 

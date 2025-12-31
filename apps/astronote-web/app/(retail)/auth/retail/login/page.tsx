@@ -22,16 +22,27 @@ export default function RetailLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<z.infer<typeof loginSchema>>({
+  const form = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema as any),
     mode: 'onChange',
   });
 
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    getValues,
+  } = form;
+
   const onSubmit = async (data: z.infer<typeof loginSchema>) => {
+    // Debug: log form values before submit
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.log('[Login] Form values:', getValues());
+      // eslint-disable-next-line no-console
+      console.log('[Login] Form errors:', errors);
+    }
+
     setIsLoading(true);
     setError(null);
 
