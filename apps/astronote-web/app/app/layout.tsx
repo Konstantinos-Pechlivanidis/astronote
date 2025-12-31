@@ -14,12 +14,12 @@ export default function AppLayout({
   const pathname = usePathname();
   const router = useRouter();
 
-  // Skip layout for shopify routes - they have their own layout (ShopifyShell)
-  if (pathname?.startsWith('/app/shopify')) {
-    return <>{children}</>;
-  }
-
   useEffect(() => {
+    // Skip auth check for shopify routes - they have their own layout (ShopifyShell)
+    if (pathname?.startsWith('/app/shopify')) {
+      return;
+    }
+
     // Check if user is authenticated
     const retailToken = localStorage.getItem('retail_access_token');
     const shopifyToken = localStorage.getItem('shopify_access_token');
@@ -27,7 +27,12 @@ export default function AppLayout({
     if (!retailToken && !shopifyToken) {
       router.push('/auth');
     }
-  }, [router]);
+  }, [router, pathname]);
+
+  // Skip layout for shopify routes - they have their own layout (ShopifyShell)
+  if (pathname?.startsWith('/app/shopify')) {
+    return <>{children}</>;
+  }
 
   // Determine service type from pathname
   const serviceType = pathname?.includes('/shopify') ? 'shopify' : 'retail';
