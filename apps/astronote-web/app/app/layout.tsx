@@ -14,6 +14,11 @@ export default function AppLayout({
   const pathname = usePathname();
   const router = useRouter();
 
+  // Skip layout for shopify routes - they have their own layout (ShopifyShell)
+  if (pathname?.startsWith('/app/shopify')) {
+    return <>{children}</>;
+  }
+
   useEffect(() => {
     // Check if user is authenticated
     const retailToken = localStorage.getItem('retail_access_token');
