@@ -403,12 +403,15 @@ export default function NewCampaignPage() {
             {/* Phone Preview */}
             <RetailCard className="p-6">
               <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
-              <SmsPhonePreview
-                message={formData.message}
-                senderName="Astronote"
-                mode="shopify"
-                showCounts={true}
-              />
+              <div className="flex justify-center lg:justify-start">
+                <SmsPhonePreview
+                  message={formData.message}
+                  senderName="Astronote"
+                  variant="shopify"
+                  size="md"
+                  showCounts={true}
+                />
+              </div>
             </RetailCard>
 
             {/* Additional Info */}

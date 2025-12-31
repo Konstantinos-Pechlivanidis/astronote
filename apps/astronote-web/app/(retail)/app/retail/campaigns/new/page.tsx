@@ -216,12 +216,15 @@ export default function NewCampaignPage() {
                   <div className="lg:sticky lg:top-24">
                     <RetailCard className="p-6">
                       <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
-                      <SmsPhonePreview
-                        message={watch('messageText') || ''}
-                        senderName="Astronote"
-                        mode="retail"
-                        showCounts={true}
-                      />
+                      <div className="flex justify-center lg:justify-start">
+                        <SmsPhonePreview
+                          message={watch('messageText') || ''}
+                          senderName="Astronote"
+                          variant="retail"
+                          size="md"
+                          showCounts={true}
+                        />
+                      </div>
                     </RetailCard>
                   </div>
                 </div>

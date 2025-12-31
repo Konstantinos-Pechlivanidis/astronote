@@ -46,7 +46,7 @@ function ShopifyAuthCallbackContent() {
         localStorage.setItem('shopify_token', token);
 
         // Try to decode token to get basic info (JWT structure: header.payload.signature)
-        let storeInfo = null;
+        let storeInfo: { id?: string | number; shopDomain?: string; credits?: number; currency?: string } | null = null;
         try {
           const tokenParts = token.split('.');
           if (tokenParts.length === 3) {
@@ -57,12 +57,13 @@ function ShopifyAuthCallbackContent() {
                 id: payload.storeId,
                 shopDomain: payload.shopDomain,
               };
-              // Save basic store info from token
+              // Save basic store info from token (ensures shopDomain is always stored)
               localStorage.setItem('shopify_store', JSON.stringify(storeInfo));
             }
           }
         } catch (decodeError) {
           if (process.env.NODE_ENV === 'development') {
+            // eslint-disable-next-line no-console
             console.warn('Could not decode token:', decodeError);
           }
         }

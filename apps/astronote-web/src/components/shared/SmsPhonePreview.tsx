@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
+import { IPhoneFrameRetail } from './phone/IPhoneFrameRetail';
+import { IPhoneFrameShopify } from './phone/IPhoneFrameShopify';
 
 export interface SmsPhonePreviewProps {
   senderName?: string;
@@ -8,22 +10,24 @@ export interface SmsPhonePreviewProps {
   phoneNumber?: string;
   timestamp?: string;
   accentColor?: string;
-  mode?: 'retail' | 'shopify';
+  variant?: 'retail' | 'shopify';
+  size?: 'sm' | 'md' | 'lg';
   maxPreviewLines?: number;
   showCounts?: boolean;
 }
 
 /**
  * Shared SMS Phone Preview Component
- * Displays SMS message in an iPhone-style frame with live character/segment counts
+ * Displays SMS message in a realistic iPhone-style frame with live character/segment counts
  */
 export function SmsPhonePreview({
   senderName = 'Astronote',
   message,
   phoneNumber,
   timestamp = 'Now',
-  accentColor: _accentColor = '#0ABAB5',
-  mode: _mode = 'retail',
+  accentColor = '#0ABAB5',
+  variant = 'retail',
+  size = 'md',
   maxPreviewLines: _maxPreviewLines = 10,
   showCounts = true,
 }: SmsPhonePreviewProps) {
@@ -35,11 +39,10 @@ export function SmsPhonePreview({
   }, [message]);
 
   const characterCount = message.length;
-  const isLongMessage = characterCount > 160;
 
   // Extract URLs from message for link preview (simple regex)
   const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const urls = message.match(urlRegex) || [];
+  const urls: string[] = message.match(urlRegex) || [];
   const hasLinks = urls.length > 0;
 
   // Format phone number for display
@@ -47,115 +50,111 @@ export function SmsPhonePreview({
     ? phoneNumber.replace(/(\d{2})(\d{3})(\d{3})(\d{3})/, '+$1 *** *** $4')
     : '+30 *** *** 123';
 
-  return (
-    <div className="w-full max-w-[360px] mx-auto lg:mx-0" aria-label="SMS message preview">
-      {/* iPhone Frame */}
-      <div className="relative mx-auto" style={{ maxWidth: '100%' }}>
-        {/* Outer bezel */}
-        <div className="relative bg-[#1a1a1a] rounded-[2.5rem] p-2 shadow-2xl">
-          {/* Screen */}
-          <div className="bg-[#000] rounded-[2rem] overflow-hidden">
-            {/* Status bar */}
-            <div className="h-6 bg-[#000] flex items-center justify-between px-4 text-white text-[10px] font-medium">
-              <span>9:41</span>
-              <div className="flex items-center gap-1">
-                <div className="w-4 h-2 border border-white rounded-sm">
-                  <div className="w-full h-full bg-white rounded-sm" style={{ width: '75%' }} />
-                </div>
-                <div className="w-1 h-1 bg-white rounded-full" />
-                <div className="w-1 h-1 bg-white rounded-full" />
-              </div>
-            </div>
+  // Select frame component based on variant
+  const FrameComponent = variant === 'shopify' ? IPhoneFrameShopify : IPhoneFrameRetail;
 
-            {/* Dynamic Island hint (subtle) */}
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-24 h-6 bg-[#000] rounded-full border border-white/10" />
-
-            {/* Messages App Header */}
-            <div className="bg-[#f2f2f7] border-b border-[#c6c6c8] px-4 py-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-accent flex items-center justify-center">
-                    <span className="text-[10px] font-semibold text-white">
-                      {senderName.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-[13px] font-semibold text-[#000]">{senderName}</div>
-                    <div className="text-[11px] text-[#8e8e93]">{displayPhone}</div>
-                  </div>
-                </div>
-                <div className="text-[11px] text-[#8e8e93]">{timestamp}</div>
-              </div>
-            </div>
-
-            {/* Message Area (scrollable) */}
+  // Screen content (Messages UI)
+  const screenContent = (
+    <>
+      {/* Messages App Header */}
+      <div className="bg-[#f2f2f7] border-b border-[#c6c6c8] px-4 py-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
             <div
-              className="bg-[#f2f2f7] px-4 py-3 min-h-[200px] max-h-[400px] overflow-y-auto"
-              style={{
-                scrollbarWidth: 'thin',
-                scrollbarColor: '#c6c6c8 transparent',
-              }}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold"
+              style={{ backgroundColor: accentColor }}
             >
-              {message ? (
-                <div className="space-y-2">
-                  {/* Message Bubble */}
-                  <div className="flex justify-start">
-                    <div
-                      className="max-w-[75%] rounded-2xl rounded-tl-sm px-3 py-2 bg-white shadow-sm"
-                      style={{
-                        borderTopLeftRadius: '4px',
-                      }}
-                    >
-                      <p className="text-[15px] leading-[1.4] text-[#000] whitespace-pre-wrap break-words">
-                        {message}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Link Preview (if URLs exist) */}
-                  {hasLinks && (
-                    <div className="flex justify-start">
-                      <div className="max-w-[75%] rounded-xl overflow-hidden bg-white border border-[#c6c6c8] shadow-sm">
-                        {urls.map((url, idx) => (
-                          <a
-                            key={idx}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block p-3 hover:bg-[#f9f9f9] transition-colors"
-                          >
-                            <div className="text-[13px] font-medium text-[#007aff] truncate">
-                              {url}
-                            </div>
-                            <div className="text-[11px] text-[#8e8e93] mt-1">Tap to open</div>
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-full min-h-[200px]">
-                  <p className="text-[13px] text-[#8e8e93] text-center px-4">
-                    Your message will appear here...
-                  </p>
-                </div>
-              )}
+              {senderName.charAt(0).toUpperCase()}
             </div>
-
-            {/* Home indicator (iPhone X+) */}
-            <div className="h-8 bg-[#000] flex items-center justify-center">
-              <div className="w-32 h-1 bg-white/30 rounded-full" />
+            <div>
+              <div className="text-[13px] font-semibold text-[#000]">{senderName}</div>
+              <div className="text-[11px] text-[#8e8e93]">{displayPhone}</div>
             </div>
           </div>
+          <div className="text-[11px] text-[#8e8e93]">{timestamp}</div>
         </div>
       </div>
 
+      {/* Message Area (scrollable inside phone screen) */}
+      <div
+        className="bg-[#f2f2f7] px-4 py-3 min-h-[200px] max-h-[400px] overflow-y-auto"
+        style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#c6c6c8 transparent',
+        }}
+      >
+        {message ? (
+          <div className="space-y-2">
+            {/* Message Bubble */}
+            <div className="flex justify-start">
+              <div className="max-w-[75%] rounded-2xl rounded-tl-sm px-3.5 py-2.5 bg-white shadow-sm">
+                <p className="text-[15px] leading-[1.4] text-[#000] whitespace-pre-wrap break-words">
+                  {message.split(urlRegex).map((part, idx) => {
+                    if (urls.includes(part)) {
+                      return (
+                        <a
+                          key={idx}
+                          href={part}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                          style={{ color: accentColor }}
+                        >
+                          {part}
+                        </a>
+                      );
+                    }
+                    return <span key={idx}>{part}</span>;
+                  })}
+                </p>
+              </div>
+            </div>
+
+            {/* Link Preview (if URLs exist) */}
+            {hasLinks && (
+              <div className="flex justify-start">
+                <div className="max-w-[75%] rounded-xl overflow-hidden bg-white border border-[#c6c6c8] shadow-sm">
+                  {urls.map((url, idx) => (
+                    <a
+                      key={idx}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-3 hover:bg-[#f9f9f9] transition-colors"
+                    >
+                      <div className="text-[13px] font-medium truncate" style={{ color: accentColor }}>
+                        {url}
+                      </div>
+                      <div className="text-[11px] text-[#8e8e93] mt-1">Tap to open</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-full min-h-[200px]">
+            <p className="text-[13px] text-[#8e8e93] text-center px-4">
+              Your message will appear here...
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  return (
+    <div className="w-full" aria-label="SMS message preview">
+      {/* iPhone Frame with Screen Content */}
+      <FrameComponent size={size}>
+        {screenContent}
+      </FrameComponent>
+
       {/* Counts Footer */}
       {showCounts && (
-        <div className="mt-4 space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-text-secondary">Characters</span>
+        <div className="mt-4 flex items-center justify-center gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-text-secondary">Characters:</span>
             <span
               className={`font-medium ${
                 characterCount > 160
@@ -168,8 +167,9 @@ export function SmsPhonePreview({
               {characterCount}/160
             </span>
           </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-text-secondary">SMS Segments</span>
+          <span className="text-text-tertiary">•</span>
+          <div className="flex items-center gap-2">
+            <span className="text-text-secondary">Segments:</span>
             <span
               className={`font-medium ${
                 smsSegments > 1 ? 'text-orange-500' : 'text-text-primary'
@@ -178,13 +178,6 @@ export function SmsPhonePreview({
               {smsSegments} {smsSegments === 1 ? 'part' : 'parts'}
             </span>
           </div>
-          {isLongMessage && (
-            <div className="mt-2 rounded-lg border border-orange-500/20 bg-orange-500/10 p-2">
-              <p className="text-xs text-orange-600">
-                Long message: Will be split into {smsSegments} SMS part{smsSegments !== 1 ? 's' : ''}
-              </p>
-            </div>
-          )}
         </div>
       )}
     </div>
