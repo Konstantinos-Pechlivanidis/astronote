@@ -1,16 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 /**
- * Shopify Auth Callback Page
+ * Shopify Auth Callback Page Content
  * Handles OAuth callback from backend
  * - Reads token from query (?token=)
  * - Saves to localStorage (shopify_token, shopify_store)
  * - Redirects to dashboard
  */
-export default function ShopifyAuthCallbackPage() {
+function ShopifyAuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
@@ -196,6 +196,30 @@ export default function ShopifyAuthCallbackPage() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Shopify Auth Callback Page
+ * Wrapped in Suspense for useSearchParams()
+ */
+export default function ShopifyAuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center px-4 py-20 bg-background">
+          <div className="p-8 md:p-12 text-center max-w-md w-full glass rounded-xl border border-border">
+            <div className="flex justify-center mb-6">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent"></div>
+            </div>
+            <h1 className="text-2xl font-bold mb-4">Loading...</h1>
+            <p className="text-text-secondary">Please wait...</p>
+          </div>
+        </div>
+      }
+    >
+      <ShopifyAuthCallbackContent />
+    </Suspense>
   );
 }
 

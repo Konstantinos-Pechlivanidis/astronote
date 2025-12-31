@@ -76,16 +76,14 @@ export default function TemplatesPage() {
   // Track usage mutation
   const trackUsage = useTrackTemplateUsage();
 
-  // Normalize response
-  const allTemplates = templatesData?.templates || [];
-
   // Filter by favorites if enabled
   const templates = useMemo(() => {
+    const allTemplates = templatesData?.templates || [];
     if (favoritesFilter) {
       return allTemplates.filter((t) => favorites.has(t.id));
     }
     return allTemplates;
-  }, [allTemplates, favoritesFilter, favorites]);
+  }, [templatesData?.templates, favoritesFilter, favorites]);
 
   const pagination = templatesData?.pagination || {
     page: 1,
