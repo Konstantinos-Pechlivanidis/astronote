@@ -147,8 +147,12 @@ export default function RetailLoginPage() {
                               return '[Circular]';
                             }
                             seen.add(value);
-                            // Skip DOM elements and React fiber nodes
-                            if (value instanceof HTMLElement || value.constructor?.name === 'FiberNode') {
+                            // Skip DOM elements and React fiber nodes (check if HTMLElement exists for SSR compatibility)
+                            if (
+                              (typeof HTMLElement !== 'undefined' && value instanceof HTMLElement) ||
+                              value.constructor?.name === 'FiberNode' ||
+                              (typeof window !== 'undefined' && value instanceof window.HTMLElement)
+                            ) {
                               return '[HTMLElement/ReactFiber]';
                             }
                           }
