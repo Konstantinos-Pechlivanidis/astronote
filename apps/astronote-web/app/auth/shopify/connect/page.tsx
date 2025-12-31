@@ -8,6 +8,8 @@ import { GlassCard } from '@/components/ui/glass-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { shopifyClient } from '@/lib/api/shopifyClient';
+import { SHOPIFY_API_BASE_URL } from '@/src/lib/shopify/config';
+import { topLevelRedirect } from '@/src/lib/shopify/auth/redirect';
 import { toast } from 'sonner';
 import { Store } from 'lucide-react';
 
@@ -42,21 +44,20 @@ function ShopifyConnectContent() {
     }
   }, [searchParams, handleTokenExchange]);
 
-  const handleOAuthConnect = async () => {
+  const handleOAuthConnect = () => {
     if (!shop) {
       toast.error('Please enter your Shopify store domain');
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const response = await shopifyClient.initiateOAuth(shop);
-      // Redirect to Shopify OAuth
-      window.location.href = response.authUrl;
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to initiate connection');
-      setIsLoading(false);
-    }
+    // Normalize shop domain
+    const normalizedDomain = shop.includes('.myshopify.com')
+      ? shop
+      : `${shop}.myshopify.com`;
+
+    // Use top-level redirect to backend OAuth endpoint (which will redirect to Shopify)
+    // This avoids CORS issues with XMLHttpRequest
+    topLevelRedirect(`${SHOPIFY_API_BASE_URL}/auth/shopify?shop=${normalizedDomain}`);
   };
 
   return (
