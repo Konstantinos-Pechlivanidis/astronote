@@ -169,7 +169,7 @@ export default function NewCampaignPage() {
             {currentStep === 1 && (
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 {/* Form Column */}
-                <div className="lg:col-span-2 space-y-4">
+                <div className="lg:col-span-2 space-y-4 min-w-0">
                   <div className="space-y-1">
                     <h3 className="text-lg font-semibold text-text-primary">Campaign Basics</h3>
                     <p className="text-sm text-text-secondary">
@@ -212,8 +212,8 @@ export default function NewCampaignPage() {
                 </div>
 
                 {/* Preview Column (Desktop: Sticky, Mobile: Below) */}
-                <div className="lg:col-span-1">
-                  <div className="lg:sticky lg:top-24">
+                <div className="lg:col-span-1 min-w-0">
+                  <div className="lg:sticky lg:top-24 max-w-full overflow-hidden">
                     <RetailCard className="p-6">
                       <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
                       <div className="flex justify-center lg:justify-start">
@@ -242,7 +242,7 @@ export default function NewCampaignPage() {
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
+                  <div className="min-w-0">
                     <label htmlFor="filterGender" className="mb-2 block text-sm font-medium text-text-secondary">
                       Gender Filter
                     </label>
@@ -269,7 +269,7 @@ export default function NewCampaignPage() {
                     />
                   </div>
 
-                  <div>
+                  <div className="min-w-0">
                     <label htmlFor="filterAgeGroup" className="mb-2 block text-sm font-medium text-text-secondary">
                       Age Group Filter
                     </label>
@@ -342,7 +342,7 @@ export default function NewCampaignPage() {
 
                 {watch('scheduleType') === 'later' && (
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
+                    <div className="min-w-0">
                       <label htmlFor="scheduledDate" className="mb-2 block text-sm font-medium text-text-secondary">
                         Date
                       </label>
@@ -357,7 +357,7 @@ export default function NewCampaignPage() {
                       )}
                     </div>
 
-                    <div>
+                    <div className="min-w-0">
                       <label htmlFor="scheduledTime" className="mb-2 block text-sm font-medium text-text-secondary">
                         Time
                       </label>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import { IPhoneFrame } from './IPhoneFrame';
 import { ChevronLeft } from 'lucide-react';
 
@@ -15,7 +15,8 @@ export interface SmsInPhonePreviewProps {
 
 /**
  * SMS Messages Preview Inside iPhone Frame
- * Displays iOS Messages UI with sender, timestamp, message bubble, and counters
+ * iOS-like Messages UI with retail app tokens (light mode)
+ * Messages appear at bottom with auto-scroll behavior
  */
 export function SmsInPhonePreview({
   variant = 'retail',
@@ -39,97 +40,158 @@ export function SmsInPhonePreview({
   const hasLinks = urls.length > 0;
 
   // Theme accent color
-  const accentColor = variant === 'retail' ? '#0ABAB5' : '#0ABAB5'; // Both use Tiffany for now
+  const accentColor = 'var(--color-accent)';
 
-  // Screen content (iOS Messages UI)
+  // Refs for scroll management
+  const conversationRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUpRef = useRef(false);
+
+  // Auto-scroll to bottom when message changes (if user is near bottom)
+  useEffect(() => {
+    if (!conversationRef.current || !messagesEndRef.current || !message) return;
+
+    const container = conversationRef.current;
+    const threshold = 50; // pixels from bottom
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+
+    // Only auto-scroll if user is near bottom
+    if (isNearBottom || !isUserScrolledUpRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      isUserScrolledUpRef.current = false;
+    }
+  }, [message]);
+
+  // Track user scroll to detect manual scrolling up
+  useEffect(() => {
+    const container = conversationRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const threshold = 100; // pixels from bottom
+      const isNearBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+      isUserScrolledUpRef.current = !isNearBottom;
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Screen content (iOS Messages UI with retail tokens)
   const screenContent = (
-    <>
-      {/* Messages Header */}
-      <div className="bg-[#f2f2f7] border-b border-[#c6c6c8] px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          {/* Back chevron (decorative) */}
-          <ChevronLeft className="w-5 h-5 text-[#007aff]" strokeWidth={2} />
-          <div className="flex items-center gap-2.5 flex-1">
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold"
-              style={{ backgroundColor: accentColor }}
-            >
-              {senderName.charAt(0).toUpperCase()}
-            </div>
-            <div className="flex-1">
-              <div className="text-[13px] font-semibold text-[#000]">{senderName}</div>
-            </div>
+    <div className="flex h-full w-full flex-col min-h-0 bg-background text-text-primary">
+      {/* Messages Header - iOS-like but with retail tokens */}
+      <div className="relative z-10 flex shrink-0 items-center gap-3 border-b border-border bg-background px-4 py-3">
+        {/* Back chevron (decorative) */}
+        <ChevronLeft className="h-5 w-5 text-accent shrink-0" strokeWidth={2} />
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <div
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white shadow-sm"
+            style={{ backgroundColor: accentColor }}
+          >
+            {senderName.charAt(0).toUpperCase()}
           </div>
-          <div className="text-[11px] text-[#8e8e93]">{timestampLabel}</div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold text-text-primary">{senderName}</div>
+            <div className="text-[11px] text-text-tertiary">Messages</div>
+          </div>
         </div>
+        <div className="text-[11px] text-text-tertiary shrink-0">{timestampLabel}</div>
       </div>
 
       {/* Conversation Area (scrollable inside screen) */}
       <div
-        className="bg-[#f2f2f7] px-4 py-3 min-h-[200px] max-h-[400px] overflow-y-auto"
+        ref={conversationRef}
+        className="flex-1 min-h-0 overflow-y-auto bg-surface-light px-4"
         style={{
           scrollbarWidth: 'thin',
-          scrollbarColor: '#c6c6c8 transparent',
+          scrollbarColor: 'var(--color-border) transparent',
         }}
       >
-        {message ? (
-          <div className="space-y-2">
-            {/* Message Bubble (received style) */}
-            <div className="flex justify-start">
-              <div className="max-w-[75%] rounded-2xl rounded-tl-sm px-3.5 py-2.5 bg-white shadow-sm">
-                <p className="text-[15px] leading-[1.4] text-[#000] whitespace-pre-wrap break-words">
-                  {message.split(urlRegex).map((part, idx) => {
-                    if (urls.includes(part)) {
-                      return (
-                        <a
-                          key={idx}
-                          href={part}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline"
-                          style={{ color: accentColor }}
-                        >
-                          {part}
-                        </a>
-                      );
-                    }
-                    return <span key={idx}>{part}</span>;
-                  })}
-                </p>
-              </div>
-            </div>
+        {/* Flex container to push messages to bottom */}
+        <div className="flex min-h-full flex-col">
+          {/* Spacer to push messages to bottom (iOS-like behavior) */}
+          {message && <div className="flex-1 min-h-0" />}
 
-            {/* Link Preview (if URLs exist) */}
-            {hasLinks && (
+          {/* Messages List */}
+          {message ? (
+            <div className="py-4 space-y-2">
+              {/* Message Bubble (received style - iOS-like) */}
               <div className="flex justify-start">
-                <div className="max-w-[75%] rounded-xl overflow-hidden bg-white border border-[#c6c6c8] shadow-sm">
-                  {urls.map((url, idx) => (
-                    <a
-                      key={idx}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block p-3 hover:bg-[#f9f9f9] transition-colors"
-                    >
-                      <div className="text-[13px] font-medium truncate" style={{ color: accentColor }}>
-                        {url}
-                      </div>
-                      <div className="text-[11px] text-[#8e8e93] mt-1">Tap to open</div>
-                    </a>
-                  ))}
+                <div
+                  className="max-w-[80%] rounded-2xl rounded-tl-sm border border-border bg-background px-3.5 py-2.5"
+                  style={{
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04)',
+                  }}
+                >
+                  <p className="whitespace-pre-wrap break-words text-[15px] leading-[1.4] text-text-primary">
+                    {message.split(urlRegex).map((part, idx) => {
+                      if (urls.includes(part)) {
+                        return (
+                          <a
+                            key={idx}
+                            href={part}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline break-all"
+                            style={{ color: accentColor }}
+                          >
+                            {part}
+                          </a>
+                        );
+                      }
+                      return <span key={idx}>{part}</span>;
+                    })}
+                  </p>
                 </div>
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-full min-h-[200px]">
-            <p className="text-[13px] text-[#8e8e93] text-center px-4">
-              Your message will appear here...
-            </p>
-          </div>
-        )}
+
+              {/* Link Preview (if URLs exist) - iOS-like cards */}
+              {hasLinks && (
+                <div className="space-y-2">
+                  {urls.map((url, idx) => (
+                    <div key={idx} className="flex justify-start">
+                      <div
+                        className="max-w-[80%] overflow-hidden rounded-xl border border-border bg-background"
+                        style={{
+                          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04)',
+                        }}
+                      >
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block p-3 transition-colors hover:bg-surface-light"
+                        >
+                          <div
+                            className="break-all text-[13px] font-medium leading-snug"
+                            style={{ color: accentColor }}
+                          >
+                            {url}
+                          </div>
+                          <div className="mt-1.5 text-[11px] text-text-tertiary">Tap to open</div>
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Scroll anchor (invisible element at bottom) */}
+              <div ref={messagesEndRef} className="h-0" />
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center min-h-0 py-4">
+              <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-dashed border-border bg-background px-3.5 py-2.5">
+                <p className="text-center text-sm text-text-secondary">Your message will appear here...</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </>
+    </div>
   );
 
   return (
@@ -172,4 +234,3 @@ export function SmsInPhonePreview({
     </div>
   );
 }
-
