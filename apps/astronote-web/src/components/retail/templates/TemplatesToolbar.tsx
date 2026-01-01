@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 
 const CATEGORIES = [
-  { value: '', label: 'All Categories' },
+  { value: 'all', label: 'All Categories' },
   { value: 'generic', label: 'Generic' },
   { value: 'cafe', label: 'Cafe' },
   { value: 'restaurant', label: 'Restaurant' },
