@@ -45,10 +45,19 @@ function getSystemUserId(templates: Template[]): number | null {
   return systemUserId;
 }
 
+/**
+ * We must NOT pass empty string values to Select items.
+ * Use a sentinel for "all".
+ */
+const ALL_CATEGORY = 'all';
+
 export default function TemplatesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
+
+  // ✅ IMPORTANT: never use '' for Select values.
+  const [category, setCategory] = useState<string>(ALL_CATEGORY);
+
   const [tab, setTab] = useState<'system' | 'my'>('system');
 
   const [formOpen, setFormOpen] = useState(false);
@@ -66,7 +75,7 @@ export default function TemplatesPage() {
     page,
     pageSize,
     q: search,
-    category: category || undefined,
+    category: category !== ALL_CATEGORY ? category : undefined,
     tab,
   });
 
@@ -98,7 +107,6 @@ export default function TemplatesPage() {
   const handleDelete = (id: number) => {
     deleteMutation.mutate(id, {
       onSuccess: () => {
-        // Keep it simple: refetch after delete to ensure table stays consistent
         refetch();
       },
     });
@@ -158,12 +166,13 @@ export default function TemplatesPage() {
   };
 
   const handleCategoryChange = (newCategory: string) => {
-    setCategory(newCategory);
+    // ✅ Normalize empty value (or any falsy) to ALL_CATEGORY
+    setCategory(newCategory && newCategory.trim() ? newCategory : ALL_CATEGORY);
     setPage(1);
   };
 
   const hasItems = (data?.items?.length || 0) > 0;
-  const isFiltered = Boolean(search || category);
+  const isFiltered = Boolean(search) || category !== ALL_CATEGORY;
   const total = data?.total || 0;
 
   return (
@@ -182,6 +191,7 @@ export default function TemplatesPage() {
           onLanguageChange={() => {
             /* i18n disabled by requirement */
           }}
+          // ✅ Pass non-empty category value always
           category={category}
           onCategoryChange={handleCategoryChange}
           tab={tab}
@@ -225,7 +235,8 @@ export default function TemplatesPage() {
                 <span className="font-medium text-text-primary">Tab:</span> {tab}
               </div>
               <div>
-                <span className="font-medium text-text-primary">Category:</span> {category || 'all'}
+                <span className="font-medium text-text-primary">Category:</span>{' '}
+                {category === ALL_CATEGORY ? 'all' : category}
               </div>
               <div>
                 <span className="font-medium text-text-primary">SystemUserId:</span>{' '}

@@ -257,7 +257,7 @@ export default function NewCampaignPage() {
                           }}
                         >
                           <SelectTrigger id="filterGender">
-                            <SelectValue placeholder="Any" />
+                            <SelectValue placeholder="All" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="male">Male</SelectItem>
@@ -284,7 +284,7 @@ export default function NewCampaignPage() {
                           }}
                         >
                           <SelectTrigger id="filterAgeGroup">
-                            <SelectValue placeholder="Any" />
+                            <SelectValue placeholder="All" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="18_24">18-24</SelectItem>
@@ -404,13 +404,13 @@ export default function NewCampaignPage() {
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-text-secondary">Gender Filter:</span>
-                      <span className="text-sm text-text-primary capitalize">{watch('filterGender') || 'Any'}</span>
+                      <span className="text-sm text-text-primary capitalize">{watch('filterGender') || 'All'}</span>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-text-secondary">Age Group:</span>
                       <span className="text-sm text-text-primary">
-                        {watch('filterAgeGroup') ? watch('filterAgeGroup')?.replace('_', '-') : 'Any'}
+                        {watch('filterAgeGroup') ? watch('filterAgeGroup')?.replace('_', '-') : 'All'}
                       </span>
                     </div>
                   </div>
