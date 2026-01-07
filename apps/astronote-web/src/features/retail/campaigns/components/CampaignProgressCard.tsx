@@ -13,16 +13,27 @@ interface CampaignProgressCardProps {
   }
   metrics?: {
     queued: number
-    success: number
+    processing: number
+    accepted: number
+    delivered: number
+    deliveryFailed: number
+    pendingDelivery: number
     processed: number
-    failed: number
   }
 }
 
 export function CampaignProgressCard({ campaign, metrics }: CampaignProgressCardProps) {
   if (!metrics) return null;
 
-  const { queued, success, processed, failed } = metrics;
+  const {
+    queued = 0,
+    processing = 0,
+    accepted = 0,
+    delivered = 0,
+    deliveryFailed = 0,
+    pendingDelivery = 0,
+    processed = 0,
+  } = metrics;
   const total = campaign.total || 0;
   const processedProgress = total > 0 ? (processed / total) * 100 : 0;
 
@@ -43,22 +54,34 @@ export function CampaignProgressCard({ campaign, metrics }: CampaignProgressCard
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div>
             <div className="text-sm text-text-secondary">Queued</div>
             <div className="text-2xl font-bold text-text-primary">{queued.toLocaleString()}</div>
           </div>
           <div>
-            <div className="text-sm text-text-secondary">Sent</div>
-            <div className="text-2xl font-bold text-green-500">{success.toLocaleString()}</div>
+            <div className="text-sm text-text-secondary">Processing</div>
+            <div className="text-2xl font-bold text-amber-500">{processing.toLocaleString()}</div>
           </div>
           <div>
-            <div className="text-sm text-text-secondary">Failed</div>
-            <div className="text-2xl font-bold text-red-500">{failed.toLocaleString()}</div>
+            <div className="text-sm text-text-secondary">Accepted</div>
+            <div className="text-2xl font-bold text-green-500">{accepted.toLocaleString()}</div>
+          </div>
+          <div>
+            <div className="text-sm text-text-secondary">Delivered</div>
+            <div className="text-2xl font-bold text-blue-500">{delivered.toLocaleString()}</div>
+          </div>
+          <div>
+            <div className="text-sm text-text-secondary">Delivery Failed</div>
+            <div className="text-2xl font-bold text-red-500">{deliveryFailed.toLocaleString()}</div>
           </div>
           <div>
             <div className="text-sm text-text-secondary">Processed</div>
             <div className="text-2xl font-bold text-accent">{processed.toLocaleString()}</div>
+          </div>
+          <div>
+            <div className="text-sm text-text-secondary">Pending Delivery</div>
+            <div className="text-2xl font-bold text-amber-500">{pendingDelivery.toLocaleString()}</div>
           </div>
         </div>
 
@@ -92,4 +115,3 @@ export function CampaignProgressCard({ campaign, metrics }: CampaignProgressCard
     </GlassCard>
   );
 }
-

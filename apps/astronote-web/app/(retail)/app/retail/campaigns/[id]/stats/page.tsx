@@ -11,8 +11,10 @@ import { ArrowLeft, Target, TrendingUp, Users, XCircle } from 'lucide-react';
 function CampaignStatsCards({ stats }: { stats: any }) {
   if (!stats) return null;
 
-  const conversionRate = stats.sent > 0 ? (stats.conversions / stats.sent) * 100 : 0;
-  const unsubscribeRate = stats.sent > 0 ? (stats.unsubscribes / stats.sent) * 100 : 0;
+  const delivered = stats.metrics?.delivered ?? stats.sent ?? 0;
+  const total = stats.metrics?.total ?? stats.total ?? 0;
+  const conversionRate = delivered > 0 ? (stats.conversions / delivered) * 100 : 0;
+  const unsubscribeRate = delivered > 0 ? (stats.unsubscribes / delivered) * 100 : 0;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -22,21 +24,21 @@ function CampaignStatsCards({ stats }: { stats: any }) {
           <Users className="w-5 h-5 text-text-tertiary" />
         </div>
         <div className="flex items-baseline">
-          <p className="text-3xl font-bold text-text-primary">{stats.total?.toLocaleString() || 0}</p>
+          <p className="text-3xl font-bold text-text-primary">{total?.toLocaleString() || 0}</p>
         </div>
         <p className="text-xs text-text-tertiary mt-1">All recipients</p>
       </RetailCard>
 
       <RetailCard hover>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium text-text-secondary">Sent</h3>
+          <h3 className="text-sm font-medium text-text-secondary">Delivered</h3>
           <TrendingUp className="w-5 h-5 text-text-tertiary" />
         </div>
         <div className="flex items-baseline">
-          <p className="text-3xl font-bold text-text-primary">{stats.sent?.toLocaleString() || 0}</p>
+          <p className="text-3xl font-bold text-text-primary">{delivered?.toLocaleString() || 0}</p>
         </div>
         <p className="text-xs text-text-tertiary mt-1">
-          {stats.total > 0 ? ((stats.sent / stats.total) * 100).toFixed(1) : 0}% success rate
+          {total > 0 ? ((delivered / total) * 100).toFixed(1) : 0}% delivery rate
         </p>
       </RetailCard>
 
@@ -136,4 +138,3 @@ export default function CampaignStatsPage() {
     </RetailPageLayout>
   );
 }
-

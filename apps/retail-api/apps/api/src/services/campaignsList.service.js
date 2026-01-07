@@ -61,7 +61,11 @@ exports.listCampaigns = async ({
         createdAt: true,
         scheduledAt: true,
         startedAt: true,
-        finishedAt: true
+        finishedAt: true,
+        total: true,
+        sent: true,
+        failed: true,
+        processed: true
       }
     })
   ]);
@@ -101,19 +105,18 @@ exports.listCampaigns = async ({
   }
 
   // Note: "delivered" status is mapped to "sent" - we only track sent/failed
+  const { computeCampaignMetrics } = require('./campaignMetrics.service');
   const statsMap = new Map();
-  for (const id of ids) {statsMap.set(id, { sent: 0, failed: 0, redemptions: 0 });}
+  for (const id of ids) {statsMap.set(id, { delivered: 0, deliveryFailed: 0, redemptions: 0 });}
 
-  for (const row of msgs) {
-    const s = statsMap.get(row.campaignId);
-    if (s) {
-      if (row.status === 'sent') {
-        s.sent += row._count._all;
-      } else if (row.status === 'failed') {
-        s.failed += row._count._all;
-      }
-    }
-  }
+  // Compute metrics per campaign (canonical)
+  const metricsList = await Promise.all(
+    ids.map((id) => computeCampaignMetrics({ campaignId: id, ownerId }))
+  );
+  metricsList.forEach((m, idx) => {
+    const id = ids[idx];
+    statsMap.set(id, { delivered: m.delivered, deliveryFailed: m.deliveryFailed, redemptions: 0 });
+  });
   for (const row of reds) {
     const s = statsMap.get(row.campaignId);
     if (s) {
@@ -123,14 +126,15 @@ exports.listCampaigns = async ({
 
   // Note: "delivered" status is mapped to "sent" - deliveredRate is same as sent rate
   const items = campaigns.map(c => {
-    const s = statsMap.get(c.id) || { sent:0, failed:0, redemptions:0 };
+    const s = statsMap.get(c.id) || { delivered:0, deliveryFailed:0, redemptions:0 };
     return {
       ...c,
       stats: {
-        ...s,
-        delivered: s.sent, // delivered is same as sent since delivered maps to sent
-        deliveredRate: rate(s.sent, s.sent), // Always 1.0 since delivered maps to sent
-        conversionRate: rate(s.redemptions, s.sent) // Use sent for conversion rate
+        sent: s.delivered, // keep compatibility with UI expecting "sent"
+        delivered: s.delivered,
+        failed: s.deliveryFailed,
+        deliveredRate: rate(s.delivered, s.delivered || 1),
+        conversionRate: rate(s.redemptions, s.delivered || 1)
       }
     };
   });

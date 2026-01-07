@@ -96,20 +96,23 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
         // Only update if status changed
         if (newStatus !== msg.status) {
           const updateData = {
-            status: newStatus,
-            updatedAt: new Date()
+            status: newStatus
           };
 
           if (newStatus === 'sent') {
-            // Update sentAt timestamp if not already set
             updateData.sentAt = mittoStatus.updatedAt 
               ? new Date(mittoStatus.updatedAt) 
               : new Date();
+            updateData.deliveryStatus = mittoStatus.deliveryStatus || null;
+            if (mittoStatus.deliveryStatus && String(mittoStatus.deliveryStatus).toLowerCase().includes('deliv')) {
+              updateData.deliveredAt = updateData.sentAt;
+            }
           } else if (newStatus === 'failed') {
             updateData.failedAt = mittoStatus.updatedAt 
               ? new Date(mittoStatus.updatedAt) 
               : new Date();
             updateData.error = `Mitto status: ${mittoStatus.deliveryStatus}`;
+            updateData.deliveryStatus = mittoStatus.deliveryStatus || null;
           }
 
           statusUpdates.push({
@@ -231,8 +234,7 @@ async function refreshPendingStatuses(limit = 100) {
         // Only update if status changed
         if (newStatus !== msg.status) {
           const updateData = {
-            status: newStatus,
-            updatedAt: new Date()
+            status: newStatus
           };
 
           if (newStatus === 'sent') {
@@ -328,6 +330,99 @@ async function refreshPendingStatuses(limit = 100) {
 }
 
 /**
+ * Refresh deliveryStatus for messages that were accepted (providerMessageId set)
+ * but have no deliveryStatus yet (webhook missing/late).
+ * @param {number} limit
+ * @param {number} olderThanSeconds - only check messages sentAt older than this
+ */
+async function refreshMissingDeliveryStatuses(limit = 50, olderThanSeconds = 60) {
+  try {
+    const cutoff = new Date(Date.now() - olderThanSeconds * 1000);
+    const messages = await prisma.campaignMessage.findMany({
+      where: {
+        providerMessageId: { not: null },
+        deliveryStatus: null,
+        sentAt: { lte: cutoff }
+      },
+      select: {
+        id: true,
+        campaignId: true,
+        ownerId: true,
+        providerMessageId: true,
+        sentAt: true
+      },
+      take: limit,
+      orderBy: { sentAt: 'asc' }
+    });
+
+    if (!messages.length) {
+      logger.debug('No missing delivery statuses to refresh');
+      return { refreshed: 0, updated: 0, errors: 0, campaignsUpdated: 0 };
+    }
+
+    let refreshed = 0;
+    let updated = 0;
+    let errors = 0;
+    const affectedCampaigns = new Set();
+    const updates = [];
+
+    for (const msg of messages) {
+      try {
+        const mittoStatus = await getMessageStatus(msg.providerMessageId);
+        const delivery = mittoStatus?.deliveryStatus || null;
+        if (!delivery) {
+          refreshed++;
+          continue;
+        }
+        const lower = String(delivery).toLowerCase();
+        const updateData = {
+          deliveryStatus: delivery,
+          deliveryLastCheckedAt: new Date()
+        };
+        if (lower.includes('deliv')) {
+          updateData.deliveredAt = mittoStatus.updatedAt ? new Date(mittoStatus.updatedAt) : new Date();
+        } else if (lower.includes('fail') || lower.includes('undeliv') || lower.includes('expire') || lower.includes('reject')) {
+          updateData.failedAt = mittoStatus.updatedAt ? new Date(mittoStatus.updatedAt) : new Date();
+          updateData.error = `Mitto status: ${delivery}`;
+        }
+        updates.push({ id: msg.id, data: updateData, campaignId: msg.campaignId, ownerId: msg.ownerId });
+        refreshed++;
+        updated++;
+        affectedCampaigns.add(`${msg.campaignId}:${msg.ownerId}`);
+      } catch (err) {
+        errors++;
+        logger.error({ messageId: msg.id, providerMessageId: msg.providerMessageId, err: err.message }, 'Failed to refresh missing delivery status');
+      }
+    }
+
+    if (updates.length) {
+      await Promise.all(
+        updates.map(u =>
+          prisma.campaignMessage.update({ where: { id: u.id }, data: u.data })
+        )
+      );
+    }
+
+    let campaignsUpdated = 0;
+    for (const key of affectedCampaigns) {
+      const [campaignId, ownerId] = key.split(':').map(Number);
+      try {
+        await updateCampaignAggregates(campaignId, ownerId);
+        campaignsUpdated++;
+      } catch (aggErr) {
+        logger.warn({ campaignId, ownerId, err: aggErr.message }, 'Failed to update aggregates after delivery refresh');
+      }
+    }
+
+    logger.info({ refreshed, updated, errors, campaignsUpdated }, 'Missing delivery statuses refresh completed');
+    return { refreshed, updated, errors, campaignsUpdated };
+  } catch (err) {
+    logger.error({ err: err.message }, 'refreshMissingDeliveryStatuses failed');
+    throw err;
+  }
+}
+
+/**
  * Refresh statuses for all messages in a bulk batch (by bulkId)
  * 
  * @param {string} bulkId - Mitto bulkId
@@ -391,8 +486,7 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
         // Only update if status changed
         if (newStatus !== msg.status) {
           const updateData = {
-            status: newStatus,
-            updatedAt: new Date()
+            status: newStatus
           };
 
           if (newStatus === 'sent') {
@@ -473,6 +567,6 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
 module.exports = {
   refreshCampaignStatuses,
   refreshPendingStatuses,
+  refreshMissingDeliveryStatuses,
   refreshBulkStatuses
 };
-

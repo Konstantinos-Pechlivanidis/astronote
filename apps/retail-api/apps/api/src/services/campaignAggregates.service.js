@@ -18,7 +18,14 @@ async function updateCampaignAggregates(campaignId, ownerId) {
     // Verify campaign exists and belongs to owner
     const campaign = await prisma.campaign.findFirst({
       where: { id: campaignId, ownerId },
-      select: { id: true }
+      select: {
+        id: true,
+        status: true,
+        startedAt: true,
+        finishedAt: true,
+        deliverySlaSeconds: true,
+        createdAt: true
+      }
     });
 
     if (!campaign) {
@@ -26,65 +33,65 @@ async function updateCampaignAggregates(campaignId, ownerId) {
       return null;
     }
 
-    // Count messages by status (Phase 2.2: sent = only actually sent, not processed)
-    const [total, success, failed] = await Promise.all([
-      prisma.campaignMessage.count({
-        where: { campaignId, ownerId }
-      }),
-      prisma.campaignMessage.count({
-        where: {
-          campaignId,
-          ownerId,
-          status: 'sent' // Only actually sent messages (Phase 2.2)
-        }
-      }),
-      prisma.campaignMessage.count({
-        where: {
-          campaignId,
-          ownerId,
-          status: 'failed'
-        }
-      })
-    ]);
+    const { computeCampaignMetrics } = require('./campaignMetrics.service');
+    const metrics = await computeCampaignMetrics({ campaignId, ownerId });
 
-    // Calculate processed (sent + failed) - Phase 2.2
-    const processed = success + failed;
+    const total = metrics.total;
+    const queuedCount = metrics.queued;
+    const processingCount = metrics.processing;
+    const queuedCombined = queuedCount + processingCount;
+    const acceptedCount = metrics.accepted;
+    const deliveredCount = metrics.delivered;
+    const failedDeliveryCount = metrics.deliveryFailed;
+    const pendingDelivery = metrics.pendingDelivery;
+    const processed = metrics.processed;
 
-    // Check if all messages are processed (no queued messages remaining)
-    const queuedCount = await prisma.campaignMessage.count({
-      where: {
-        campaignId,
-        ownerId,
-        status: 'queued'
-      }
-    });
+    // SLA calculation
+    const defaultSlaSeconds =
+      total <= 100 ? 600 :
+      total <= 5000 ? 1800 :
+      3600;
+    const slaSeconds = campaign.deliverySlaSeconds || defaultSlaSeconds;
+    const startedAt = campaign.startedAt || campaign.createdAt;
+    const slaExceeded = startedAt ? (Date.now() - new Date(startedAt).getTime()) / 1000 > slaSeconds : false;
 
     // Determine campaign status based on message states
     let campaignStatus = null;
-    if (queuedCount > 0) {
-      // Still has queued messages - keep as 'sending'
+    if (queuedCombined > 0) {
       campaignStatus = 'sending';
-    } else if (total > 0 && processed === total) {
-      // All messages have been processed (sent or failed) - Phase 2.2
+    } else if (pendingDelivery > 0 && !slaExceeded) {
+      campaignStatus = 'sending';
+    } else if (pendingDelivery > 0 && slaExceeded) {
+      // Do not mark failed after SLA; treat as completed with pending delivery outstanding
       campaignStatus = 'completed';
+    } else if (queuedCombined === 0 && pendingDelivery === 0 && deliveredCount > 0) {
+      campaignStatus = 'completed';
+    } else if (queuedCombined === 0 && acceptedCount === 0 && deliveredCount === 0 && failedDeliveryCount === total && total > 0) {
+      campaignStatus = 'failed';
+    } else if (total === 0) {
+      campaignStatus = 'failed';
     }
-    // If total === 0, don't change status (campaign might be in draft)
 
-    // Update campaign aggregates and status (Phase 2.2: sent = success, add processed)
+    // Update campaign aggregates and status
     const updateData = {
       total,
-      sent: success,        // Actually sent (not processed) - Phase 2.2
-      failed,
-      processed,            // New: sent + failed - Phase 2.2
+      sent: deliveredCount,
+      failed: failedDeliveryCount,
+      processed,
       updatedAt: new Date()
     };
 
-    // Only update status if we determined a new status
+    if (!campaign.startedAt && (campaignStatus === 'sending')) {
+      updateData.startedAt = new Date();
+    }
+
     if (campaignStatus) {
       updateData.status = campaignStatus;
-      if (campaignStatus === 'completed') {
-        updateData.finishedAt = new Date();
+      if (campaignStatus === 'completed' || campaignStatus === 'failed' || campaignStatus === 'completed_pending_delivery') {
+        updateData.finishedAt = updateData.finishedAt || new Date();
+        updateData.deliveryCompletedAt = updateData.deliveryCompletedAt || new Date();
       }
+      updateData.deliverySlaSeconds = slaSeconds;
     }
 
     await prisma.campaign.updateMany({
@@ -94,15 +101,16 @@ async function updateCampaignAggregates(campaignId, ownerId) {
 
     logger.info({ 
       campaignId, 
-      total, 
-      sent: success,        // Actually sent - Phase 2.2
-      processed,           // New: sent + failed - Phase 2.2
-      failed, 
-      queuedCount,
+      total,
+      sent: deliveredCount,
+      processed,
+      failed: failedDeliveryCount,
+      queued: queuedCombined,
+      pendingDelivery,
       campaignStatus: campaignStatus || 'unchanged'
-    }, 'Campaign aggregates updated (Phase 2.2)');
+    }, 'Campaign aggregates updated');
 
-    return { total, sent: success, processed, failed, campaignStatus };
+    return { total, sent: deliveredCount, processed, failed: failedDeliveryCount, campaignStatus };
   } catch (err) {
     logger.error({ campaignId, ownerId, err: err.message }, 'Failed to update campaign aggregates');
     // Don't throw - aggregates can be recalculated later
@@ -120,15 +128,15 @@ async function updateCampaignAggregates(campaignId, ownerId) {
 async function recalculateAllCampaignAggregates(ownerId) {
   try {
     const campaigns = await prisma.campaign.findMany({
-      where: { ownerId },
-      select: { id: true }
+      where: ownerId ? { ownerId } : {},
+      select: { id: true, ownerId: true }
     });
 
     let updated = 0;
     let errors = 0;
 
     for (const campaign of campaigns) {
-      const result = await updateCampaignAggregates(campaign.id, ownerId);
+      const result = await updateCampaignAggregates(campaign.id, campaign.ownerId);
       if (result) {
         updated++;
       } else {
@@ -149,4 +157,3 @@ module.exports = {
   updateCampaignAggregates,
   recalculateAllCampaignAggregates
 };
-

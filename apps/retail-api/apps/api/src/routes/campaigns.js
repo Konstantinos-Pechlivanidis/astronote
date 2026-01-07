@@ -365,6 +365,35 @@ router.get("/campaigns/stats", requireAuth, async (req, res, next) => {
 });
 
 /* =========================================================
+ * GET /campaigns/:id/stats (protected)
+ * Scoped stats for a single campaign (conversions/unsubscribes).
+ * ========================================================= */
+router.get("/campaigns/:id/stats", requireAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id || isNaN(id)) {
+      return res.status(400).json({
+        message: "Invalid campaign ID",
+        code: 'VALIDATION_ERROR'
+      });
+    }
+
+    const { getCampaignStats } = require('../services/campaignStats.service');
+    try {
+      const stats = await getCampaignStats(id, req.user.id);
+      return res.json(stats);
+    } catch (err) {
+      if (err?.code === 'NOT_FOUND') {
+        return res.status(404).json({ message: "Campaign not found", code: 'RESOURCE_NOT_FOUND' });
+      }
+      throw err;
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
+/* =========================================================
  * GET /campaigns/:id (protected)
  * Fetch one campaign (scoped).
  * ========================================================= */
@@ -539,7 +568,7 @@ router.post("/campaigns/:id/enqueue", requireAuth, async (req, res, next) => {
     });
   }
 
-    const camp = await prisma.campaign.findFirst({
+  const camp = await prisma.campaign.findFirst({
       where: { id, ownerId: req.user.id },
     });
     if (!camp) {
@@ -548,6 +577,13 @@ router.post("/campaigns/:id/enqueue", requireAuth, async (req, res, next) => {
       code: 'RESOURCE_NOT_FOUND' 
     });
   }
+
+    logger.info({
+      userId: req.user.id,
+      campaignId: id,
+      currentStatus: camp.status,
+      idempotencyKey: req.headers['idempotency-key'] || null
+    }, 'enqueue endpoint called');
 
     const result = await enqueueCampaign(id);
     if (!result.ok) {
@@ -582,19 +618,52 @@ router.post("/campaigns/:id/enqueue", requireAuth, async (req, res, next) => {
           code: "INSUFFICIENT_CREDITS"
         });
       }
+      if (result.reason === "inactive_subscription") {
+        return res.status(402).json({ 
+          message: "Active subscription required to send campaigns", 
+          code: "INACTIVE_SUBSCRIPTION" 
+        });
+      }
+      if (result.reason === "queue_unavailable") {
+        return res.status(503).json({
+          message: "Message queue unavailable. Please try again shortly.",
+          code: 'QUEUE_UNAVAILABLE'
+        });
+      }
+      if (result.reason === "enqueue_failed") {
+        return res.status(500).json({
+          message: "Failed to enqueue campaign jobs. Please retry.",
+          code: 'ENQUEUE_FAILED'
+        });
+      }
+      if (result.reason === "no_message_text") {
+        return res.status(400).json({
+          message: "Campaign is missing message text",
+          code: 'NO_MESSAGE_TEXT'
+        });
+      }
       if (result.reason === "no_filters_or_list") {
         return res.status(400).json({ 
           message: "Campaign has no target audience defined. Please add filters or select a list.", 
           code: 'NO_TARGET_AUDIENCE' 
         });
       }
+      logger.warn({ campaignId: id, reason: result.reason, userId: req.user.id }, 'Enqueue rejected');
       return res.status(400).json({ 
         message: result.reason || "Cannot send campaign at this time", 
         code: 'CAMPAIGN_ENQUEUE_ERROR' 
       });
     }
 
-    res.json({ queued: result.created, enqueuedJobs: result.enqueuedJobs });
+    logger.info({
+      campaignId: id,
+      ownerId: req.user.id,
+      queued: result.created,
+      enqueuedJobs: result.enqueuedJobs,
+      userId: req.user.id
+    }, 'enqueue endpoint succeeded');
+
+    res.json({ queued: result.created, enqueuedJobs: result.enqueuedJobs, campaignId: id, status: 'sending' });
   } catch (e) {
     next(e);
   }
@@ -1041,21 +1110,8 @@ router.get("/campaigns/:id/status", requireAuth, async (req, res, next) => {
     });
   }
 
-  // Phase 2.2: Count messages by status (sent = only actually sent, not processed)
-  const [queued, success, failed] = await Promise.all([
-    prisma.campaignMessage.count({
-      where: { ownerId: req.user.id, campaignId: id, status: "queued" },
-    }),
-    prisma.campaignMessage.count({
-      where: { ownerId: req.user.id, campaignId: id, status: "sent" }, // Only actually sent
-    }),
-    prisma.campaignMessage.count({
-      where: { ownerId: req.user.id, campaignId: id, status: "failed" },
-    }),
-  ]);
-
-  // Calculate processed (sent + failed) - Phase 2.2
-  const processed = success + failed;
+  const { computeCampaignMetrics } = require('../services/campaignMetrics.service');
+  const metrics = await computeCampaignMetrics({ campaignId: id, ownerId: req.user.id });
 
   // Map Prisma enum back to normalized format for API response
   const { mapAgeGroupToApi } = require('../lib/routeHelpers');
@@ -1065,13 +1121,71 @@ router.get("/campaigns/:id/status", requireAuth, async (req, res, next) => {
   // Using "success" for clarity (status='sent' messages that were successfully sent)
   res.json({ 
     campaign: campaignResponse, 
-    metrics: { 
-      queued, 
-      success,           // Successfully sent messages (status='sent') - Phase 2.2
-      processed,         // Processed messages (success + failed) - Phase 2.2
-      failed             // Failed messages (status='failed') - Phase 2.2
-    } 
+    metrics
   });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/* =========================================================
+ * DEV: GET /api/debug/campaigns/:id/messages (scoped)
+ * Returns recent CampaignMessage rows for forensic debugging.
+ * ========================================================= */
+router.get("/debug/campaigns/:id/messages", requireAuth, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ message: "Invalid campaign ID" });
+    }
+    const limit = Number(req.query.limit || 50);
+    const rows = await prisma.campaignMessage.findMany({
+      where: { ownerId: req.user.id, campaignId: id },
+      orderBy: { id: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        status: true,
+        providerMessageId: true,
+        bulkId: true,
+        sentAt: true,
+        failedAt: true,
+        error: true,
+        sendClaimedAt: true,
+        sendClaimToken: true,
+        deliveryStatus: true,
+        deliveredAt: true,
+        billingStatus: true,
+        billingError: true,
+        acceptedAt: true,
+        deliveryLastCheckedAt: true,
+      }
+    });
+    return res.json({ count: rows.length, rows });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// DEV ONLY: Aggregate counts for a campaign (metrics sanity)
+router.get("/debug/campaigns/:id/counts", requireAuth, async (req, res, next) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(404).json({ message: 'Not found' });
+    }
+    const id = Number(req.params.id);
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ message: "Invalid campaign ID" });
+    }
+    const ownerId = req.user.id;
+    const { computeCampaignMetrics } = require('../services/campaignMetrics.service');
+    const metrics = await computeCampaignMetrics({ campaignId: id, ownerId });
+
+    const providerCount = await prisma.campaignMessage.count({
+      where: { ownerId, campaignId: id, providerMessageId: { not: null } }
+    });
+
+    res.json({ metrics, providerMessageIdCount: providerCount });
   } catch (e) {
     next(e);
   }

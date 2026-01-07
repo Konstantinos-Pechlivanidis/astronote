@@ -9,14 +9,19 @@ export interface Campaign {
   filterGender?: string | null
   filterAgeGroup?: string | null
   total?: number
+  sent?: number
+  failed?: number
+  processed?: number
   scheduledAt?: string
   startedAt?: string
   finishedAt?: string
   createdAt?: string
   stats?: {
     total: number
-    sent: number
+    sent: number       // delivered
+    delivered: number
     failed: number
+    pendingDelivery?: number
   }
 }
 
@@ -61,6 +66,7 @@ export interface CampaignPreviewResponse {
 }
 
 export interface CampaignStatsResponse {
+  metrics?: CampaignStatusResponse['metrics']
   total: number
   sent: number
   failed: number
@@ -68,13 +74,24 @@ export interface CampaignStatsResponse {
   unsubscribes: number
 }
 
+export interface CampaignEnqueueResponse {
+  queued: number
+  enqueuedJobs?: number
+  campaignId?: number
+  status?: string
+}
+
 export interface CampaignStatusResponse {
   campaign: Campaign
   metrics?: {
+    total?: number
     queued: number
-    success: number
+    processing: number
+    accepted: number
+    delivered: number
+    deliveryFailed: number
+    pendingDelivery: number
     processed: number
-    failed: number
   }
 }
 
@@ -109,7 +126,7 @@ export const campaignsApi = {
 
   enqueue: (id: number, idempotencyKey: string) => {
     const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {};
-    return api.post<{ queued: number }>(endpoints.campaigns.enqueue(id), {}, { headers });
+    return api.post<CampaignEnqueueResponse>(endpoints.campaigns.enqueue(id), {}, { headers });
   },
 
   schedule: (id: number, data: { scheduledDate: string; scheduledTime: string }) =>
@@ -126,4 +143,3 @@ export const campaignsApi = {
   previewAudience: (data: AudiencePreviewRequest) =>
     api.post<AudiencePreviewResponse>(endpoints.campaigns.previewAudience, data),
 };
-

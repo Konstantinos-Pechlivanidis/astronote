@@ -21,14 +21,12 @@ async function getFirstSentAt(campaignId, ownerId) {
 exports.getCampaignStats = async (campaignId, ownerId) => {
   if (!ownerId) {throw new Error('ownerId is required');}
 
-  // Ensure the campaign belongs to owner and get aggregates (avoid leaking existence)
+  // Ensure the campaign belongs to owner and fetch metrics from messages
   const campaign = await prisma.campaign.findFirst({
     where: { id: campaignId, ownerId },
-    select: { 
+    select: {
       id: true,
       total: true,
-      sent: true,
-      failed: true,
       updatedAt: true
     }
   });
@@ -38,8 +36,8 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
     throw err;
   }
 
-  // Use Campaign aggregates (more efficient and consistent)
-  const { total, sent, failed } = campaign;
+  const { computeCampaignMetrics } = require('./campaignMetrics.service');
+  const metrics = await computeCampaignMetrics({ campaignId, ownerId });
 
   // Get conversions count from Redemption table (this is our conversion tracking)
   const conversions = await prisma.redemption.count({
@@ -69,13 +67,14 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
   }
 
   return {
-    total,
-    sent,
-    failed,
+    metrics,
+    total: metrics.total,
+    sent: metrics.delivered,
+    failed: metrics.deliveryFailed,
     conversions,
     unsubscribes,
-    failureRate: rate(failed, sent),
-    conversionRate: rate(conversions, sent), // Conversion rate = conversions / sent
+    failureRate: rate(metrics.deliveryFailed, metrics.delivered || 1),
+    conversionRate: rate(conversions, metrics.delivered || 1), // Conversion rate = conversions / delivered
     firstSentAt,
     updatedAt: campaign.updatedAt
   };
@@ -94,9 +93,7 @@ exports.getManyCampaignsStats = async (campaignIds, ownerId) => {
     where: { id: { in: campaignIds }, ownerId },
     select: {
       id: true,
-      total: true,
-      sent: true,
-      failed: true
+      total: true
     }
   });
 
@@ -110,17 +107,23 @@ exports.getManyCampaignsStats = async (campaignIds, ownerId) => {
   // Create a map for quick lookup
   const conversionsMap = new Map(conversions.map(c => [c.campaignId, c._count._all]));
 
-  // Shape into per-campaign summary with rates
-  const out = campaigns.map(c => {
+  const { computeCampaignMetrics } = require('./campaignMetrics.service');
+  const metricsList = await Promise.all(
+    campaigns.map(c => computeCampaignMetrics({ campaignId: c.id, ownerId }))
+  );
+
+  // Shape into per-campaign summary with rates (delivered as "sent" for backward compatibility)
+  const out = campaigns.map((c, idx) => {
+    const m = metricsList[idx];
     const conversionsCount = conversionsMap.get(c.id) || 0;
     return {
       campaignId: c.id,
-      total: c.total,
-      sent: c.sent,
-      failed: c.failed,
+      total: m.total,
+      sent: m.delivered,
+      failed: m.deliveryFailed,
       conversions: conversionsCount,
-      failureRate: rate(c.failed, c.sent),
-      conversionRate: rate(conversionsCount, c.sent) // Conversion rate = conversions / sent
+      failureRate: rate(m.deliveryFailed, m.delivered || 1),
+      conversionRate: rate(conversionsCount, m.delivered || 1)
     };
   });
 

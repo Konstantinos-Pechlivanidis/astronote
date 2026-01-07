@@ -8,7 +8,6 @@ export interface SmsInPhonePreviewProps {
   variant?: 'retail' | 'shopify';
   senderName?: string;
   message: string;
-  timestampLabel?: string;
   showCounts?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -22,7 +21,6 @@ export function SmsInPhonePreview({
   variant = 'retail',
   senderName = 'Astronote',
   message,
-  timestampLabel = 'Now',
   showCounts = true,
   size = 'md',
 }: SmsInPhonePreviewProps) {
@@ -98,7 +96,6 @@ export function SmsInPhonePreview({
             <div className="text-[11px] text-text-tertiary">Messages</div>
           </div>
         </div>
-        <div className="text-[11px] text-text-tertiary shrink-0">{timestampLabel}</div>
       </div>
 
       {/* Conversation Area (scrollable inside screen) */}
@@ -126,7 +123,7 @@ export function SmsInPhonePreview({
                     boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08), 0 0.5px 1px rgba(0, 0, 0, 0.04)',
                   }}
                 >
-                  <p className="whitespace-pre-wrap break-words text-[15px] leading-[1.4] text-text-primary">
+                  <p className="whitespace-pre-wrap break-words text-[15px] leading-[1.4] text-text-primary p-1">
                     {message.split(urlRegex).map((part, idx) => {
                       if (urls.includes(part)) {
                         return (

@@ -55,6 +55,9 @@ model User {
   offerViewEvents   OfferViewEvent[]
   automationMessages AutomationMessage[]
   automationRedemptions AutomationRedemption[]
+  publicLinkTokens PublicLinkToken[] @relation("PublicLinkTokenOwner")
+  retailBranding  RetailBranding? @relation("RetailBrandingOwner")
+  publicSignupEvents PublicSignupEvent[] @relation("PublicSignupEventOwner")
 
   @@index([stripeCustomerId])
   @@index([stripeSubscriptionId])
@@ -97,6 +100,13 @@ model Contact {
   birthday  DateTime? // For age calculation
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  gdprConsentAt      DateTime?
+  gdprConsentSource  String?   @db.VarChar(80)
+  gdprConsentVersion String?   @db.VarChar(80)
+  smsConsentStatus   String?   @db.VarChar(40)
+  smsConsentAt       DateTime?
+  smsConsentSource   String?   @db.VarChar(80)
+  consentEvidence    Json?
 
   // subscription state
   isSubscribed         Boolean   @default(true)
@@ -238,12 +248,16 @@ model Campaign {
   scheduledAt DateTime?
   startedAt   DateTime?
   finishedAt  DateTime?
+  deliverySlaSeconds  Int?
+  deliveryCompletedAt DateTime?
+  lastDeliverySweepAt DateTime?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   total       Int            @default(0)
   sent        Int            @default(0) // Actually sent (status='sent') - Phase 2.2
   failed      Int            @default(0)
   processed   Int?           // Processed = sent + failed (Phase 2.2, optional, can be calculated)
+  conversions Int            @default(0)
 
   createdById Int
   createdBy   User @relation(name: "CampaignCreator", fields: [createdById], references: [id], onDelete: Restrict)
@@ -252,6 +266,7 @@ model Campaign {
   nfcTags          NfcTag[]
   conversionEvents ConversionEvent[]
   offerViewEvents  OfferViewEvent[]
+  shortLinks       ShortLink[]
 
   @@index([status])
   @@index([scheduledAt])
@@ -264,7 +279,14 @@ model Campaign {
 
 enum MessageStatus {
   queued
+  processing
   sent
+  failed
+}
+
+enum BillingStatus {
+  pending
+  paid
   failed
 }
 
@@ -287,6 +309,8 @@ model CampaignMessage {
   trackingId String @unique // unique QR/link id per message
 
   status MessageStatus @default(queued)
+  sendClaimedAt   DateTime?
+  sendClaimToken  String?
 
   providerMessageId String?
   bulkId            String?  // Mitto bulkId for batch tracking
@@ -294,11 +318,19 @@ model CampaignMessage {
   retryCount        Int      @default(0)  // Track retry attempts for idempotency
   createdAt         DateTime  @default(now())
   sentAt            DateTime?
+  acceptedAt        DateTime?
   failedAt          DateTime?
+  deliveryStatus    String?
+  deliveredAt       DateTime?
+  deliveryLastCheckedAt DateTime?
+  billingStatus     BillingStatus?
+  billingError      String?
+  billedAt          DateTime?
 
   redemption       Redemption?
   conversionEvents ConversionEvent[]
   offerViewEvents  OfferViewEvent[]
+  shortLinks       ShortLink[]
 
   @@index([campaignId])
   @@index([contactId])
@@ -310,6 +342,83 @@ model CampaignMessage {
   @@index([failedAt])
   @@index([ownerId, campaignId]) // Composite for common query pattern
   @@index([ownerId, status]) // Composite for filtered status queries
+  @@index([sendClaimToken])
+  @@index([sendClaimedAt])
+  @@index([deliveryStatus])
+  @@index([billingStatus])
+}
+
+model ShortLink {
+  id            Int       @id @default(autoincrement())
+  shortCode     String    @unique
+  kind          String?
+  targetUrl     String    @db.Text
+  originalUrl   String    @db.Text
+  ownerId       Int?
+  campaignId    Int?
+  campaignMessageId Int?
+  createdAt     DateTime  @default(now())
+  clickCount    Int       @default(0)
+  lastClickedAt DateTime?
+
+  campaign        Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignMessage CampaignMessage? @relation(fields: [campaignMessageId], references: [id], onDelete: SetNull)
+
+  @@index([shortCode])
+  @@index([ownerId])
+  @@index([campaignId])
+  @@index([campaignMessageId])
+}
+
+model PublicLinkToken {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int
+  token     String   @unique
+  type      String   @default("signup")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  rotatedAt DateTime?
+  lastUsedAt DateTime?
+
+  owner User @relation("PublicLinkTokenOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  signupEvents PublicSignupEvent[] @relation("PublicSignupEventToken")
+
+  @@index([ownerId])
+  @@index([type, isActive])
+}
+
+model RetailBranding {
+  id          Int      @id @default(autoincrement())
+  ownerId     Int      @unique
+  storeName   String
+  logoUrl     String?  @db.Text
+  primaryColor String?
+  accentColor  String?
+  headline     String?
+  benefits     Json?
+  privacyUrl   String?  @db.Text
+  termsUrl     String?  @db.Text
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  owner User @relation("RetailBrandingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model PublicSignupEvent {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int
+  tokenId   Int
+  contactId Int?
+  ip        String?  @db.VarChar(45)
+  userAgent String?  @db.VarChar(500)
+  createdAt DateTime @default(now())
+  meta      Json?
+
+  token PublicLinkToken @relation("PublicSignupEventToken", fields: [tokenId], references: [id], onDelete: Cascade)
+  owner User @relation("PublicSignupEventOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([tokenId, createdAt])
+  @@index([ownerId, createdAt])
 }
 
 model Redemption {

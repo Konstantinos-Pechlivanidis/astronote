@@ -1,11 +1,14 @@
 // apps/api/src/server.js
-// Environment is loaded by config/env.js (which uses loadEnv.js)
+// Environment is loaded at startup for both local dev and spawned workers
+const loadEnv = require('./config/loadEnv');
+loadEnv();
 
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const pinoHttp = require('pino-http');
+const crypto = require('crypto');
 
 // ---- Create app ----
 const app = express();
@@ -29,6 +32,25 @@ app.use(
   })
 );
 
+// ---- Log DB target (sanitized) ----
+try {
+  const dbUrl = process.env.DATABASE_URL || '';
+  if (dbUrl) {
+    const parsed = new URL(dbUrl);
+    const dbInfo = {
+      host: parsed.hostname,
+      port: parsed.port,
+      database: parsed.pathname.replace(/^\//, '') || 'unknown',
+      hash: crypto.createHash('sha256').update(dbUrl).digest('hex').slice(0, 8),
+    };
+    console.log('[DB] API using database', dbInfo);
+  } else {
+    console.warn('[DB] DATABASE_URL not set');
+  }
+} catch (err) {
+  console.warn('[DB] Failed to parse DATABASE_URL', err?.message);
+}
+
 // ---- Security headers ----
 app.use(
   helmet({
@@ -44,8 +66,8 @@ const allowlist = (process.env.CORS_ALLOWLIST || '')
   .filter(Boolean);
 
 // Add default retail frontend URL if not in allowlist
-const defaultRetailFrontend = 'https://astronote.onrender.com';
-// const defaultRetailFrontend = 'http://localhost:3000';
+// const defaultRetailFrontend = 'https://astronote.onrender.com';
+const defaultRetailFrontend = 'http://localhost:3000';
 if (!allowlist.includes(defaultRetailFrontend) && !allowlist.some(a => defaultRetailFrontend.startsWith(a))) {
   allowlist.push(defaultRetailFrontend);
 }
@@ -191,14 +213,16 @@ app.get('/', (_req, res) => res.json({ status: 'api-ok' }));
 // ========= ROUTES MOUNTING =========
 // Suggest grouping under /api; keep /tracking public
 
-// Public NFC endpoints (before auth)
-app.use('/nfc', require('./routes/nfc'));
-
 // Public conversion endpoints (before auth)
 app.use('/api/conversion', require('./routes/conversion'));
+app.use(require('./routes/publicShort.routes'));
+app.use(require('./routes/publicNfc.routes'));
+app.use(require('./routes/publicJoin.routes.js'));
 
 // Auth (login/register/refresh)
 app.use('/api', require('./routes/auth'));
+app.use('/api', require('./routes/nfc'));
+app.use('/api', require('./routes/publicLinks'));
 
 // Me - Get current user with credits
 const requireAuth = require('./middleware/requireAuth');
@@ -363,6 +387,7 @@ app.use((err, req, res, _next) => {
 // ========= SETUP STATUS REFRESH SCHEDULER =========
 const STATUS_REFRESH_ENABLED = process.env.STATUS_REFRESH_ENABLED !== '0'; // Default: enabled
 const STATUS_REFRESH_INTERVAL = Number(process.env.STATUS_REFRESH_INTERVAL || 600000); // Default: 10 minutes (600000ms)
+const CAMPAIGN_RECONCILE_INTERVAL = Number(process.env.CAMPAIGN_RECONCILE_INTERVAL_MS || 300000); // 5 minutes default
 
 if (STATUS_REFRESH_ENABLED && process.env.QUEUE_DISABLED !== '1') {
   const statusRefreshQueue = require('./queues/statusRefresh.queue');
@@ -382,6 +407,61 @@ if (STATUS_REFRESH_ENABLED && process.env.QUEUE_DISABLED !== '1') {
       console.log(`[Status Refresh] Scheduled periodic refresh every ${STATUS_REFRESH_INTERVAL / 1000 / 60} minutes`);
     }).catch(err => {
       console.error('[Status Refresh] Failed to schedule periodic refresh:', err.message);
+    });
+
+    // Add repeatable job to refresh missing delivery statuses (webhook fallback)
+    const deliveryRefreshInterval = Number(process.env.STATUS_REFRESH_DELIVERY_INTERVAL_MS || 60000); // default 60s
+    statusRefreshQueue.add(
+      'refreshMissingDeliveryStatuses',
+      { limit: 50, olderThanSeconds: 60 },
+      {
+        repeat: {
+          every: deliveryRefreshInterval,
+          immediately: false
+        },
+        jobId: 'delivery-refresh-periodic'
+      }
+    ).then(() => {
+      console.log(`[Status Refresh] Scheduled delivery refresh every ${Math.round(deliveryRefreshInterval / 1000)} seconds`);
+    }).catch(err => {
+      console.error('[Status Refresh] Failed to schedule delivery refresh:', err.message);
+    });
+  }
+}
+
+// ========= CAMPAIGN STATUS RECONCILE =========
+if (process.env.QUEUE_DISABLED !== '1') {
+  const reconcile = async () => {
+    try {
+      const { recalculateAllCampaignAggregates } = require('./services/campaignAggregates.service');
+      // For all owners; could be optimized per owner if needed
+      await recalculateAllCampaignAggregates(undefined);
+    } catch (err) {
+      console.error('[Campaign Reconcile] failed:', err.message);
+    }
+  };
+  setInterval(reconcile, CAMPAIGN_RECONCILE_INTERVAL).unref();
+}
+
+// ========= SCHEDULED CAMPAIGN SWEEPER =========
+const SCHEDULE_SWEEP_INTERVAL = Number(process.env.SCHEDULE_SWEEP_INTERVAL_MS || 60000); // default: 60s
+if (process.env.QUEUE_DISABLED !== '1') {
+  const schedulerQueue = require('./queues/scheduler.queue');
+  if (schedulerQueue) {
+    schedulerQueue.add(
+      'sweepDueCampaigns',
+      {},
+      {
+        repeat: {
+          every: SCHEDULE_SWEEP_INTERVAL,
+          immediately: true
+        },
+        jobId: 'scheduled-campaign-sweeper'
+      }
+    ).then(() => {
+      console.log(`[Scheduler] Sweep job scheduled every ${Math.round(SCHEDULE_SWEEP_INTERVAL / 1000)}s`);
+    }).catch(err => {
+      console.error('[Scheduler] Failed to schedule sweep job:', err.message);
     });
   }
 }

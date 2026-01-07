@@ -1,0 +1,47 @@
+const express = require('express');
+const prisma = require('../lib/prisma');
+const { rateLimitByIp } = require('../services/rateLimiter.service');
+const pino = require('pino');
+
+const logger = pino({ name: 'public-short-route' });
+const router = express.Router();
+const shortLimiter = { points: 60, duration: 60 };
+
+function isValidShortCode(code) {
+  return /^[A-Za-z0-9_-]{4,64}$/.test(code || '');
+}
+
+// GET /public/s/:shortCode -> redirects (302) to targetUrl and increments counters
+router.get('/public/s/:shortCode', rateLimitByIp(shortLimiter), async (req, res, next) => {
+  try {
+    const { shortCode } = req.params;
+    if (!shortCode || !isValidShortCode(shortCode)) {
+      return res.status(400).json({ message: 'shortCode required', code: 'VALIDATION_ERROR' });
+    }
+
+    const link = await prisma.shortLink.findUnique({ where: { shortCode } });
+    if (!link) {
+      return res.status(404).json({ message: 'Short link not found', code: 'NOT_FOUND' });
+    }
+
+    await prisma.shortLink.update({
+      where: { shortCode },
+      data: {
+        clickCount: { increment: 1 },
+        lastClickedAt: new Date()
+      }
+    });
+
+    const target = link.targetUrl || link.originalUrl;
+    if (!target) {
+      logger.warn({ shortCode }, 'Short link missing targetUrl/originalUrl');
+      return res.status(404).json({ message: 'Short link not found', code: 'NOT_FOUND' });
+    }
+
+    return res.redirect(302, target);
+  } catch (e) {
+    next(e);
+  }
+});
+
+module.exports = router;

@@ -1,5 +1,7 @@
 // apps/api/src/services/urlShortener.service.js
 const crypto = require('node:crypto');
+const { nanoid } = require('nanoid');
+const prisma = require('../lib/prisma');
 const pino = require('pino');
 
 const logger = pino({ name: 'url-shortener-service' });
@@ -13,21 +15,19 @@ const logger = pino({ name: 'url-shortener-service' });
  */
 
 const SHORTENER_TYPE = process.env.URL_SHORTENER_TYPE || 'custom'; // 'custom', 'bitly', 'tinyurl', 'none'
-const SHORTENER_BASE_URL = process.env.URL_SHORTENER_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
+const SHORTENER_BASE_URL =
+  process.env.PUBLIC_RETAIL_BASE_URL ||
+  process.env.PUBLIC_WEB_BASE_URL ||
+  process.env.URL_SHORTENER_BASE_URL ||
+  process.env.FRONTEND_URL ||
+  'https://astronote-retail-frontend.onrender.com';
 const BITLY_API_TOKEN = process.env.BITLY_API_TOKEN;
 const TINYURL_API_KEY = process.env.TINYURL_API_KEY;
 
 // Helper function to ensure base URL includes /retail path
-function ensureRetailPath(url) {
-  if (!url) {
-    return url;
-  }
-  const trimmed = url.trim().replace(/\/$/, ''); // Remove trailing slash
-  // If URL doesn't end with /retail, add it
-  if (!trimmed.endsWith('/retail')) {
-    return `${trimmed}/retail`;
-  }
-  return trimmed;
+function normalizeBase(url) {
+  if (!url) return '';
+  return url.trim().replace(/\/$/, '');
 }
 
 /**
@@ -35,12 +35,8 @@ function ensureRetailPath(url) {
  * @param {string} originalUrl - Original URL to shorten
  * @returns {string} Short code (base64url encoded hash)
  */
-function generateShortCode(originalUrl) {
-  // Create a hash of the URL for consistent short codes
-  const hash = crypto.createHash('sha256').update(originalUrl).digest('hex');
-  // Use first 8 characters of hash, encode to base64url for URL safety
-  const shortCode = Buffer.from(hash.substring(0, 8), 'hex').toString('base64url').substring(0, 8);
-  return shortCode;
+function generateShortCode() {
+  return nanoid(8);
 }
 
 /**
@@ -48,12 +44,33 @@ function generateShortCode(originalUrl) {
  * @param {string} originalUrl - Original URL to shorten
  * @returns {string} Shortened URL
  */
-function shortenCustom(originalUrl) {
+async function shortenCustom(originalUrl, opts = {}) {
   try {
-    const shortCode = generateShortCode(originalUrl);
-    // Ensure base URL includes /retail path and doesn't have trailing slash
-    const baseUrl = ensureRetailPath(SHORTENER_BASE_URL).replace(/\/$/, '');
-    return `${baseUrl}/s/${shortCode}`;
+    const shortCode = generateShortCode();
+    const baseUrl = normalizeBase(SHORTENER_BASE_URL);
+    const shortUrl = `${baseUrl}/s/${shortCode}`;
+
+    // Persist mapping
+    await prisma.shortLink.upsert({
+      where: { shortCode },
+      update: {
+        originalUrl,
+        targetUrl: opts.targetUrl || originalUrl,
+        kind: opts.kind || null,
+        ownerId: opts.ownerId || null,
+        campaignId: opts.campaignId || null
+      },
+      create: {
+        shortCode,
+        originalUrl,
+        targetUrl: opts.targetUrl || originalUrl,
+        kind: opts.kind || null,
+        ownerId: opts.ownerId || null,
+        campaignId: opts.campaignId || null
+      }
+    });
+
+    return shortUrl;
   } catch (error) {
     logger.warn({ err: error.message, originalUrl }, 'Failed to generate custom short URL');
     return originalUrl; // Fallback to original
@@ -137,7 +154,7 @@ async function shortenTinyURL(originalUrl) {
  * @param {string} originalUrl - Original URL to shorten
  * @returns {Promise<string>} Shortened URL (or original if shortening disabled/failed)
  */
-async function shortenUrl(originalUrl) {
+async function shortenUrl(originalUrl, opts = {}) {
   if (!originalUrl || typeof originalUrl !== 'string') {
     return originalUrl;
   }
@@ -160,7 +177,7 @@ async function shortenUrl(originalUrl) {
         return await shortenTinyURL(originalUrl);
       case 'custom':
       default:
-        return shortenCustom(originalUrl);
+        return shortenCustom(originalUrl, opts);
     }
   } catch (error) {
     logger.error({ err: error.message, originalUrl, type: SHORTENER_TYPE }, 'URL shortening failed, using original');
@@ -233,4 +250,3 @@ module.exports = {
   shortenUrlsInText,
   shortenMessageUrls,
 };
-

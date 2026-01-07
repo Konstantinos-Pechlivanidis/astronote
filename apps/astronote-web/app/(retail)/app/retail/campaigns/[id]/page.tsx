@@ -9,12 +9,14 @@ import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Send, Eye, BarChart3, XCircle } from 'lucide-react';
 import { useEnqueueCampaign } from '@/src/features/retail/campaigns/hooks/useEnqueueCampaign';
 import { useBillingGate } from '@/src/features/retail/billing/hooks/useBillingGate';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import Link from 'next/link';
+import { useRef } from 'react';
+import { toast } from 'sonner';
 
 function MessagePreviewModal({
   open,
@@ -86,19 +88,58 @@ function CampaignActions({
   const enqueueMutation = useEnqueueCampaign();
   const [enqueueConfirm, setEnqueueConfirm] = useState(false);
   const [isEnqueuing, setIsEnqueuing] = useState(false);
+  const [enqueueResult, setEnqueueResult] = useState<{ queued?: number; enqueuedJobs?: number } | null>(null);
+  const [enqueueError, setEnqueueError] = useState<string | null>(null);
+  const enqueueOpenRef = useRef(enqueueConfirm);
+
+  useEffect(() => {
+    enqueueOpenRef.current = enqueueConfirm;
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.log('[SEND CLICK] confirmation dialog open change', { open: enqueueConfirm });
+    }
+  }, [enqueueConfirm]);
+
+  // Dev-only instrumentation to detect click blockers and overlay targets
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (process.env.NODE_ENV === 'production') return;
+    if ((window as any).__ASTRONOTE_DEBUG_DIALOG_LISTENER__) return;
+    (window as any).__ASTRONOTE_DEBUG_DIALOG_LISTENER__ = true;
+
+    const handler = (e: MouseEvent) => {
+      const centerEl = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+      const path = (e.composedPath ? e.composedPath() : []).slice(0, 8);
+      // eslint-disable-next-line no-console
+      console.log('[DIALOG DEBUG] click target=', e.target);
+      // eslint-disable-next-line no-console
+      console.log('[DIALOG DEBUG] path=', path);
+      // eslint-disable-next-line no-console
+      console.log('[DIALOG DEBUG] elementFromPoint(center)=', centerEl);
+    };
+
+    window.addEventListener('click', handler, true);
+    return () => window.removeEventListener('click', handler, true);
+  }, []);
 
   const canEnqueue =
-    ['draft', 'scheduled', 'paused'].includes(campaign.status) &&
+    ['draft', 'paused'].includes(campaign.status) &&
     !enqueueMutation.isPending &&
     !isEnqueuing;
   const canEdit = ['draft', 'scheduled'].includes(campaign.status);
   const subscriptionInactive = !billingGate.canSendCampaigns;
+  const isScheduled = campaign.status === 'scheduled' || !!campaign.scheduledAt;
 
   const handleEnqueue = () => {
     // eslint-disable-next-line no-console
     if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
       console.log('[SEND CLICK] handleEnqueue called', { subscriptionInactive, campaignId: campaign.id });
+      console.log('[SEND CLICK] before setEnqueueConfirm', enqueueConfirm);
+    }
+    if (isScheduled) {
+      toast.info('This campaign is scheduled. Edit the campaign to send now or change the schedule.');
+      return;
     }
     if (subscriptionInactive) {
       // eslint-disable-next-line no-console
@@ -113,10 +154,24 @@ function CampaignActions({
       // eslint-disable-next-line no-console
       console.log('[SEND CLICK] Opening confirmation dialog');
     }
-    setEnqueueConfirm(true);
+    setEnqueueError(null);
+    setEnqueueResult(null);
+    setEnqueueConfirm((prev) => {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('[SEND CLICK] setEnqueueConfirm updater', { prev, next: true });
+      }
+      return true;
+    });
+    setTimeout(() => {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('[SEND CLICK] after setEnqueueConfirm timeout', { current: enqueueOpenRef.current });
+      }
+    }, 0);
   };
 
-  const handleConfirmEnqueue = () => {
+  const handleConfirmEnqueue = async () => {
     // eslint-disable-next-line no-console
     if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
@@ -131,36 +186,41 @@ function CampaignActions({
       return;
     }
 
-    setEnqueueConfirm(false);
     setIsEnqueuing(true);
+    setEnqueueError(null);
+    setEnqueueResult(null);
+    setEnqueueConfirm(false);
 
-    // eslint-disable-next-line no-console
     if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
       console.log('[SEND CLICK] Calling mutation', { id: campaign.id, status: campaign.status });
+      // eslint-disable-next-line no-console
+      console.log('[SEND CLICK] Enqueue start');
     }
 
-    enqueueMutation.mutate(
-      { id: campaign.id, status: campaign.status },
-      {
-        onSuccess: (data) => {
-          // eslint-disable-next-line no-console
-          if (process.env.NODE_ENV !== 'production') {
-            // eslint-disable-next-line no-console
-            console.log('[SEND CLICK] Mutation success', data);
-          }
-          setIsEnqueuing(false);
-        },
-        onError: (error) => {
-          // eslint-disable-next-line no-console
-          if (process.env.NODE_ENV !== 'production') {
-            // eslint-disable-next-line no-console
-            console.error('[SEND CLICK] Mutation error', error);
-          }
-          setIsEnqueuing(false);
-        },
-      },
-    );
+    try {
+      const data = await enqueueMutation.mutateAsync({ id: campaign.id, status: campaign.status });
+      // eslint-disable-next-line no-console
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('[SEND CLICK] Mutation success', data);
+      }
+      setEnqueueResult(data || null);
+    } catch (error: any) {
+      // eslint-disable-next-line no-console
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.error('[SEND CLICK] Mutation error', error);
+      }
+      const message = error?.response?.data?.message || error?.message || 'Failed to enqueue campaign';
+      setEnqueueError(message);
+    } finally {
+      setIsEnqueuing(false);
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log('[SEND CLICK] Enqueue finished');
+      }
+    }
   };
 
   return (
@@ -184,15 +244,17 @@ function CampaignActions({
             e.stopPropagation();
             handleEnqueue();
           }}
-          disabled={subscriptionInactive || isEnqueuing || enqueueMutation.isPending || !canEnqueue}
+          disabled={subscriptionInactive || isEnqueuing || enqueueMutation.isPending || !canEnqueue || isScheduled}
           title={
-            subscriptionInactive
-              ? 'Active subscription required to send campaigns. Please subscribe in Billing.'
-              : !canEnqueue
-                ? 'Campaign is already being sent'
-                : isEnqueuing || enqueueMutation.isPending
-                  ? 'Sending campaign...'
-                  : 'Send this campaign'
+            isScheduled
+              ? 'This campaign is scheduled. Edit to send now or change schedule.'
+              : subscriptionInactive
+                ? 'Active subscription required to send campaigns. Please subscribe in Billing.'
+                : !canEnqueue
+                  ? 'Campaign is already being sent'
+                  : isEnqueuing || enqueueMutation.isPending
+                    ? 'Sending campaign...'
+                    : 'Send this campaign'
           }
           aria-label="Send campaign"
           type="button"
@@ -229,6 +291,26 @@ function CampaignActions({
         )}
       </div>
 
+      {(isEnqueuing || enqueueMutation.isPending || enqueueResult || enqueueError) && (
+        <div className="mt-2 space-y-1">
+          {(isEnqueuing || enqueueMutation.isPending) && (
+            <p className="text-sm text-text-secondary">Enqueue request in progress...</p>
+          )}
+          {enqueueResult && (
+            <p className="text-sm text-text-secondary">
+              Last enqueue: queued {enqueueResult.queued ?? 0} message{(enqueueResult.queued ?? 0) === 1 ? '' : 's'}
+              {typeof enqueueResult.enqueuedJobs === 'number'
+                ? ` (${enqueueResult.enqueuedJobs} jobs enqueued)`
+                : ''}
+              .
+            </p>
+          )}
+          {enqueueError && (
+            <p className="text-sm text-red-400">Last enqueue failed: {enqueueError}</p>
+          )}
+        </div>
+      )}
+
       {subscriptionInactive && canEnqueue && (
         <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
           <div className="flex items-center gap-2">
@@ -248,9 +330,28 @@ function CampaignActions({
         </div>
       )}
 
+      {isScheduled && (
+        <div className="mt-4 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-amber-400" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-400">
+                This campaign is scheduled. Edit the campaign to send now or change the schedule.
+              </p>
+              <p className="text-xs text-amber-400/80 mt-1">
+                <Link href={`/app/retail/campaigns/${campaign.id}/edit`} className="underline">
+                  Edit campaign
+                </Link>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         open={enqueueConfirm}
         onClose={() => setEnqueueConfirm(false)}
+        onOpenChange={setEnqueueConfirm}
         onConfirm={handleConfirmEnqueue}
         title="Send Campaign"
         message={
@@ -258,8 +359,10 @@ function CampaignActions({
             ? `This will send the campaign to ${campaign.total.toLocaleString()} recipients. Continue?`
             : 'This will send the campaign. Continue?'
         }
-        confirmText="Send"
+        confirmText="Send now"
         cancelText="Cancel"
+        confirmDisabled={isEnqueuing || enqueueMutation.isPending}
+        confirmLoading={isEnqueuing || enqueueMutation.isPending}
       />
     </>
   );
@@ -427,4 +530,3 @@ export default function CampaignDetailPage() {
     </RetailPageLayout>
   );
 }
-

@@ -9,7 +9,18 @@ export function useCampaignStats(id: number) {
       return res.data;
     },
     enabled: !!id,
-    staleTime: 30 * 1000, // 30 seconds
+    refetchInterval: (query) => {
+      const data = query.state.data as any;
+      if (!data) return false;
+      const metrics = data.metrics || {};
+      const queued = metrics.queued || 0;
+      const pending = metrics.pendingDelivery || 0;
+      const status = data.campaign?.status;
+      if (status === 'sending' || queued > 0 || pending > 0) {
+        return 3000; // poll every 3s while work remains
+      }
+      return false;
+    },
+    staleTime: 0,
   });
 }
-

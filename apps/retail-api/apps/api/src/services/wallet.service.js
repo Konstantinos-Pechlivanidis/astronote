@@ -96,6 +96,29 @@ exports.debit = async (ownerId, amount, opts = {}, tx = null) => {
 };
 
 /**
+ * Idempotent debit by messageId (or other idempotency key via opts.idempotencyKey).
+ * If a debit for the same owner/type/messageId already exists, returns it without a new charge.
+ */
+exports.debitOnce = async (ownerId, amount, opts = {}) => {
+  if (!Number.isInteger(amount) || amount <= 0) {throw new Error('INVALID_AMOUNT');}
+  const messageId = opts.messageId;
+  const reasonKey = opts.idempotencyKey || messageId;
+
+  return prisma.$transaction(async (tx) => {
+    if (reasonKey) {
+      const existing = await tx.creditTransaction.findFirst({
+        where: { ownerId, type: 'debit', messageId: messageId || undefined }
+      });
+      if (existing) {
+        logger.info({ ownerId, messageId, txnId: existing.id }, 'Skipped duplicate debit (idempotent)');
+        return { balance: existing.balanceAfter, txn: existing, reused: true };
+      }
+    }
+    return appendTxnAndUpdate(ownerId, -amount, 'debit', opts, tx);
+  });
+};
+
+/**
  * Refund (give back). Positive amount.
  * Can be used within an existing transaction by passing tx parameter.
  */

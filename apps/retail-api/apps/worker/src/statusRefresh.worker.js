@@ -1,5 +1,6 @@
 // apps/worker/src/statusRefresh.worker.js
-require('dotenv').config();
+const loadEnv = require('../../api/src/config/loadEnv');
+loadEnv();
 
 const pino = require('pino');
 const logger = pino({ name: 'status-refresh-worker' });
@@ -12,7 +13,7 @@ if (process.env.QUEUE_DISABLED === '1') {
 // Dependencies are resolved from apps/api/node_modules because worker runs with cwd=apps/api
 const { Worker } = require('bullmq');
 const { getRedisClient } = require('../../api/src/lib/redis');
-const { refreshPendingStatuses } = require('../../api/src/services/statusRefresh.service');
+const { refreshPendingStatuses, refreshMissingDeliveryStatuses } = require('../../api/src/services/statusRefresh.service');
 
 const connection = getRedisClient();
 
@@ -30,23 +31,35 @@ const concurrency = Number(process.env.STATUS_REFRESH_CONCURRENCY || 1);
 const worker = new Worker(
   'statusRefreshQueue',
   async (job) => {
-    if (job.name !== 'refreshPendingStatuses') return;
-    
-    const { limit = 50 } = job.data || {};
-    
+    const { limit = 50, olderThanSeconds = 60 } = job.data || {};
+
     try {
-      const result = await refreshPendingStatuses(limit);
-      logger.info({ 
-        limit, 
-        refreshed: result.refreshed, 
-        updated: result.updated, 
-        errors: result.errors,
-        campaignsUpdated: result.campaignsUpdated 
-      }, 'Status refresh job completed');
-      
-      return result;
+      if (job.name === 'refreshPendingStatuses') {
+        const result = await refreshPendingStatuses(limit);
+        logger.info({ 
+          limit, 
+          refreshed: result.refreshed, 
+          updated: result.updated, 
+          errors: result.errors,
+          campaignsUpdated: result.campaignsUpdated 
+        }, 'Status refresh job completed');
+        return result;
+      }
+
+      if (job.name === 'refreshMissingDeliveryStatuses') {
+        const result = await refreshMissingDeliveryStatuses(limit, olderThanSeconds);
+        logger.info({
+          limit,
+          olderThanSeconds,
+          refreshed: result.refreshed,
+          updated: result.updated,
+          errors: result.errors,
+          campaignsUpdated: result.campaignsUpdated
+        }, 'Delivery refresh job completed');
+        return result;
+      }
     } catch (err) {
-      logger.error({ limit, err: err.message }, 'Status refresh job failed');
+      logger.error({ limit, err: err.message, jobName: job.name }, 'Status refresh job failed');
       throw err; // Let BullMQ handle retries
     }
   },
@@ -69,4 +82,3 @@ process.on('SIGINT', async () => {
   await worker.close();
   process.exit(0);
 });
-

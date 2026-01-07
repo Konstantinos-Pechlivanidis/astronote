@@ -8,6 +8,8 @@ import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
+import { useNfcLink, useRotateNfcLink } from '@/src/features/retail/settings/hooks/useNfcLink';
+import { useEffect } from 'react';
 
 function SettingsSkeleton() {
   return (
@@ -44,6 +46,14 @@ function SettingsSkeleton() {
 
 export default function SettingsPage() {
   const { data: user, isLoading, error, refetch } = useMe();
+  const { data: nfc, refetch: refetchNfc } = useNfcLink();
+  const rotateNfc = useRotateNfcLink();
+
+  useEffect(() => {
+    if (rotateNfc.isSuccess) {
+      refetchNfc();
+    }
+  }, [rotateNfc.isSuccess, refetchNfc]);
 
   return (
     <RetailPageLayout>
@@ -91,6 +101,38 @@ export default function SettingsPage() {
             <div className="lg:col-span-1">
               <div className="sticky top-6">
                 <BillingSummaryCard />
+                <RetailCard className="mt-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-text-secondary">NFC Link</p>
+                      <p className="text-base font-medium text-text-primary">Customer Login</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => rotateNfc.mutate()}
+                      disabled={rotateNfc.isPending}
+                    >
+                      Rotate
+                    </Button>
+                  </div>
+                  <div className="rounded-md border border-border bg-surface-light p-3 text-sm break-all">
+                    {nfc?.nfcUrl || '—'}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (nfc?.nfcUrl) navigator.clipboard?.writeText(nfc.nfcUrl);
+                      }}
+                      className="w-full"
+                    >
+                      Copy link
+                    </Button>
+                  </div>
+                </RetailCard>
               </div>
             </div>
           </div>

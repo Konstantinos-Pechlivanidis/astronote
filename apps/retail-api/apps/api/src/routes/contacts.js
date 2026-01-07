@@ -464,6 +464,81 @@ router.delete(
  * Token encodes contactId and storeId - unsubscribe is scoped to store
  * Idempotent: always returns success to avoid leaking existence.
  * --------------------------------------------------------- */
+async function handleUnsubscribe(req, res, next) {
+  try {
+    const token = req.body?.token || req.params?.token || req.query?.token || '';
+    if (!token) {
+      return res.status(400).json({ 
+        message: 'Token is required', 
+        code: 'VALIDATION_ERROR' 
+      });
+    }
+
+    // Verify and decode token
+    const { verifyUnsubscribeToken } = require('../services/token.service');
+    const decoded = verifyUnsubscribeToken(token);
+
+    if (!decoded) {
+      // Invalid or expired token - return generic error
+      return res.status(400).json({ 
+        message: 'This unsubscribe link is no longer valid. Please contact the store or try again from a more recent message.',
+        code: 'INVALID_TOKEN'
+      });
+    }
+
+    const { contactId, storeId } = decoded;
+
+    // Find contact and verify it belongs to the store
+    const contact = await prisma.contact.findFirst({
+      where: { 
+        id: contactId,
+        ownerId: storeId,
+        isSubscribed: true 
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            company: true,
+            senderName: true
+          }
+        }
+      }
+    });
+
+    if (!contact) {
+      // Contact not found or already unsubscribed - return success (idempotent)
+      return res.json({ 
+        ok: true,
+        status: 'already_unsubscribed',
+        message: 'You are already unsubscribed or this link is no longer valid.'
+      });
+    }
+
+    // Unsubscribe contact (scoped to this store only)
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: { 
+        isSubscribed: false, 
+        unsubscribedAt: new Date() 
+      }
+    });
+
+    const storeName = contact.owner.company || contact.owner.senderName || 'this store';
+
+    res.json({ 
+      ok: true,
+      status: 'unsubscribed',
+      message: `You are now unsubscribed from SMS messages for ${storeName}.`,
+      storeName
+    });
+  } catch (e) {
+    // Ensure error has proper status for public endpoint
+    if (!e.status) {e.status = 400;}
+    next(e);
+  }
+}
+
 router.post(
   '/contacts/unsubscribe',
   rateLimitByIp(unsubIpLimiter),
@@ -471,78 +546,17 @@ router.post(
     const token = req.body?.token || req.params?.token || '';
     return token.slice(0, 64);
   }),
-  async (req, res, next) => {
-    try {
-      const { token } = req.body || req.params || {};
-      if (!token) {
-        return res.status(400).json({ 
-          message: 'Token is required', 
-          code: 'VALIDATION_ERROR' 
-        });
-      }
+  handleUnsubscribe
+);
 
-      // Verify and decode token
-      const { verifyUnsubscribeToken } = require('../services/token.service');
-      const decoded = verifyUnsubscribeToken(token);
-
-      if (!decoded) {
-        // Invalid or expired token - return generic error
-        return res.status(400).json({ 
-          message: 'This unsubscribe link is no longer valid. Please contact the store or try again from a more recent message.',
-          code: 'INVALID_TOKEN'
-        });
-      }
-
-      const { contactId, storeId } = decoded;
-
-      // Find contact and verify it belongs to the store
-      const contact = await prisma.contact.findFirst({
-        where: { 
-          id: contactId,
-          ownerId: storeId,
-          isSubscribed: true 
-        },
-        include: {
-          owner: {
-            select: {
-              id: true,
-              company: true,
-              senderName: true
-            }
-          }
-        }
-      });
-
-      if (!contact) {
-        // Contact not found or already unsubscribed - return success (idempotent)
-        return res.json({ 
-          ok: true,
-          message: 'You are already unsubscribed or this link is no longer valid.'
-        });
-      }
-
-      // Unsubscribe contact (scoped to this store only)
-      await prisma.contact.update({
-        where: { id: contact.id },
-        data: { 
-          isSubscribed: false, 
-          unsubscribedAt: new Date() 
-        }
-      });
-
-      const storeName = contact.owner.company || contact.owner.senderName || 'this store';
-
-      res.json({ 
-        ok: true,
-        message: `You are now unsubscribed from SMS messages for ${storeName}.`,
-        storeName
-      });
-    } catch (e) {
-      // Ensure error has proper status for public endpoint
-      if (!e.status) {e.status = 400;}
-      next(e);
-    }
-  }
+router.post(
+  '/unsubscribe/:token?',
+  rateLimitByIp(unsubIpLimiter),
+  rateLimitByKey(unsubTokenLimiter, (req) => {
+    const token = req.body?.token || req.params?.token || '';
+    return token.slice(0, 64);
+  }),
+  handleUnsubscribe
 );
 
 /* ---------------------------------------------------------

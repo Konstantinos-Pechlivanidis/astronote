@@ -8,26 +8,31 @@ const pino = require('pino');
 
 const logger = pino({ name: 'campaign-enqueue-service' });
 
-// Helper function to ensure base URL includes /retail path
-function ensureRetailPath(url) {
-  if (!url) {
-    return url;
+function formatRedisInfo(connection) {
+  if (!connection) {
+    return {};
   }
-  const trimmed = url.trim().replace(/\/$/, ''); // Remove trailing slash
-  // If URL doesn't end with /retail, add it
-  if (!trimmed.endsWith('/retail')) {
-    return `${trimmed}/retail`;
-  }
-  return trimmed;
+  const opts = connection.options || connection.opts || connection.connector?.options || {};
+  const host =
+    opts.host ||
+    opts.hostname ||
+    (Array.isArray(opts.servers) ? opts.servers[0]?.host : undefined) ||
+    opts.path ||
+    'unknown';
+  const port = opts.port || (Array.isArray(opts.servers) ? opts.servers[0]?.port : undefined);
+  const db = typeof opts.db === 'number' ? opts.db : undefined;
+  const tls = Boolean(opts.tls);
+
+  return { host, port, db, tls };
 }
 
-// Base URL for unsubscribe links (from env or default)
-const baseFrontendUrl = process.env.UNSUBSCRIBE_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
-const UNSUBSCRIBE_BASE_URL = ensureRetailPath(baseFrontendUrl);
-
-// Base URL for offer links (from env or default)
-const baseOfferUrl = process.env.OFFER_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
-const OFFER_BASE_URL = ensureRetailPath(baseOfferUrl);
+// Base URL for public retail links (canonical)
+const PUBLIC_RETAIL_BASE_URL = (
+  process.env.PUBLIC_RETAIL_BASE_URL ||
+  process.env.PUBLIC_WEB_BASE_URL ||
+  process.env.FRONTEND_URL ||
+  'https://astronote-retail-frontend.onrender.com'
+).replace(/\/$/, '');
 
 function newTrackingId() {
   return crypto.randomBytes(9).toString('base64url');
@@ -43,6 +48,38 @@ exports.enqueueCampaign = async (campaignId) => {
   if (!['draft', 'scheduled', 'paused'].includes(camp.status)) {
     return { ok: false, reason: `invalid_status:${camp.status}`, enqueuedJobs: 0 };
   }
+
+  const initialStatus = camp.status;
+
+  // Ensure queue is available BEFORE heavy work
+  const smsQueueModule = require('../queues/sms.queue');
+  const smsQueue = smsQueueModule?.default || smsQueueModule; // handle CommonJS export
+  if (!smsQueue) {
+    logger.error({ campaignId: camp.id, ownerId: camp.ownerId }, 'SMS queue unavailable (module returned null)');
+    return { ok: false, reason: 'queue_unavailable', enqueuedJobs: 0 };
+  }
+
+  let redisInfo = {};
+  try {
+    if (smsQueueModule.queueReady) {
+      await smsQueueModule.queueReady;
+    } else if (smsQueue.waitUntilReady) {
+      await smsQueue.waitUntilReady();
+    }
+    const connection = smsQueue.opts?.connection || smsQueue.client;
+    redisInfo = formatRedisInfo(connection);
+  } catch (err) {
+    logger.error({ campaignId: camp.id, ownerId: camp.ownerId, err: err.message }, 'SMS queue not ready');
+    return { ok: false, reason: 'queue_unavailable', enqueuedJobs: 0 };
+  }
+
+  logger.info({
+    campaignId: camp.id,
+    ownerId: camp.ownerId,
+    queue: smsQueue.name || 'smsQueue',
+    redis: redisInfo,
+    status: camp.status,
+  }, 'enqueueCampaign called');
 
   // Build audience OUTSIDE transaction (this can be slow with many contacts)
   let contacts = [];
@@ -166,7 +203,7 @@ exports.enqueueCampaign = async (campaignId) => {
     return { ok: false, reason: 'no_message_text', enqueuedJobs: 0 };
   }
   
-  logger.debug({ campaignId: camp.id, contactCount: contacts.length }, 'Generating messages with tracking IDs and links');
+  logger.info({ campaignId: camp.id, contactCount: contacts.length }, '[ENQUEUE] Generating messages with tracking IDs and links');
 
   // Generate messages with offer and unsubscribe links appended
   const messagesData = await Promise.all(contacts.map(async (contact) => {
@@ -178,18 +215,23 @@ exports.enqueueCampaign = async (campaignId) => {
     
     // Generate tracking ID for offer link
     const trackingId = newTrackingId();
-    const offerUrl = `${OFFER_BASE_URL}/o/${trackingId}`;
-    const shortenedOfferUrl = await shortenUrl(offerUrl);
+    const offerUrl = `${PUBLIC_RETAIL_BASE_URL}/o/${trackingId}`;
+    const shortenedOfferUrl = await shortenUrl(offerUrl, {
+      ownerId,
+      campaignId: camp.id,
+      kind: 'offer',
+      targetUrl: offerUrl
+    });
     
     // Generate unsubscribe token
     const unsubscribeToken = generateUnsubscribeToken(contact.id, ownerId, camp.id);
-    const unsubscribeUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-    const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
-    
-    // Append offer link and unsubscribe link to message (with shortened URLs)
-    // Format: [Personalized message]\n\nView offer: {url}\n\nTo unsubscribe, tap: {unsubscribeUrl}
-    messageText += `\n\nView offer: ${shortenedOfferUrl}`;
-    messageText += `\n\nTo unsubscribe, tap: ${shortenedUnsubscribeUrl}`;
+    const unsubscribeUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
+    const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl, {
+      ownerId,
+      campaignId: camp.id,
+      kind: 'unsubscribe',
+      targetUrl: unsubscribeUrl
+    });
     
     return {
       ownerId,
@@ -202,6 +244,7 @@ exports.enqueueCampaign = async (campaignId) => {
     };
   }));
 
+  let createdCount = 0;
   try {
     // For large campaigns (>10k messages), batch the createMany operation
     const BATCH_SIZE = 10000;
@@ -248,6 +291,7 @@ exports.enqueueCampaign = async (campaignId) => {
         timeout: 10000, // 10 seconds for bulk insert (should be fast)
         maxWait: 5000
       });
+      createdCount = messagesData.length;
     }
 
     // Ensure aggregates are updated after message creation (for consistency)
@@ -268,15 +312,25 @@ exports.enqueueCampaign = async (campaignId) => {
     throw e;
   }
 
+  logger.info({
+    campaignId: camp.id,
+    ownerId,
+    createdMessages: messagesData.length,
+    createdCount,
+    statusBefore: initialStatus
+  }, '[ENQUEUE] Messages created');
+
   // 5) Enqueue jobs to Redis (OUTSIDE transaction, non-blocking)
-  const smsQueue = require('../queues/sms.queue');
   const toEnqueue = await prisma.campaignMessage.findMany({
     where: { ownerId, campaignId: camp.id, status: 'queued', providerMessageId: null },
     select: { id: true }
   });
 
+  // Unique run token per enqueue attempt to avoid jobId collisions blocking jobs
+  const runToken = `run:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`;
+
   let enqueuedJobs = 0;
-  if (smsQueue && toEnqueue.length > 0) {
+  if (toEnqueue.length > 0) {
     // Campaigns always use bulk SMS with fixed batch size
     // Mitto's bulk API can handle 1M+ messages, so we use a simple fixed batch size
     // This protects our infrastructure while keeping logic simple and predictable
@@ -288,34 +342,39 @@ exports.enqueueCampaign = async (campaignId) => {
       batches.push(toEnqueue.slice(i, i + BATCH_SIZE).map(m => m.id));
     }
 
+    const jobIds = batches.map((_b, idx) => `campaign:${camp.id}:${runToken}:batch:${idx}`);
     logger.info({ 
       campaignId: camp.id, 
       ownerId: camp.ownerId,
       totalMessages: toEnqueue.length,
       batchCount: batches.length,
-      batchSize: BATCH_SIZE
-    }, 'Enqueuing bulk SMS batch jobs');
+      batchSize: BATCH_SIZE,
+      runToken,
+      jobIds
+    }, '[ENQUEUE JOBS] Adding bulk SMS batch jobs');
 
     // Enqueue batch jobs
-    const enqueuePromises = batches.map((messageIds, batchIndex) => 
-      smsQueue.add('sendBulkSMS', {
+    const enqueuePromises = batches.map((messageIds, batchIndex) => {
+      const jobId = `campaign:${camp.id}:${runToken}:batch:${batchIndex}`;
+      return smsQueue.add('sendBulkSMS', {
         campaignId: camp.id,
         ownerId: camp.ownerId,
         messageIds
       }, { 
-        jobId: `batch:${camp.id}:${Date.now()}:${batchIndex}`,
-        attempts: 5,
+        jobId,
+        attempts: 1,
+        removeOnComplete: true,
         backoff: { type: 'exponential', delay: 3000 }
       })
         .then(() => { 
           enqueuedJobs += messageIds.length; 
-          logger.debug({ campaignId: camp.id, batchIndex, messageCount: messageIds.length }, 'Batch job enqueued');
+          logger.debug({ campaignId: camp.id, batchIndex, messageCount: messageIds.length, jobId }, 'Batch job enqueued');
         })
         .catch(err => {
-          logger.error({ campaignId: camp.id, batchIndex, err: err.message }, 'Failed to enqueue batch job');
+          logger.error({ campaignId: camp.id, batchIndex, jobId, err: err.message }, 'Failed to enqueue batch job');
           // Continue even if some batches fail to enqueue
-        })
-    );
+        });
+    });
     
     // Wait for initial batches (first 10) to ensure some jobs are enqueued
     try {
@@ -331,7 +390,34 @@ exports.enqueueCampaign = async (campaignId) => {
       });
     }
   } else {
-    logger.warn('SMS queue not available — messages created but not enqueued');
+    logger.warn({ campaignId: camp.id, ownerId }, 'No queued messages found to enqueue');
+  }
+
+  if (enqueuedJobs === 0) {
+    logger.error({ campaignId: camp.id, ownerId, queuedCount: toEnqueue.length }, 'No jobs enqueued for campaign');
+    const rollbackData = { status: initialStatus || 'draft', startedAt: null, finishedAt: null, total: 0, sent: 0, failed: 0, processed: null };
+    try {
+      if (toEnqueue.length > 0) {
+        const ids = toEnqueue.map((m) => m.id);
+        await prisma.$transaction([
+          prisma.campaignMessage.deleteMany({
+            where: { id: { in: ids }, ownerId }
+          }),
+          prisma.campaign.updateMany({
+            where: { id: camp.id, ownerId },
+            data: rollbackData
+          })
+        ]);
+      } else {
+        await prisma.campaign.updateMany({
+          where: { id: camp.id, ownerId },
+          data: rollbackData
+        });
+      }
+    } catch (cleanupErr) {
+      logger.error({ campaignId: camp.id, ownerId, err: cleanupErr.message }, 'Failed to rollback after enqueue failure');
+    }
+    return { ok: false, reason: 'enqueue_failed', created: messagesData.length, enqueuedJobs: 0 };
   }
 
     logger.info({ 
@@ -339,7 +425,7 @@ exports.enqueueCampaign = async (campaignId) => {
       ownerId: camp.ownerId, 
       created: messagesData.length, 
       enqueuedJobs 
-    }, 'Campaign enqueued successfully');
+    }, '[ENQUEUE DONE] Campaign enqueued successfully');
 
-    return { ok: true, created: messagesData.length, enqueuedJobs, campaignId: camp.id };
+  return { ok: true, created: messagesData.length, enqueuedJobs, campaignId: camp.id };
 };

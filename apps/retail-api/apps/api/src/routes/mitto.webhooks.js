@@ -139,38 +139,33 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
         }, 'DLR: updating messages');
 
         if (mapped === 'sent') {
-          // Map both "Sent" and "Delivered" from Mitto to "sent" status
-          // We don't track "delivered" separately - only "sent" and "failed"
           const r = await prisma.campaignMessage.updateMany({
             where: { providerMessageId: providerId },
             data: { 
               status: 'sent', 
               sentAt: doneAt,
+              deliveryStatus: statusIn || 'sent',
+              deliveredAt: (statusIn && String(statusIn).toLowerCase().includes('deliv')) ? doneAt : undefined,
               updatedAt: new Date()
             }
           });
           updated += r.count;
           logger.info({ providerId, updated: r.count, originalStatus: statusIn }, 'DLR: marked as sent');
-          // Track affected campaigns
-          msgs.forEach(m => {
-            affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`);
-          });
+          msgs.forEach(m => affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`));
         } else if (mapped === 'failed') {
           const r = await prisma.campaignMessage.updateMany({
             where: { providerMessageId: providerId },
             data: {
               status: 'failed',
               failedAt: doneAt,
+              deliveryStatus: statusIn || 'failed',
               error: errorDesc || 'FAILED_DLR',
               updatedAt: new Date()
             }
           });
           updated += r.count;
           logger.info({ providerId, updated: r.count }, 'DLR: marked as failed');
-          // Track affected campaigns
-          msgs.forEach(m => {
-            affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`);
-          });
+          msgs.forEach(m => affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`));
         } else {
           logger.warn({ providerId, statusIn, mapped }, 'DLR unknown/ignored status');
         }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Plus, Upload, Search } from 'lucide-react';
+import { Plus, Upload, Search, RadioTower } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ interface ContactsToolbarProps {
   search: string
   onSearchChange: (_value: string) => void
   onAddClick: () => void
+  onOpenJoin?: () => void
   listId: number | null
   onListChange: (_listId: number | null) => void
   systemLists: List[]
@@ -26,6 +27,7 @@ export function ContactsToolbar({
   onListChange,
   systemLists,
   isLoadingLists,
+  onOpenJoin,
 }: ContactsToolbarProps) {
   const [localSearch, setLocalSearch] = useState(search);
 
@@ -86,6 +88,12 @@ export function ContactsToolbar({
             <Plus className="w-4 h-4 mr-2" />
             Add Contact
           </Button>
+          {onOpenJoin && (
+            <Button onClick={onOpenJoin} size="sm" variant="outline">
+              <RadioTower className="w-4 h-4 mr-2" />
+              NFC / Share link
+            </Button>
+          )}
         </div>
       </div>
 
@@ -104,4 +112,3 @@ export function ContactsToolbar({
     </div>
   );
 }
-

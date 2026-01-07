@@ -2,30 +2,11 @@
 // Bulk SMS sending service with credit enforcement
 
 const { sendBulkMessages } = require('./mitto.service');
-const { getBalance, debit } = require('./wallet.service');
-const { generateUnsubscribeToken } = require('./token.service');
-const { shortenUrl, shortenUrlsInText } = require('./urlShortener.service');
+const { getBalance, debitOnce } = require('./wallet.service');
 const { isSubscriptionActive } = require('./subscription.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'sms-bulk-service' });
-
-// Helper function to ensure base URL includes /retail path
-function ensureRetailPath(url) {
-  if (!url) {
-    return url;
-  }
-  const trimmed = url.trim().replace(/\/$/, ''); // Remove trailing slash
-  // If URL doesn't end with /retail, add it
-  if (!trimmed.endsWith('/retail')) {
-    return `${trimmed}/retail`;
-  }
-  return trimmed;
-}
-
-// Base URL for unsubscribe links (from env or default)
-const baseFrontendUrl = process.env.UNSUBSCRIBE_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
-const UNSUBSCRIBE_BASE_URL = ensureRetailPath(baseFrontendUrl);
 
 /**
  * Send bulk SMS with credit enforcement
@@ -123,22 +104,6 @@ async function sendBulkSMSWithCredits(messages) {
       continue; // Skip this message
     }
 
-    // Shorten any URLs in the message text first
-    let finalText = await shortenUrlsInText(msg.text);
-
-    // Append unsubscribe link if contactId is provided
-    if (msg.contactId) {
-      try {
-        const unsubscribeToken = generateUnsubscribeToken(msg.contactId, ownerId, msg.meta?.campaignId || null);
-        const unsubscribeUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-        const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
-        finalText += `\n\nTo unsubscribe, tap: ${shortenedUnsubscribeUrl}`;
-      } catch (tokenErr) {
-        logger.warn({ ownerId, contactId: msg.contactId, err: tokenErr.message }, 'Failed to generate unsubscribe token, sending without link');
-        // Continue without unsubscribe link if token generation fails
-      }
-    }
-
     const trafficAccountId = msg.trafficAccountId || TRAFFIC_ACCOUNT_ID;
     if (!trafficAccountId) {
       logger.warn({ ownerId, messageIndex: i }, 'No traffic account ID, skipping message');
@@ -149,7 +114,7 @@ async function sendBulkSMSWithCredits(messages) {
       trafficAccountId,
       destination: msg.destination,
       sms: {
-        text: finalText,
+        text: msg.text,
         sender: finalSender
       }
     });
@@ -159,7 +124,7 @@ async function sendBulkSMSWithCredits(messages) {
       internalMessageId: msg.internalMessageId,
       ownerId: msg.ownerId,
       destination: msg.destination,
-      text: finalText,
+      text: msg.text,
       meta: msg.meta || {}
     });
   }
@@ -206,6 +171,16 @@ async function sendBulkSMSWithCredits(messages) {
   // 5. Send bulk SMS via Mitto
   try {
     const result = await sendBulkMessages(mittoMessages);
+    if (process.env.DEBUG_SEND_LOGS === '1') {
+      logger.info({
+        debug: true,
+        ownerId,
+        campaignId: messages[0]?.meta?.campaignId,
+        batchSize: messages.length,
+        mittoMessageCount: result.messages?.length,
+        internalIds: messages.slice(0, 10).map(m => m.internalMessageId),
+      }, '[DEBUG] Mitto response received');
+    }
 
     // 6. Map response messageIds to input messages
     // Response order should match request order
@@ -227,9 +202,20 @@ async function sendBulkSMSWithCredits(messages) {
       const respMsg = responseMap.get(mapping.index);
       
       if (respMsg && respMsg.messageId) {
-        // Message sent successfully - debit credits
+        if (process.env.DEBUG_SEND_LOGS === '1') {
+          logger.info({
+            debug: true,
+            ownerId,
+            campaignId: mapping.meta?.campaignId,
+            internalMessageId: mapping.internalMessageId,
+            providerMessageId: respMsg.messageId,
+            mapIndex: mapping.index,
+            bulkId: result.bulkId
+          }, '[DEBUG] Mapping accepted messageId');
+        }
+        // Message sent successfully - debit credits (idempotent) but never fail the send
         try {
-          const debitResult = await debit(mapping.ownerId, 1, {
+          const debitResult = await debitOnce(mapping.ownerId, 1, {
             reason: mapping.meta.reason || 'sms:send:bulk',
             campaignId: mapping.meta.campaignId || null,
             messageId: mapping.internalMessageId || null,
@@ -240,7 +226,8 @@ async function sendBulkSMSWithCredits(messages) {
             ownerId: mapping.ownerId, 
             internalMessageId: mapping.internalMessageId,
             messageId: respMsg.messageId,
-            balanceAfter: debitResult.balance 
+            balanceAfter: debitResult.balance,
+            reusedDebit: Boolean(debitResult.reused)
           }, 'Credits debited after successful bulk send');
 
           results.push({
@@ -249,11 +236,13 @@ async function sendBulkSMSWithCredits(messages) {
             messageId: respMsg.messageId,
             providerMessageId: respMsg.messageId,
             trafficAccountId: respMsg.trafficAccountId,
-            balanceAfter: debitResult.balance
+            balanceAfter: debitResult.balance,
+            billingStatus: 'paid',
+            billedAt: new Date()
           });
           successCount++;
         } catch (debitErr) {
-          // Log error but don't fail - message was already sent
+          // Log error but don't fail - message was already sent; mark billing pending/failure
           logger.error({ 
             ownerId: mapping.ownerId, 
             internalMessageId: mapping.internalMessageId,
@@ -266,7 +255,9 @@ async function sendBulkSMSWithCredits(messages) {
             messageId: respMsg.messageId,
             providerMessageId: respMsg.messageId,
             trafficAccountId: respMsg.trafficAccountId,
-            balanceAfter: balance // Return original balance if debit failed
+            balanceAfter: balance, // Return original balance if debit failed
+            billingStatus: 'failed',
+            billingError: debitErr.message
           });
           successCount++;
         }
@@ -286,6 +277,22 @@ async function sendBulkSMSWithCredits(messages) {
         });
         failureCount++;
       }
+    }
+
+    if (process.env.DEBUG_SEND_LOGS === '1') {
+      logger.info({
+        debug: true,
+        ownerId,
+        campaignId: messages[0]?.meta?.campaignId,
+        bulkId: result.bulkId,
+        resultsSample: results.slice(0, 10)
+      }, '[DEBUG] Bulk results before return');
+    }
+
+    // Validate mapping completeness
+    const missingInternal = results.filter(r => !r.internalMessageId || !r.messageId).map(r => r.internalMessageId);
+    if (missingInternal.length) {
+      logger.error({ missingInternal, bulkId: result.bulkId }, 'Bulk send mapping incomplete: missing internalMessageId or messageId');
     }
 
     // Handle messages that were skipped during preparation
@@ -345,4 +352,3 @@ async function sendBulkSMSWithCredits(messages) {
 module.exports = {
   sendBulkSMSWithCredits
 };
-

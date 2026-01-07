@@ -13,6 +13,7 @@ const router = Router();
 const redeemIpLimiter = createLimiter({ keyPrefix: 'rl:track:ip', points: 60, duration: 60 });         // 60/min/IP
 const redeemIdLimiter = createLimiter({ keyPrefix: 'rl:track:id', points: 10, duration: 60 });         // 10/min/trackingId
 const redeemPostIpLimiter = createLimiter({ keyPrefix: 'rl:track:post:ip', points: 30, duration: 60 }); // 30/min/IP
+const publicRedeemLimiter = createLimiter({ keyPrefix: 'rl:redeem:public', points: 5, duration: 60 }); // 5/min/IP
 
 // OPTIONAL: tiny sanity check to avoid crazy inputs
 function isPlausibleTrackingId(s) {
@@ -246,6 +247,64 @@ router.get(
       }
     } catch (err) {
       next(err);
+    }
+  }
+);
+
+/**
+ * PUBLIC: POST /tracking/redeem-public/:trackingId
+ * Idempotent redeem endpoint (no auth)
+ */
+router.post(
+  '/redeem-public/:trackingId',
+  rateLimitByKey(redeemIdLimiter, (req) => `tid:${req.params.trackingId}`),
+  rateLimitByIp(publicRedeemLimiter),
+  async (req, res, next) => {
+    try {
+      const { trackingId } = req.params;
+      if (!trackingId || !isPlausibleTrackingId(trackingId)) {
+        return res.status(400).json({ message: 'Invalid tracking ID', code: 'INVALID_TRACKING_ID' });
+      }
+
+      const msg = await prisma.campaignMessage.findUnique({
+        where: { trackingId },
+        select: { id: true, campaignId: true, contactId: true, ownerId: true }
+      });
+
+      if (!msg) {
+        return res.status(404).json({ message: 'Offer not found', code: 'NOT_FOUND' });
+      }
+
+      const existing = await prisma.redemption.findUnique({ where: { messageId: msg.id } });
+      if (existing) {
+        return res.json({ status: 'already_redeemed', redeemedAt: existing.redeemedAt });
+      }
+
+      const evidence = {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'] || null,
+        publicRedeem: true
+      };
+
+      const redemption = await prisma.redemption.create({
+        data: {
+          messageId: msg.id,
+          campaignId: msg.campaignId,
+          contactId: msg.contactId,
+          ownerId: msg.ownerId,
+          evidenceJson: evidence
+        }
+      });
+
+      // Update aggregates (non-blocking)
+      try {
+        const { updateCampaignAggregates } = require('../services/campaignAggregates.service');
+        updateCampaignAggregates(msg.campaignId, msg.ownerId);
+      } catch (_) {}
+
+      return res.json({ status: 'redeemed', redeemedAt: redemption.redeemedAt });
+    } catch (e) {
+      next(e);
     }
   }
 );

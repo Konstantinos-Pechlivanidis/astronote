@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Users, Plus } from 'lucide-react';
 import { useContacts } from '@/src/features/retail/contacts/hooks/useContacts';
 import { useSystemLists } from '@/src/features/retail/contacts/hooks/useSystemLists';
@@ -16,6 +16,7 @@ import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
+import { usePublicLinks, useRotatePublicLinks } from '@/src/features/retail/contacts/hooks/usePublicLinks';
 import type { Contact } from '@/src/lib/retail/api/contacts';
 import type { z } from 'zod';
 import { contactSchema } from '@/src/lib/retail/validators';
@@ -26,6 +27,7 @@ export default function ContactsPage() {
   const [listId, setListId] = useState<number | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [joinOpen, setJoinOpen] = useState(false);
 
   const pageSize = 20;
 
@@ -50,6 +52,14 @@ export default function ContactsPage() {
   const createMutation = useCreateContact();
   const updateMutation = useUpdateContact();
   const deleteMutation = useDeleteContact();
+  const { data: publicLinks, refetch: refetchPublicLinks } = usePublicLinks();
+  const rotatePublicLinks = useRotatePublicLinks();
+
+  useEffect(() => {
+    if (rotatePublicLinks.isSuccess) {
+      refetchPublicLinks();
+    }
+  }, [rotatePublicLinks.isSuccess, refetchPublicLinks]);
 
   const handleAddClick = () => {
     setEditingContact(null);
@@ -108,6 +118,7 @@ export default function ContactsPage() {
           search={search}
           onSearchChange={setSearch}
           onAddClick={handleAddClick}
+          onOpenJoin={() => setJoinOpen(true)}
           listId={listId}
           onListChange={handleListChange}
           systemLists={systemLists}
@@ -201,8 +212,70 @@ export default function ContactsPage() {
           onSubmit={handleFormSubmit}
           isLoading={createMutation.isPending || updateMutation.isPending}
         />
+
+        {joinOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <RetailCard className="max-w-lg w-full space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-text-primary">NFC / Share link</h3>
+                  <p className="text-sm text-text-secondary">Share this link or print the QR.</p>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setJoinOpen(false)}>
+                  Close
+                </Button>
+              </div>
+              <div className="rounded-md border border-border bg-surface-light p-3 text-sm break-all">
+                {publicLinks?.joinUrl || 'Generating...'}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    if (publicLinks?.joinUrl) navigator.clipboard?.writeText(publicLinks.joinUrl);
+                  }}
+                >
+                  Copy
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (publicLinks?.joinUrl) window.open(publicLinks.joinUrl, '_blank');
+                  }}
+                >
+                  Open
+                </Button>
+              </div>
+              <div className="flex justify-center">
+                {publicLinks?.joinUrl ? (
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(publicLinks.joinUrl)}`}
+                    alt="Join QR"
+                    className="w-44 h-44 border border-border rounded bg-white"
+                  />
+                ) : (
+                  <div className="w-44 h-44 bg-surface-light border border-border rounded animate-pulse" />
+                )}
+              </div>
+              <div className="flex justify-between gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={rotatePublicLinks.isPending}
+                  onClick={() => rotatePublicLinks.mutate()}
+                >
+                  Rotate link
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => refetchPublicLinks()}>
+                  Refresh
+                </Button>
+              </div>
+            </RetailCard>
+          </div>
+        )}
       </div>
     </RetailPageLayout>
   );
 }
-

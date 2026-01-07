@@ -48,6 +48,45 @@ export interface RedeemStatusResponse {
   storeName?: string
 }
 
+export interface NfcInfoResponse {
+  ok: boolean
+  storeName?: string
+  tagLabel?: string
+  phoneDefaultCountry?: string
+  gdprConsentVersion?: string
+  publicBaseUrl?: string
+}
+
+export interface NfcSubmitResponse {
+  ok: boolean
+  contactId: number
+  phone: string
+  status: string
+}
+
+export interface JoinInfoResponse {
+  ok: boolean
+  branding: {
+    storeName: string
+    logoUrl?: string | null
+    primaryColor?: string | null
+    accentColor?: string | null
+    headline?: string | null
+    benefits?: string[] | null
+    privacyUrl?: string | null
+    termsUrl?: string | null
+  }
+  defaults: { phoneCountryCode: string }
+  publicBase: string
+}
+
+export interface JoinSubmitResponse {
+  ok: boolean
+  status: string
+  contactId: number
+  phone: string
+}
+
 export const publicApi = {
   getPreferences: (pageToken: string) =>
     publicClient.get<PreferencesResponse>(endpoints.public.preferences(pageToken)),
@@ -63,5 +102,16 @@ export const publicApi = {
 
   getRedeemStatus: (trackingId: string) =>
     publicClient.get<RedeemStatusResponse>(endpoints.public.redeemStatus(trackingId)),
-};
 
+  getNfcInfo: (token: string) =>
+    publicClient.get<NfcInfoResponse>(endpoints.public.nfcInfo(token)),
+
+  submitNfc: (token: string, payload: any) =>
+    publicClient.post<NfcSubmitResponse>(endpoints.public.nfcSubmit(token), payload),
+
+  getJoinInfo: (token: string) =>
+    publicClient.get<JoinInfoResponse>(endpoints.public.joinInfo(token)),
+
+  submitJoin: (token: string, payload: any) =>
+    publicClient.post<JoinSubmitResponse>(endpoints.public.joinSubmit(token), payload),
+};

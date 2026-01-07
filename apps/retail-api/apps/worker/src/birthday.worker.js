@@ -1,7 +1,8 @@
 // apps/worker/src/birthday.worker.js
 // Daily worker for birthday message automations
 
-require('dotenv').config();
+const loadEnv = require('../../api/src/config/loadEnv');
+loadEnv();
 
 const pino = require('pino');
 const logger = pino({ name: 'birthday-worker' });
@@ -65,4 +66,3 @@ if (process.env.RUN_BIRTHDAY_ON_START === '1') {
 }
 
 module.exports = { runBirthdayAutomations };
-

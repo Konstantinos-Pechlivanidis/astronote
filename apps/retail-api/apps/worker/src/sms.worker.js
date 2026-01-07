@@ -1,5 +1,6 @@
 // apps/worker/src/sms.worker.js
-require('dotenv').config();
+const loadEnv = require('../../api/src/config/loadEnv');
+loadEnv();
 
 const pino = require('pino');
 const logger = pino({ name: 'sms-worker' });
@@ -18,21 +19,79 @@ const { sendBulkSMSWithCredits } = require('../../api/src/services/smsBulk.servi
 const { debit } = require('../../api/src/services/wallet.service');
 const { generateUnsubscribeToken } = require('../../api/src/services/token.service');
 const { shortenUrl, shortenUrlsInText } = require('../../api/src/services/urlShortener.service');
+const crypto = require('crypto');
 
-// Helper function to ensure base URL includes /retail path
-function ensureRetailPath(url) {
-  if (!url) return url;
-  const trimmed = url.trim().replace(/\/$/, ''); // Remove trailing slash
-  // If URL doesn't end with /retail, add it
-  if (!trimmed.endsWith('/retail')) {
-    return `${trimmed}/retail`;
-  }
-  return trimmed;
+function formatRedisInfo(connection) {
+  if (!connection) return {};
+  const opts = connection.options || connection.opts || connection.connector?.options || {};
+  const host =
+    opts.host ||
+    opts.hostname ||
+    (Array.isArray(opts.servers) ? opts.servers[0]?.host : undefined) ||
+    opts.path ||
+    'unknown';
+  const port = opts.port || (Array.isArray(opts.servers) ? opts.servers[0]?.port : undefined);
+  const db = typeof opts.db === 'number' ? opts.db : undefined;
+  const tls = Boolean(opts.tls);
+  return { host, port, db, tls };
 }
 
-// Base URL for unsubscribe links (from env or default)
-const baseFrontendUrl = process.env.UNSUBSCRIBE_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
-const UNSUBSCRIBE_BASE_URL = ensureRetailPath(baseFrontendUrl);
+// Normalize base URL (remove trailing slash)
+function normalizeBase(url) {
+  if (!url) return '';
+  return url.trim().replace(/\/$/, '');
+}
+
+async function finalizeMessageText(text, { offerUrl, unsubscribeUrl }) {
+  let output = await shortenUrlsInText(text || '');
+
+  // Remove any existing offer/unsubscribe blocks or short URLs
+  const linePatterns = [
+    /^ *view offer:.*$/gim,
+    /^ *to unsubscribe.*$/gim,
+  ];
+  const urlPatterns = [
+    /https?:\/\/\S*\/o\/[^\s]+/gi,
+    /https?:\/\/\S*\/retail\/o\/[^\s]+/gi,
+    /https?:\/\/\S*\/s\/[^\s]+/gi,
+    /https?:\/\/\S*\/retail\/s\/[^\s]+/gi,
+    /https?:\/\/\S*\/unsubscribe\/[^\s]+/gi
+  ];
+
+  [...linePatterns, ...urlPatterns].forEach((pattern) => {
+    output = output.replace(pattern, '');
+  });
+
+  // Clean up excessive blank lines after removal
+  output = output.replace(/\n{3,}/g, '\n\n').trim();
+
+  const appended = [];
+
+  const safeOfferUrl = offerUrl || null;
+  const safeUnsubUrl = unsubscribeUrl || null;
+
+  if (safeOfferUrl) {
+    appended.push(`View offer: ${safeOfferUrl}`);
+  }
+  if (safeUnsubUrl) {
+    appended.push(`To unsubscribe, tap: ${safeUnsubUrl}`);
+  }
+
+  if (appended.length) {
+    output = `${output}\n\n${appended.join('\n\n')}`;
+  }
+
+  output = output.replace(/\n{3,}/g, '\n\n').trim();
+  return output;
+}
+
+// Base URL for public retail links
+const PUBLIC_RETAIL_BASE_URL = normalizeBase(
+  process.env.PUBLIC_RETAIL_BASE_URL ||
+  process.env.PUBLIC_WEB_BASE_URL ||
+  process.env.FRONTEND_URL ||
+  'https://astronote-retail-frontend.onrender.com'
+);
 
 const connection = getRedisClient();
 
@@ -44,9 +103,29 @@ if (!connection) {
 // With lazyConnect: true, Redis connects on first command
 // BullMQ will handle the connection, so we don't need to wait for 'ready' here
 // Just ensure we have a client instance
-logger.info('Starting SMS worker (Redis will connect on first use)...');
+logger.info({ queue: 'smsQueue', redis: formatRedisInfo(connection) }, 'Starting SMS worker (Redis will connect on first use)...');
+
+// Log DB target (sanitized) to ensure worker and API share the same DB
+try {
+  const dbUrl = process.env.DATABASE_URL || '';
+  if (dbUrl) {
+    const parsed = new URL(dbUrl);
+    const dbInfo = {
+      host: parsed.hostname,
+      port: parsed.port,
+      database: parsed.pathname.replace(/^\//, '') || 'unknown',
+      hash: crypto.createHash('sha256').update(dbUrl).digest('hex').slice(0, 8),
+    };
+    logger.info({ db: dbInfo }, '[DB] Worker using database');
+  } else {
+    logger.warn('[DB] DATABASE_URL not set for worker');
+  }
+} catch (err) {
+  logger.warn({ err: err.message }, '[DB] Worker failed to parse DATABASE_URL');
+}
 
 const concurrency = Number(process.env.WORKER_CONCURRENCY || 5);
+const CLAIM_STALE_MINUTES = Number(process.env.SEND_CLAIM_STALE_MINUTES || 15);
 
 function isRetryable(err) {
   // Check for rate limit errors from our rate limiter (Phase 2.1)
@@ -65,6 +144,16 @@ function isRetryable(err) {
 const worker = new Worker(
   'smsQueue',
   async (job) => {
+    logger.info({
+      jobId: job.id,
+      jobName: job.name,
+      campaignId: job.data?.campaignId,
+      ownerId: job.data?.ownerId,
+      messageCount: Array.isArray(job.data?.messageIds) ? job.data.messageIds.length : null,
+      attemptsMade: job.attemptsMade,
+      attempts: job.opts?.attempts
+    }, 'Job started');
+
     // Campaigns always use bulk SMS (sendBulkSMS job type)
     // Individual jobs (sendSMS) are only for automations and test messages
     if (job.name === 'sendBulkSMS') {
@@ -218,36 +307,75 @@ async function processIndividualJob(messageId, job) {
  * Process batch job (new bulk sending)
  */
 async function processBatchJob(campaignId, ownerId, messageIds, job) {
+  const claimToken = `job:${job.id}`;
+  let providerCalled = false;
   try {
-    // Fetch all messages in batch
-    // Idempotency check: Only process messages that haven't been sent yet
-    const messages = await prisma.campaignMessage.findMany({
+
+    // Reuse existing claims for retries
+    let claimedMessages = await prisma.campaignMessage.findMany({
       where: {
         id: { in: messageIds },
-        campaignId,
         ownerId,
-        status: 'queued',
-        providerMessageId: null  // Only process unsent messages
+        sendClaimToken: claimToken
       },
       include: {
         campaign: { select: { id: true, ownerId: true, createdById: true } },
         contact: { select: { id: true, phone: true } }
       }
     });
-    
-    // Idempotency: Skip messages that were already sent (in case of retry)
-    const alreadySent = messageIds.length - messages.length;
-    if (alreadySent > 0) {
-      logger.warn({ 
-        campaignId, 
-        ownerId, 
-        alreadySent,
-        totalRequested: messageIds.length 
-      }, 'Some messages already sent, skipping (idempotency)');
+
+    // Claim unclaimed queued messages
+    if (!claimedMessages.length) {
+      const claimed = await prisma.campaignMessage.updateMany({
+        where: {
+          id: { in: messageIds },
+          ownerId,
+          campaignId,
+          status: 'queued',
+          sendClaimedAt: null
+        },
+        data: {
+          status: 'processing',
+          sendClaimedAt: new Date(),
+          sendClaimToken: claimToken
+        }
+      });
+
+      if (claimed.count > 0) {
+        claimedMessages = await prisma.campaignMessage.findMany({
+          where: {
+            id: { in: messageIds },
+            ownerId,
+            sendClaimToken: claimToken,
+            providerMessageId: null
+          },
+          include: {
+            campaign: { select: { id: true, ownerId: true, createdById: true } },
+            contact: { select: { id: true, phone: true } }
+          }
+        });
+      }
     }
 
-    if (messages.length === 0) {
-      logger.warn({ campaignId, ownerId, messageIds }, 'No queued messages found for batch');
+    const requested = messageIds.length;
+    const claimedCount = claimedMessages.length;
+
+    // Filter out messages already accepted to avoid duplicate sends on retries
+    const unsentMessages = claimedMessages.filter((m) => !m.providerMessageId);
+    const alreadyAccepted = claimedMessages.length - unsentMessages.length;
+
+    logger.info({
+      campaignId,
+      ownerId,
+      jobId: job.id,
+      requestedCount: requested,
+      claimedCount,
+      alreadyAccepted,
+      toSendCount: unsentMessages.length
+    }, 'Message claim result');
+
+    if (claimedCount === 0 || unsentMessages.length === 0) {
+      logger.info({ campaignId, ownerId, jobId: job.id }, 'No messages to send in batch; skipping send');
       return;
     }
 
@@ -255,41 +383,26 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
     logger.info({ 
       campaignId, 
       ownerId, 
-      batchSize: messages.length,
+      batchSize: claimedMessages.length,
       requestedCount: messageIds.length,
       jobId: job.id,
       retryAttempt: job.attemptsMade || 0
     }, 'Processing batch job');
 
     // Prepare messages for bulk sending
-    const bulkMessages = await Promise.all(messages.map(async (msg) => {
-      // Ensure unsubscribe link and offer link are present
-      let finalText = await shortenUrlsInText(msg.text); // Shorten any URLs in message
-      let needsUnsubscribeLink = !finalText.includes('/unsubscribe/');
-      let needsOfferLink = !finalText.includes('/o/');
+    const bulkMessages = await Promise.all(unsentMessages.map(async (msg) => {
+      // Finalize message text exactly once (remove duplicate links, append single offer/unsubscribe)
+      const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
+      const unsubscribeUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
+      const offerUrl = msg.trackingId ? `${PUBLIC_RETAIL_BASE_URL}/o/${msg.trackingId}` : null;
 
-      if (needsUnsubscribeLink) {
-        try {
-          const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
-          const unsubscribeUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-          const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
-          finalText += `\n\nTo unsubscribe, tap: ${shortenedUnsubscribeUrl}`;
-        } catch (tokenErr) {
-          logger.warn({ messageId: msg.id, err: tokenErr.message }, 'Failed to generate unsubscribe token');
-        }
-      }
+      const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
+      const shortenedOfferUrl = offerUrl ? await shortenUrl(offerUrl) : null;
 
-      if (needsOfferLink && msg.trackingId) {
-        try {
-          const baseOfferUrl = process.env.OFFER_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
-          const OFFER_BASE_URL = ensureRetailPath(baseOfferUrl);
-          const offerUrl = `${OFFER_BASE_URL}/o/${msg.trackingId}`;
-          const shortenedOfferUrl = await shortenUrl(offerUrl);
-          finalText += `\n\nView offer: ${shortenedOfferUrl}`;
-        } catch (err) {
-          logger.warn({ messageId: msg.id, err: err.message }, 'Failed to append offer link');
-        }
-      }
+      const finalText = await finalizeMessageText(msg.text, {
+        offerUrl: shortenedOfferUrl,
+        unsubscribeUrl: shortenedUnsubscribeUrl
+      });
 
       return {
         ownerId: msg.campaign.ownerId,
@@ -306,8 +419,22 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       };
     }));
 
-    // Send bulk SMS
-    const result = await sendBulkSMSWithCredits(bulkMessages);
+    const result = await (async () => {
+      providerCalled = true;
+      return sendBulkSMSWithCredits(bulkMessages);
+    })();
+
+    if (process.env.DEBUG_SEND_LOGS === '1') {
+      logger.info({
+        debug: true,
+        campaignId,
+        ownerId,
+        jobId: job.id,
+        bulkId: result.bulkId,
+        requestedIds: messageIds.slice(0, 10),
+        resultSample: result.results?.slice(0, 10)
+      }, '[DEBUG] Worker bulk result');
+    }
 
     // Update messages with results
     const updatePromises = [];
@@ -315,21 +442,36 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
     const failedIds = [];
 
     for (const res of result.results) {
-      const updateData = {
-        updatedAt: new Date()
-      };
+      const updateData = {};
+
+      if (!res.internalMessageId) {
+        logger.error({ campaignId, ownerId, jobId: job.id, res }, 'Result missing internalMessageId, skipping update');
+        continue;
+      }
 
       if (res.sent && res.messageId) {
         updateData.providerMessageId = res.messageId;
         updateData.bulkId = result.bulkId;
+        updateData.acceptedAt = new Date();
         updateData.sentAt = new Date();
         updateData.status = 'sent';
         updateData.error = null;
+        updateData.sendClaimedAt = null;
+        updateData.sendClaimToken = null;
+        updateData.billingStatus = res.billingStatus || 'pending';
+        updateData.billingError = res.billingError || null;
+        if (res.billedAt) {
+          updateData.billedAt = res.billedAt;
+        }
         successfulIds.push(res.internalMessageId);
       } else {
         updateData.status = 'failed';
         updateData.failedAt = new Date();
         updateData.error = res.error || res.reason || 'Send failed';
+        updateData.sendClaimedAt = null;
+        updateData.sendClaimToken = null;
+        updateData.billingStatus = res.billingStatus || 'failed';
+        updateData.billingError = res.billingError || updateData.error;
         failedIds.push(res.internalMessageId);
       }
 
@@ -343,10 +485,26 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
 
     await Promise.all(updatePromises);
 
+    // Debug: read back statuses for this batch to ensure they moved out of queued/processing
+    try {
+      const postStatuses = await prisma.campaignMessage.findMany({
+        where: { id: { in: messageIds } },
+        select: { id: true, status: true, providerMessageId: true, sentAt: true, deliveryStatus: true }
+      });
+      logger.info({
+        campaignId,
+        ownerId,
+        jobId: job.id,
+        postStatuses
+      }, '[BATCH STATUS] Post-send message states');
+    } catch (readErr) {
+      logger.warn({ campaignId, ownerId, jobId: job.id, err: readErr.message }, 'Failed to read back post-send statuses');
+    }
+
     const duration = Date.now() - startTime;
     logger.info({ 
       campaignId, 
-      ownerId,
+      ownerId, 
       bulkId: result.bulkId,
       successful: successfulIds.length,
       failed: failedIds.length,
@@ -354,7 +512,7 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       duration,
       jobId: job.id,
       retryAttempt: job.attemptsMade || 0
-    }, 'Batch job completed');
+    }, '[MITTO BULK] Batch job completed');
 
     // Update campaign aggregates (non-blocking)
     try {
@@ -381,24 +539,47 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       messageIds,
       retryable, 
       err: e.message 
-    }, 'Batch job failed');
+    }, providerCalled ? '[NO-RETRY] Batch job failed after provider call' : 'Batch job failed');
 
-      // Mark all messages in batch as failed or queued (for retry)
-      // Increment retry count for idempotency tracking
+    // Mark all messages in batch based on retryability/provider call
+    if (retryable && !providerCalled) {
+      // Reset to queued so they can be re-claimed on retry
       await prisma.campaignMessage.updateMany({
         where: {
           id: { in: messageIds },
           campaignId,
           ownerId,
-          status: 'queued'  // Only update queued messages (idempotency)
+          sendClaimToken: claimToken
         },
         data: {
-          failedAt: retryable ? null : new Date(),
-          status: retryable ? 'queued' : 'failed',
+          status: 'queued',
+          sendClaimedAt: null,
+          sendClaimToken: null,
           error: e.message,
-          retryCount: { increment: 1 }  // Track retry attempts
+          retryCount: { increment: 1 }
         }
       });
+    } else {
+      // Do not leave processing hanging; guard against overriding accepted messages
+      await prisma.campaignMessage.updateMany({
+        where: {
+          id: { in: messageIds },
+          campaignId,
+          ownerId,
+          sendClaimToken: claimToken,
+          status: 'processing',
+          providerMessageId: null
+        },
+        data: {
+          status: 'failed',
+          failedAt: new Date(),
+          sendClaimedAt: null,
+          sendClaimToken: null,
+          error: e.message,
+          retryCount: { increment: 1 }
+        }
+      });
+    }
 
     // Update campaign aggregates
     try {
@@ -408,7 +589,7 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       logger.warn({ campaignId, err: aggErr.message }, 'Failed to update campaign aggregates');
     }
 
-    if (retryable) throw e;
+    if (retryable && !providerCalled) throw e;
   }
 }
 
@@ -425,11 +606,11 @@ worker.on('active', (job) => {
 });
 
 worker.on('completed', (job) => {
-  logger.info({ jobId: job.id }, `Completed ${job.name}`);
+  logger.info({ jobId: job.id, name: job.name }, `Completed ${job.name}`);
 });
 
 worker.on('failed', (job, err) => {
-  logger.error({ jobId: job?.id, err: err?.message }, `Failed ${job?.name}`);
+  logger.error({ jobId: job?.id, name: job?.name, attemptsMade: job?.attemptsMade, attempts: job?.opts?.attempts, err: err?.message }, `Failed ${job?.name}`);
 });
 
 worker.on('error', (err) => {

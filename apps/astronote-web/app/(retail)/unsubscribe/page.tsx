@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 
 function UnsubscribeContent() {
   const searchParams = useSearchParams();
-  const pageToken = searchParams.get('pt');
+  const pageToken = searchParams.get('pt') || searchParams.get('token') || null;
   const [confirmed, setConfirmed] = useState(false);
 
   const { data: preferences, isLoading, error } = usePreferences(pageToken);
@@ -141,4 +141,3 @@ export default function UnsubscribePage() {
     </Suspense>
   );
 }
-

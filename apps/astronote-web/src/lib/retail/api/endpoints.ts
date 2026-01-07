@@ -92,11 +92,26 @@ export const endpoints = {
     stats: (type: string) => `/api/automations/${type}/stats`,
   },
 
+  nfc: {
+    me: '/api/me/nfc',
+    rotate: '/api/me/nfc/rotate',
+  },
+
+  publicLinks: {
+    me: '/api/me/public-links',
+    rotate: '/api/me/public-links/rotate',
+    branding: '/api/me/retail-branding',
+  },
+
   // Public (no auth)
   public: {
     // Tracking
     offer: (trackingId: string) => `/tracking/offer/${trackingId}`,
     redeemStatus: (trackingId: string) => `/tracking/redeem/${trackingId}`,
+    nfcInfo: (token: string) => `/public/nfc/${token}`,
+    nfcSubmit: (token: string) => `/public/nfc/${token}/submit`,
+    joinInfo: (token: string) => `/public/join/${token}`,
+    joinSubmit: (token: string) => `/public/join/${token}/submit`,
     // Unsubscribe/Resubscribe
     unsubscribeRedirect: (token: string) => `/api/contacts/unsubscribe/${token}`,
     preferences: (pageToken: string) => `/api/contacts/preferences/${pageToken}`,
@@ -105,4 +120,3 @@ export const endpoints = {
     resubscribe: '/api/contacts/resubscribe',
   },
 };
-

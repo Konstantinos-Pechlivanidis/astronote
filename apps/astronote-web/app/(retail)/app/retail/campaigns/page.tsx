@@ -116,18 +116,15 @@ function CampaignsTable({ campaigns }: { campaigns: any[] }) {
                       <StatusBadge status={campaign.status} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {campaign.stats ? (
-                        <div className="text-sm text-text-primary">
-                          <span>Total: {campaign.stats.total || 0}</span>
-                          {campaign.stats.sent > 0 && (
-                            <span className="ml-2 text-green-400">Sent: {campaign.stats.sent}</span>
-                          )}
-                          {campaign.stats.failed > 0 && (
-                            <span className="ml-2 text-red-400">Failed: {campaign.stats.failed}</span>
-                          )}
+                      <div className="text-sm text-text-primary flex items-center gap-2 tabular-nums">
+                        <span className="font-medium text-green-500">{(campaign.sent ?? campaign.stats?.sent ?? 0).toLocaleString()}</span>
+                        <span className="text-text-secondary">/</span>
+                        <span className="text-text-primary">{(campaign.total ?? campaign.stats?.total ?? 0).toLocaleString()}</span>
+                      </div>
+                      {((campaign.failed ?? campaign.stats?.failed) ?? 0) > 0 && (
+                        <div className="text-xs text-red-400 mt-1">
+                          Failed: {(campaign.failed ?? campaign.stats?.failed ?? 0).toLocaleString()}
                         </div>
-                      ) : (
-                        <span className="text-sm text-text-secondary">—</span>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -160,14 +157,21 @@ function CampaignsTable({ campaigns }: { campaigns: any[] }) {
                   <h3 className="text-base font-semibold text-text-primary">{campaign.name}</h3>
                   <StatusBadge status={campaign.status} />
                 </div>
-                {campaign.stats && (
+                {(campaign.total || campaign.stats) && (
                   <div className="flex flex-wrap gap-2 text-sm">
-                    <span className="text-text-secondary">Total: <span className="text-text-primary font-medium">{campaign.stats.total || 0}</span></span>
-                    {campaign.stats.sent > 0 && (
-                      <span className="text-green-400">Sent: {campaign.stats.sent}</span>
+                    <span className="text-text-secondary">
+                      Recipients: <span className="text-text-primary font-medium">{(campaign.total ?? campaign.stats?.total ?? 0)}</span>
+                    </span>
+                    <span className="text-text-secondary">
+                      Delivered: <span className="text-green-400 font-medium">{(campaign.sent ?? campaign.stats?.sent ?? 0)}</span>
+                    </span>
+                    {((campaign.failed ?? campaign.stats?.failed) ?? 0) > 0 && (
+                      <span className="text-red-400">Failed: {(campaign.failed ?? campaign.stats?.failed ?? 0)}</span>
                     )}
-                    {campaign.stats.failed > 0 && (
-                      <span className="text-red-400">Failed: {campaign.stats.failed}</span>
+                    {((campaign.total ?? campaign.stats?.total ?? 0) - ((campaign.sent ?? campaign.stats?.sent ?? 0) + (campaign.failed ?? campaign.stats?.failed ?? 0))) > 0 && (
+                      <span className="text-amber-500">
+                        Pending: {(campaign.total ?? campaign.stats?.total ?? 0) - ((campaign.sent ?? campaign.stats?.sent ?? 0) + (campaign.failed ?? campaign.stats?.failed ?? 0))}
+                      </span>
                     )}
                   </div>
                 )}
@@ -309,4 +313,3 @@ export default function CampaignsPage() {
     </RetailPageLayout>
   );
 }
-

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { PublicLayout } from '@/src/components/retail/public/PublicLayout';
 import { PublicCard } from '@/src/components/retail/public/PublicCard';
@@ -12,7 +13,20 @@ import { Gift } from 'lucide-react';
 export default function OfferPage() {
   const params = useParams();
   const trackingId = params.trackingId as string;
+  const [redeemUrl, setRedeemUrl] = useState<string>('');
   const { data, isLoading, error } = useOffer(trackingId);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && trackingId) {
+      setRedeemUrl(`${window.location.origin}/retail/tracking/redeem/${trackingId}`);
+    }
+  }, [trackingId]);
+
+  const qrImageUrl = useMemo(() => {
+    if (!redeemUrl) return null;
+    const encoded = encodeURIComponent(redeemUrl);
+    return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encoded}`;
+  }, [redeemUrl]);
 
   if (isLoading) {
     return (
@@ -79,13 +93,22 @@ export default function OfferPage() {
           <div className="bg-surface-light rounded-lg p-4 mb-6">
             <p className="text-lg text-text-primary whitespace-pre-wrap">{offerText}</p>
           </div>
-          <div className="text-sm text-text-tertiary">
+          <div className="text-sm text-text-tertiary space-y-3">
             <p>Please visit the store to redeem this offer.</p>
-            <p className="mt-2">Show this page to the store staff.</p>
+            <p>Show this page (or the QR code below) to the store staff.</p>
+            {qrImageUrl ? (
+              <div className="flex flex-col items-center gap-2">
+                <img
+                  src={qrImageUrl}
+                  alt="Redeem QR code"
+                  className="w-48 h-48 border border-border rounded-lg bg-white"
+                />
+                <p className="text-xs text-text-secondary break-all">{redeemUrl}</p>
+              </div>
+            ) : null}
           </div>
         </div>
       </PublicCard>
     </PublicLayout>
   );
 }
-

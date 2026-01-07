@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { campaignsApi } from '@/src/lib/retail/api/campaigns';
+import { CampaignEnqueueResponse, campaignsApi } from '@/src/lib/retail/api/campaigns';
 import { toast } from 'sonner';
 
 // Generate idempotency key per campaign
@@ -54,8 +54,11 @@ function generateIdempotencyKey(campaignId: number, campaignStatus: string): str
 export function useEnqueueCampaign() {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+  return useMutation<CampaignEnqueueResponse, any, { id: number; status: string }>({
+    mutationFn: async ({ id, status }) => {
+      if (status === 'scheduled') {
+        throw new Error('Scheduled campaigns must be edited to send now.');
+      }
       // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
@@ -70,19 +73,21 @@ export function useEnqueueCampaign() {
       // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
-        console.log('[useEnqueueCampaign] Calling campaignsApi.enqueue', { id, idempotencyKey });
+        console.log('[useEnqueueCampaign] Request start', { id, idempotencyKey });
       }
       const res = await campaignsApi.enqueue(id, idempotencyKey);
       // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
         // eslint-disable-next-line no-console
-        console.log('[useEnqueueCampaign] API response received', res);
+        console.log('[useEnqueueCampaign] API response received', res?.data || res);
       }
       return res.data;
     },
     retry: false, // Explicitly disable retry to prevent double-enqueue
     onSuccess: async (data, variables) => {
       const { id } = variables;
+      const queued = data?.queued || 0;
+      const enqueuedJobs = typeof data?.enqueuedJobs === 'number' ? data.enqueuedJobs : null;
 
       // Immediately refetch campaign detail to update status
       await queryClient.refetchQueries({
@@ -94,7 +99,10 @@ export function useEnqueueCampaign() {
       queryClient.invalidateQueries({ queryKey: ['retail', 'campaigns', 'list'] });
       queryClient.invalidateQueries({ queryKey: ['retail', 'campaigns', 'status', id] });
 
-      toast.success(`Campaign enqueued. ${data.queued || 0} messages will be sent.`);
+      const summary = enqueuedJobs !== null
+        ? `${queued} messages (${enqueuedJobs} jobs enqueued)`
+        : `${queued} messages`;
+      toast.success(`Campaign enqueued. ${summary}.`);
     },
     onError: (error: any) => {
       const code = error.response?.data?.code;
@@ -108,10 +116,17 @@ export function useEnqueueCampaign() {
         toast.error('Campaign is already being sent');
       } else if (code === 'INSUFFICIENT_CREDITS') {
         toast.error('Insufficient credits. Please purchase more credits.');
+      } else if (code === 'QUEUE_UNAVAILABLE') {
+        toast.error('Message queue unavailable. Please try again in a moment.');
+      } else if (code === 'ENQUEUE_FAILED') {
+        toast.error('Failed to enqueue campaign. Please retry.');
+      } else if (code === 'INACTIVE_SUBSCRIPTION') {
+        toast.error('Active subscription required to send campaigns.');
+      } else if (code === 'NO_MESSAGE_TEXT') {
+        toast.error('Campaign is missing message text.');
       } else {
         toast.error(message);
       }
     },
   });
 }
-

@@ -1,5 +1,6 @@
 // apps/worker/src/contactImport.worker.js
-require('dotenv').config();
+const loadEnv = require('../../api/src/config/loadEnv');
+loadEnv();
 
 const pino = require('pino');
 const logger = pino({ name: 'contact-import-worker' });
@@ -94,4 +95,3 @@ worker.on('failed', (job, err) => logger.error({ jobId: job?.id, err: err?.messa
 worker.on('progress', (job, progress) => {
   logger.debug({ jobId: job.id, progress }, 'Import progress update');
 });
-
