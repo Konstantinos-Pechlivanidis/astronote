@@ -550,7 +550,17 @@ router.post(
 );
 
 router.post(
-  '/unsubscribe/:token?',
+  '/unsubscribe',
+  rateLimitByIp(unsubIpLimiter),
+  rateLimitByKey(unsubTokenLimiter, (req) => {
+    const token = req.body?.token || req.params?.token || '';
+    return token.slice(0, 64);
+  }),
+  handleUnsubscribe,
+);
+
+router.post(
+  '/unsubscribe/:token',
   rateLimitByIp(unsubIpLimiter),
   rateLimitByKey(unsubTokenLimiter, (req) => {
     const token = req.body?.token || req.params?.token || '';
