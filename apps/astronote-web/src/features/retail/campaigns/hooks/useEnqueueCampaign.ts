@@ -3,18 +3,18 @@ import { CampaignEnqueueResponse, campaignsApi } from '@/src/lib/retail/api/camp
 import { toast } from 'sonner';
 
 // Generate idempotency key per campaign
-// Clear key when campaign can be re-enqueued (draft/scheduled/paused)
+// Clear key when campaign can be re-enqueued (draft/scheduled)
 function generateIdempotencyKey(campaignId: number, campaignStatus: string): string {
   const storageKey = `enqueue-idempotency-key:${campaignId}`;
   const statusKey = `enqueue-idempotency-status:${campaignId}`;
 
   // Check if campaign status changed (allows re-enqueue)
   const lastStatus = typeof window !== 'undefined' ? sessionStorage.getItem(statusKey) : null;
-  const canEnqueue = ['draft', 'scheduled', 'paused'].includes(campaignStatus);
+  const canEnqueue = ['draft', 'scheduled'].includes(campaignStatus);
 
   // Clear key if status changed
   if (lastStatus && lastStatus !== campaignStatus && typeof window !== 'undefined') {
-    const lastCanEnqueue = ['draft', 'scheduled', 'paused'].includes(lastStatus);
+    const lastCanEnqueue = ['draft', 'scheduled'].includes(lastStatus);
     if (!lastCanEnqueue && canEnqueue) {
       sessionStorage.removeItem(storageKey);
     } else if (lastCanEnqueue && !canEnqueue) {
@@ -51,13 +51,22 @@ function generateIdempotencyKey(campaignId: number, campaignStatus: string): str
   return idempotencyKey!;
 }
 
+function extractStatusFromMessage(message?: string) {
+  if (!message) return null;
+  const match = message.match(/invalid_status:([a-z_]+)/i);
+  return match ? match[1] : null;
+}
+
 export function useEnqueueCampaign() {
   const queryClient = useQueryClient();
 
   return useMutation<CampaignEnqueueResponse, any, { id: number; status: string }>({
     mutationFn: async ({ id, status }) => {
-      if (status === 'scheduled') {
-        throw new Error('Scheduled campaigns must be edited to send now.');
+      if (!['draft', 'scheduled'].includes(status)) {
+        const error = new Error(`invalid_status:${status}`);
+        (error as any).code = 'INVALID_STATUS';
+        (error as any).currentStatus = status;
+        throw error;
       }
       // eslint-disable-next-line no-console
       if (process.env.NODE_ENV !== 'production') {
@@ -105,11 +114,27 @@ export function useEnqueueCampaign() {
       toast.success(`Campaign enqueued. ${summary}.`);
     },
     onError: (error: any) => {
-      const code = error.response?.data?.code;
-      const message = error.response?.data?.message || 'Failed to enqueue campaign';
+      const code = error.response?.data?.code || error.code;
+      const message = error.response?.data?.message || error.message || 'Failed to enqueue campaign';
+      const statusFromMessage = extractStatusFromMessage(message);
+      const currentStatus = error.response?.data?.currentStatus || error.currentStatus || statusFromMessage;
 
-      if (code === 'INVALID_STATUS') {
-        toast.error('Campaign cannot be sent in its current state');
+      if (code === 'INVALID_STATUS' || code === 'ENQUEUE_CONFLICT_STATUS') {
+        if (currentStatus === 'failed') {
+          toast.error('Campaign failed. Create a new campaign or contact support.');
+        } else if (currentStatus === 'sending') {
+          toast.info('Campaign is already sending. Check status for progress.');
+        } else if (currentStatus === 'completed') {
+          toast.info('Campaign already completed. Create a new campaign to send again.');
+        } else if (currentStatus === 'scheduled') {
+          toast.info('Campaign is scheduled. Use "Enqueue now" to send immediately or edit the schedule.');
+        } else {
+          toast.error(
+            currentStatus
+              ? `Campaign cannot be sent in its current state (${currentStatus}).`
+              : 'Campaign cannot be sent in its current state.',
+          );
+        }
       } else if (code === 'NO_RECIPIENTS') {
         toast.error('Campaign has no eligible recipients');
       } else if (code === 'ALREADY_SENDING') {

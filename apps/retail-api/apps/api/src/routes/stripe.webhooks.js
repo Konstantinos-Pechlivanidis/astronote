@@ -109,7 +109,7 @@ async function handleCheckoutCompleted(session) {
   }
 
   // Validate payment amount matches expected amount (fraud prevention)
-  const expectedAmountCents = purchase.amountCents;
+  const expectedAmountCents = purchase.priceCents;
   const actualAmountCents = session.amount_total || 0;
 
   // Allow small rounding differences (up to 1 cent)
@@ -387,17 +387,18 @@ async function handleCheckoutSessionCompletedForTopup(session) {
   const metadata = session.metadata || {};
   const ownerId = Number(metadata.ownerId);
   const credits = Number(metadata.credits);
-  const priceEur = Number(metadata.priceEur);
+  const currency = String(metadata.currency || 'EUR').toUpperCase();
+  const priceAmount = Number(metadata.priceAmount || metadata.priceEur || metadata.priceUsd);
 
-  if (!ownerId || !credits || !priceEur) {
+  if (!ownerId || !credits || !priceAmount) {
     logger.warn({ sessionId: session.id }, 'Credit top-up checkout missing required metadata');
     return;
   }
 
-  logger.info({ ownerId, credits, priceEur, sessionId: session.id }, 'Processing credit top-up checkout completion');
+  logger.info({ ownerId, credits, priceAmount, currency, sessionId: session.id }, 'Processing credit top-up checkout completion');
 
   // Validate payment amount matches expected amount (fraud prevention)
-  const expectedAmountCents = Math.round(priceEur * 100);
+  const expectedAmountCents = Math.round(priceAmount * 100);
   const actualAmountCents = session.amount_total || 0;
 
   // Allow small rounding differences (up to 1 cent)
@@ -408,7 +409,8 @@ async function handleCheckoutSessionCompletedForTopup(session) {
       expectedAmountCents,
       actualAmountCents,
       credits,
-      priceEur,
+      priceAmount,
+      currency,
     }, 'Payment amount mismatch - potential fraud or configuration error');
     throw new Error(`Payment amount mismatch: expected ${expectedAmountCents} cents, got ${actualAmountCents} cents`);
   }
@@ -436,7 +438,7 @@ async function handleCheckoutSessionCompletedForTopup(session) {
   }
 
   try {
-    logger.debug({ ownerId, credits, priceEur }, 'Adding credits to wallet');
+    logger.debug({ ownerId, credits, priceAmount, currency }, 'Adding credits to wallet');
     await prisma.$transaction(async (tx) => {
       // Credit wallet
       await credit(ownerId, credits, {
@@ -446,7 +448,8 @@ async function handleCheckoutSessionCompletedForTopup(session) {
           paymentIntentId: session.payment_intent || null,
           customerId: session.customer || null,
           credits,
-          priceEur,
+          priceAmount,
+          currency,
           purchasedAt: new Date().toISOString(),
         },
       }, tx);
@@ -455,7 +458,8 @@ async function handleCheckoutSessionCompletedForTopup(session) {
     logger.info({
       ownerId,
       credits,
-      priceEur,
+      priceAmount,
+      currency,
       sessionId: session.id,
       paymentIntentId: session.payment_intent,
     }, 'Credit top-up processed successfully');
@@ -1157,4 +1161,3 @@ router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async
 });
 
 module.exports = router;
-

@@ -28,6 +28,7 @@ export const endpoints = {
     purchases: '/api/billing/purchases',
     purchase: '/api/billing/purchase',
     topup: '/api/billing/topup',
+    topupCalculate: '/api/billing/topup/calculate',
   },
 
   // Subscriptions

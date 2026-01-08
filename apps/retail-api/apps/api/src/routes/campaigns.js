@@ -11,18 +11,12 @@ const pino = require('pino');
 const router = express.Router();
 const logger = pino({ name: 'campaigns-route' });
 
-function msUntil(dateStr) {
-  const when = new Date(dateStr).getTime();
-  const now = Date.now();
-  return Math.max(0, when - now);
-}
-
 /* =========================================================
  * POST /campaigns (protected)
  * Create a campaign (draft or scheduled).
  * - Validates ownership of template (owner or system) & list (owner).
  * - Pre-computes total = subscribed members count at creation time.
- * - If scheduledAt provided -> status 'scheduled' + delayed job.
+ * - If scheduledAt provided -> status 'scheduled'; worker sweeper enqueues when due.
  * ========================================================= */
 /**
  * POST /api/campaigns
@@ -247,52 +241,11 @@ router.post('/campaigns', requireAuth, async (req, res, next) => {
       },
     });
 
-    // If scheduled -> add delayed scheduler job
-    if (campaign.status === 'scheduled' && schedulerQueue) {
-      const delay = msUntil(campaign.scheduledAt);
-      const now = new Date();
-
-      if (delay <= 0) {
-        logger.warn({
-          campaignId: campaign.id,
-          scheduledAt: campaign.scheduledAt,
-          now: now.toISOString(),
-          delay,
-        }, 'Scheduled campaign is in the past, enqueuing immediately');
-
-        // If scheduled time has passed, enqueue immediately
-        try {
-          const { enqueueCampaign } = require('../services/campaignEnqueue.service');
-          await enqueueCampaign(campaign.id);
-        } catch (err) {
-          logger.error({ campaignId: campaign.id, err }, 'Failed to enqueue past-due campaign');
-        }
-      } else {
-        logger.info({
-          campaignId: campaign.id,
-          scheduledAt: campaign.scheduledAt,
-          delayMs: delay,
-          delaySeconds: Math.round(delay / 1000),
-          delayMinutes: Math.round(delay / 1000 / 60),
-        }, 'Adding scheduled campaign job to queue');
-
-        const job = await schedulerQueue.add(
-          'enqueueCampaign',
-          { campaignId: campaign.id },
-          {
-            jobId: `campaign:schedule:${campaign.id}`,
-            delay,
-          },
-        );
-
-        logger.info({
-          campaignId: campaign.id,
-          jobId: job.id,
-          scheduledAt: campaign.scheduledAt,
-        }, 'Scheduled campaign job added to queue');
-      }
-    } else if (campaign.status === 'scheduled' && !schedulerQueue) {
-      logger.warn({ campaignId: campaign.id }, 'Scheduler queue is disabled, cannot schedule campaign');
+    if (campaign.status === 'scheduled') {
+      logger.info({
+        campaignId: campaign.id,
+        scheduledAt: campaign.scheduledAt,
+      }, 'Campaign scheduled; worker sweeper will enqueue when due');
     }
 
     // Map Prisma enum back to normalized format for API response
@@ -560,10 +513,13 @@ router.get('/campaigns/:id/preview', requireAuth, async (req, res, next) => {
 router.post('/campaigns/:id/enqueue', requireAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
+    const requestId = req.id || req.headers['x-request-id'] || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const withRequestId = (payload) => ({ ...payload, requestId });
     if (!id || isNaN(id)) {
       return res.status(400).json({
         message: 'Invalid campaign ID. Please provide a valid campaign ID.',
         code: 'INVALID_ID',
+        requestId,
       });
     }
 
@@ -574,6 +530,7 @@ router.post('/campaigns/:id/enqueue', requireAuth, async (req, res, next) => {
       return res.status(404).json({
         message: 'Campaign not found',
         code: 'RESOURCE_NOT_FOUND',
+        requestId,
       });
     }
 
@@ -582,76 +539,77 @@ router.post('/campaigns/:id/enqueue', requireAuth, async (req, res, next) => {
       campaignId: id,
       currentStatus: camp.status,
       idempotencyKey: req.headers['idempotency-key'] || null,
+      requestId,
     }, 'enqueue endpoint called');
 
-    const result = await enqueueCampaign(id);
+    const result = await enqueueCampaign(id, { correlationId: requestId, source: 'api', userId: req.user.id });
     if (!result.ok) {
       // map reasons -> proper responses
       if (result.reason?.startsWith('invalid_status')) {
-        return res.status(409).json({
+        return res.status(409).json(withRequestId({
           message: result.reason || 'Campaign cannot be sent in its current state',
           code: 'INVALID_STATUS',
-        });
+        }));
       }
       if (result.reason === 'no_recipients') {
-        return res.status(400).json({
+        return res.status(400).json(withRequestId({
           message: 'Campaign has no eligible recipients. Make sure contacts are subscribed and match the selected filters.',
           code: 'NO_RECIPIENTS',
-        });
+        }));
       }
       if (result.reason === 'already_sending') {
-        return res.status(409).json({
+        return res.status(409).json(withRequestId({
           message: 'Campaign is already being sent',
           code: 'ALREADY_SENDING',
-        });
+        }));
       }
       if (result.reason === 'not_found') {
-        return res.status(404).json({
+        return res.status(404).json(withRequestId({
           message: 'Campaign not found',
           code: 'RESOURCE_NOT_FOUND',
-        });
+        }));
       }
       if (result.reason === 'insufficient_credits') {
-        return res.status(402).json({
+        return res.status(402).json(withRequestId({
           message: "You don't have enough SMS credits to send this campaign. Please purchase additional credits and try again.",
           code: 'INSUFFICIENT_CREDITS',
-        });
+        }));
       }
       if (result.reason === 'inactive_subscription') {
-        return res.status(402).json({
+        return res.status(402).json(withRequestId({
           message: 'Active subscription required to send campaigns',
           code: 'INACTIVE_SUBSCRIPTION',
-        });
+        }));
       }
       if (result.reason === 'queue_unavailable') {
-        return res.status(503).json({
+        return res.status(503).json(withRequestId({
           message: 'Message queue unavailable. Please try again shortly.',
           code: 'QUEUE_UNAVAILABLE',
-        });
+        }));
       }
       if (result.reason === 'enqueue_failed') {
-        return res.status(500).json({
+        return res.status(500).json(withRequestId({
           message: 'Failed to enqueue campaign jobs. Please retry.',
           code: 'ENQUEUE_FAILED',
-        });
+        }));
       }
       if (result.reason === 'no_message_text') {
-        return res.status(400).json({
+        return res.status(400).json(withRequestId({
           message: 'Campaign is missing message text',
           code: 'NO_MESSAGE_TEXT',
-        });
+        }));
       }
       if (result.reason === 'no_filters_or_list') {
-        return res.status(400).json({
+        return res.status(400).json(withRequestId({
           message: 'Campaign has no target audience defined. Please add filters or select a list.',
           code: 'NO_TARGET_AUDIENCE',
-        });
+        }));
       }
-      logger.warn({ campaignId: id, reason: result.reason, userId: req.user.id }, 'Enqueue rejected');
-      return res.status(400).json({
+      logger.warn({ campaignId: id, reason: result.reason, userId: req.user.id, requestId }, 'Enqueue rejected');
+      return res.status(400).json(withRequestId({
         message: result.reason || 'Cannot send campaign at this time',
         code: 'CAMPAIGN_ENQUEUE_ERROR',
-      });
+      }));
     }
 
     logger.info({
@@ -660,9 +618,10 @@ router.post('/campaigns/:id/enqueue', requireAuth, async (req, res, next) => {
       queued: result.created,
       enqueuedJobs: result.enqueuedJobs,
       userId: req.user.id,
+      requestId,
     }, 'enqueue endpoint succeeded');
 
-    res.json({ queued: result.created, enqueuedJobs: result.enqueuedJobs, campaignId: id, status: 'sending' });
+    res.json(withRequestId({ queued: result.created, enqueuedJobs: result.enqueuedJobs, campaignId: id, status: 'sending' }));
   } catch (e) {
     next(e);
   }
@@ -670,7 +629,7 @@ router.post('/campaigns/:id/enqueue', requireAuth, async (req, res, next) => {
 
 /* =========================================================
  * POST /campaigns/:id/schedule (protected)
- * Set or change scheduledAt and create/update delayed job (scoped).
+ * Set or change scheduledAt; worker sweeper enqueues when due (scoped).
  * Body: { scheduledAt }
  * ========================================================= */
 router.post('/campaigns/:id/schedule', requireAuth, async (req, res, next) => {
@@ -763,42 +722,18 @@ router.post('/campaigns/:id/schedule', requireAuth, async (req, res, next) => {
       });
     }
 
-    if (schedulerQueue && updated.scheduledAt) {
-      const delay = msUntil(updated.scheduledAt);
-
-      if (delay <= 0) {
-        logger.warn({
-          campaignId: id,
-          scheduledAt: updated.scheduledAt,
-          delay,
-        }, 'Scheduled campaign is in the past, enqueuing immediately');
-
+    if (updated.scheduledAt) {
+      if (schedulerQueue) {
         try {
-          await enqueueCampaign(id);
-        } catch (err) {
-          logger.error({ campaignId: id, err }, 'Failed to enqueue past-due campaign');
+          await schedulerQueue.remove(`campaign:schedule:${id}`);
+        } catch (_) {
+          // Ignore errors when removing legacy scheduled jobs
         }
-      } else {
-        logger.info({
-          campaignId: id,
-          scheduledAt: updated.scheduledAt,
-          delayMs: delay,
-          delaySeconds: Math.round(delay / 1000),
-        }, 'Adding scheduled campaign job to queue');
-
-        const job = await schedulerQueue.add(
-          'enqueueCampaign',
-          { campaignId: id },
-          {
-            jobId: `campaign:schedule:${id}`,
-            delay,
-          },
-        );
-
-        logger.info({ campaignId: id, jobId: job.id }, 'Scheduled campaign job added to queue');
       }
-    } else if (updated.scheduledAt && !schedulerQueue) {
-      logger.warn({ campaignId: id }, 'Scheduler queue is disabled, cannot schedule campaign');
+      logger.info({
+        campaignId: id,
+        scheduledAt: updated.scheduledAt,
+      }, 'Campaign scheduled; worker sweeper will enqueue when due');
     }
 
     res.json({ ok: true, scheduledAt: updated.scheduledAt });
@@ -977,49 +912,21 @@ router.put('/campaigns/:id', requireAuth, async (req, res, next) => {
     }
 
     // Handle scheduler queue if scheduledAt changed
-    if (schedulerQueue && (updates.scheduledAt !== undefined)) {
-      // Remove existing scheduled job if any
-      try {
-        await schedulerQueue.remove(`campaign:schedule:${id}`);
-      } catch (e) {
-        // Job might not exist, ignore
+    if (updates.scheduledAt !== undefined) {
+      if (schedulerQueue) {
+        // Remove existing scheduled job if any (legacy cleanup)
+        try {
+          await schedulerQueue.remove(`campaign:schedule:${id}`);
+        } catch (e) {
+          // Job might not exist, ignore
+        }
       }
 
-      // Add new scheduled job if scheduled
       if (campaign.scheduledAt) {
-        const delay = msUntil(campaign.scheduledAt);
-
-        if (delay <= 0) {
-          logger.warn({
-            campaignId: id,
-            scheduledAt: campaign.scheduledAt,
-            delay,
-          }, 'Scheduled campaign is in the past, enqueuing immediately');
-
-          try {
-            await enqueueCampaign(id);
-          } catch (err) {
-            logger.error({ campaignId: id, err }, 'Failed to enqueue past-due campaign');
-          }
-        } else {
-          logger.info({
-            campaignId: id,
-            scheduledAt: campaign.scheduledAt,
-            delayMs: delay,
-            delaySeconds: Math.round(delay / 1000),
-          }, 'Adding scheduled campaign job to queue');
-
-          const job = await schedulerQueue.add(
-            'enqueueCampaign',
-            { campaignId: id },
-            {
-              jobId: `campaign:schedule:${id}`,
-              delay,
-            },
-          );
-
-          logger.info({ campaignId: id, jobId: job.id }, 'Scheduled campaign job added to queue');
-        }
+        logger.info({
+          campaignId: id,
+          scheduledAt: campaign.scheduledAt,
+        }, 'Campaign schedule updated; worker sweeper will enqueue when due');
       }
     }
 
@@ -1036,7 +943,7 @@ router.put('/campaigns/:id', requireAuth, async (req, res, next) => {
 
 /* =========================================================
  * POST /campaigns/:id/unschedule (protected)
- * Remove scheduledAt and cancel delayed job (scoped).
+ * Remove scheduledAt and cancel legacy delayed job if present (scoped).
  * ========================================================= */
 router.post('/campaigns/:id/unschedule', requireAuth, async (req, res, next) => {
   try {

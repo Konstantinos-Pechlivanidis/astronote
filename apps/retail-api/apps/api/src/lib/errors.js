@@ -26,6 +26,8 @@ function handleError(error, req, res, defaultMessage = 'Internal Server Error') 
     name: error?.name,
     path: req.path,
     method: req.method,
+    requestId: req.id,
+    userId: req.user?.id,
   };
 
   if (req.log) {
@@ -160,4 +162,3 @@ module.exports = {
   unauthorizedError,
   forbiddenError,
 };
-

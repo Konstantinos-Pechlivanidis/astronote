@@ -17,7 +17,7 @@ export const subscriptionsApi = {
       data,
     ),
 
-  update: (data: any) =>
+  update: (data: { planType: string; currency?: string }) =>
     api.post(endpoints.subscriptions.update, data),
 
   cancel: () =>
@@ -26,4 +26,3 @@ export const subscriptionsApi = {
   getPortal: () =>
     api.get<{ portalUrl?: string; url?: string }>(endpoints.subscriptions.portal),
 };
-

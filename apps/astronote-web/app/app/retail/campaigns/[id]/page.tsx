@@ -16,7 +16,6 @@ import { useBillingGate } from '@/src/features/retail/billing/hooks/useBillingGa
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import Link from 'next/link';
 import { useRef } from 'react';
-import { toast } from 'sonner';
 
 function MessagePreviewModal({
   open,
@@ -122,13 +121,50 @@ function CampaignActions({
     return () => window.removeEventListener('click', handler, true);
   }, []);
 
+  const status = campaign.status;
+  const isDraft = status === 'draft';
+  const isScheduled = status === 'scheduled';
+  const isSending = status === 'sending';
+  const isCompleted = status === 'completed';
+  const isFailed = status === 'failed';
+  const canEnqueueStatus = isDraft || isScheduled;
   const canEnqueue =
-    ['draft', 'paused'].includes(campaign.status) &&
+    canEnqueueStatus &&
     !enqueueMutation.isPending &&
     !isEnqueuing;
-  const canEdit = ['draft', 'scheduled'].includes(campaign.status);
+  const canEdit = ['draft', 'scheduled'].includes(status);
   const subscriptionInactive = !billingGate.canSendCampaigns;
-  const isScheduled = campaign.status === 'scheduled' || !!campaign.scheduledAt;
+  const showEnqueueAction = !isFailed && !isCompleted;
+  const enqueueLabel = isSending ? 'Sending...' : isScheduled ? 'Enqueue now' : 'Send Campaign';
+  const failedGuidance = 'Campaign failed. Create a new campaign or contact support.';
+  const retrySupported = false;
+
+  const describeEnqueueError = (error: any) => {
+    const code = error?.response?.data?.code || error?.code;
+    const rawMessage = error?.response?.data?.message || error?.message || 'Failed to enqueue campaign';
+    const statusMatch = rawMessage.match(/invalid_status:([a-z_]+)/i);
+    const currentStatus = error?.response?.data?.currentStatus || error?.currentStatus || statusMatch?.[1] || null;
+
+    if (code === 'INVALID_STATUS' || code === 'ENQUEUE_CONFLICT_STATUS') {
+      if (currentStatus === 'failed') {
+        return failedGuidance;
+      }
+      if (currentStatus === 'sending') {
+        return 'Campaign is already sending. Check status for progress.';
+      }
+      if (currentStatus === 'completed') {
+        return 'Campaign already completed. Create a new campaign to send again.';
+      }
+      if (currentStatus === 'scheduled') {
+        return 'Campaign is scheduled. Use "Enqueue now" to send immediately or edit the schedule.';
+      }
+      return currentStatus
+        ? `Campaign cannot be sent in its current state (${currentStatus}).`
+        : 'Campaign cannot be sent in its current state.';
+    }
+
+    return rawMessage;
+  };
 
   const handleEnqueue = () => {
     // eslint-disable-next-line no-console
@@ -136,10 +172,6 @@ function CampaignActions({
       // eslint-disable-next-line no-console
       console.log('[SEND CLICK] handleEnqueue called', { subscriptionInactive, campaignId: campaign.id });
       console.log('[SEND CLICK] before setEnqueueConfirm', enqueueConfirm);
-    }
-    if (isScheduled) {
-      toast.info('This campaign is scheduled. Edit the campaign to send now or change the schedule.');
-      return;
     }
     if (subscriptionInactive) {
       // eslint-disable-next-line no-console
@@ -212,8 +244,7 @@ function CampaignActions({
         // eslint-disable-next-line no-console
         console.error('[SEND CLICK] Mutation error', error);
       }
-      const message = error?.response?.data?.message || error?.message || 'Failed to enqueue campaign';
-      setEnqueueError(message);
+      setEnqueueError(describeEnqueueError(error));
     } finally {
       setIsEnqueuing(false);
       if (process.env.NODE_ENV !== 'production') {
@@ -223,45 +254,53 @@ function CampaignActions({
     }
   };
 
+  const enqueueTitle = subscriptionInactive
+    ? 'Active subscription required to send campaigns. Please subscribe in Billing.'
+    : !canEnqueueStatus
+      ? isSending
+        ? 'Campaign is already sending'
+        : isCompleted
+          ? 'Campaign already completed'
+          : isFailed
+            ? failedGuidance
+            : 'Campaign cannot be sent in its current state'
+      : isEnqueuing || enqueueMutation.isPending
+        ? 'Sending campaign...'
+        : isScheduled
+          ? 'Send immediately and bypass the schedule'
+          : 'Send this campaign';
+
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <Button
-          onClick={(e) => {
-            // eslint-disable-next-line no-console
-            if (process.env.NODE_ENV !== 'production') {
+        {showEnqueueAction && (
+          <Button
+            onClick={(e) => {
               // eslint-disable-next-line no-console
-              console.log('[SEND CLICK] Button onClick triggered', {
-                subscriptionInactive,
-                isEnqueuing,
-                isPending: enqueueMutation.isPending,
-                canEnqueue,
-                campaignId: campaign.id,
-                campaignStatus: campaign.status,
-              });
-            }
-            e.preventDefault();
-            e.stopPropagation();
-            handleEnqueue();
-          }}
-          disabled={subscriptionInactive || isEnqueuing || enqueueMutation.isPending || !canEnqueue || isScheduled}
-          title={
-            isScheduled
-              ? 'This campaign is scheduled. Edit to send now or change schedule.'
-              : subscriptionInactive
-                ? 'Active subscription required to send campaigns. Please subscribe in Billing.'
-                : !canEnqueue
-                  ? 'Campaign is already being sent'
-                  : isEnqueuing || enqueueMutation.isPending
-                    ? 'Sending campaign...'
-                    : 'Send this campaign'
-          }
-          aria-label="Send campaign"
-          type="button"
-        >
-          <Send className="w-4 h-4 mr-2" aria-hidden="true" />
-          {isEnqueuing || enqueueMutation.isPending ? 'Sending...' : 'Send Campaign'}
-        </Button>
+              if (process.env.NODE_ENV !== 'production') {
+                // eslint-disable-next-line no-console
+                console.log('[SEND CLICK] Button onClick triggered', {
+                  subscriptionInactive,
+                  isEnqueuing,
+                  isPending: enqueueMutation.isPending,
+                  canEnqueue,
+                  campaignId: campaign.id,
+                  campaignStatus: campaign.status,
+                });
+              }
+              e.preventDefault();
+              e.stopPropagation();
+              handleEnqueue();
+            }}
+            disabled={subscriptionInactive || isEnqueuing || enqueueMutation.isPending || !canEnqueueStatus}
+            title={enqueueTitle}
+            aria-label={isScheduled ? 'Enqueue campaign now' : 'Send campaign'}
+            type="button"
+          >
+            <Send className="w-4 h-4 mr-2" aria-hidden="true" />
+            {isEnqueuing || enqueueMutation.isPending ? 'Sending...' : enqueueLabel}
+          </Button>
+        )}
 
         <Button onClick={onPreviewMessages} variant="outline" aria-label="Preview messages">
           <Eye className="w-4 h-4 mr-2" aria-hidden="true" />
@@ -306,7 +345,7 @@ function CampaignActions({
             </p>
           )}
           {enqueueError && (
-            <p className="text-sm text-red-400">Last enqueue failed: {enqueueError}</p>
+            <p className="text-sm text-red-400">Last error: {enqueueError}</p>
           )}
         </div>
       )}
@@ -336,7 +375,7 @@ function CampaignActions({
             <BarChart3 className="w-5 h-5 text-amber-400" />
             <div className="flex-1">
               <p className="text-sm font-medium text-amber-400">
-                This campaign is scheduled. Edit the campaign to send now or change the schedule.
+                This campaign is scheduled. You can enqueue now to send immediately or edit the schedule.
               </p>
               <p className="text-xs text-amber-400/80 mt-1">
                 <Link href={`/app/retail/campaigns/${campaign.id}/edit`} className="underline">
@@ -348,18 +387,38 @@ function CampaignActions({
         </div>
       )}
 
+      {isFailed && !retrySupported && (
+        <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <XCircle className="w-5 h-5 text-red-400" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-400">{failedGuidance}</p>
+              {campaign.lastEnqueueError && (
+                <p className="text-xs text-red-400/80 mt-1">
+                  Last error: {campaign.lastEnqueueError}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         open={enqueueConfirm}
         onClose={() => setEnqueueConfirm(false)}
         onOpenChange={setEnqueueConfirm}
         onConfirm={handleConfirmEnqueue}
-        title="Send Campaign"
+        title={isScheduled ? 'Enqueue now' : 'Send Campaign'}
         message={
-          campaign.total
-            ? `This will send the campaign to ${campaign.total.toLocaleString()} recipients. Continue?`
-            : 'This will send the campaign. Continue?'
+          isScheduled
+            ? campaign.total
+              ? `This will send immediately to ${campaign.total.toLocaleString()} recipients and ignore the schedule. Continue?`
+              : 'This will send immediately and ignore the schedule. Continue?'
+            : campaign.total
+              ? `This will send the campaign to ${campaign.total.toLocaleString()} recipients. Continue?`
+              : 'This will send the campaign. Continue?'
         }
-        confirmText="Send now"
+        confirmText={isScheduled ? 'Enqueue now' : 'Send now'}
         cancelText="Cancel"
         confirmDisabled={isEnqueuing || enqueueMutation.isPending}
         confirmLoading={isEnqueuing || enqueueMutation.isPending}

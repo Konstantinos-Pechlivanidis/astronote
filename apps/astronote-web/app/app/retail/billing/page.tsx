@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { billingApi, type Package } from '@/src/lib/retail/api/billing';
 import { subscriptionsApi } from '@/src/lib/retail/api/subscriptions';
@@ -21,6 +21,38 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+
+const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const;
+type BillingCurrency = (typeof SUPPORTED_CURRENCIES)[number];
+
+const normalizeCurrency = (value?: string | null): BillingCurrency | null => {
+  if (!value) return null;
+  const upper = value.toUpperCase();
+  return SUPPORTED_CURRENCIES.includes(upper as BillingCurrency) ? (upper as BillingCurrency) : null;
+};
+
+const currencySymbol = (currency: string) => (String(currency).toUpperCase() === 'USD' ? '$' : '€');
+
+const formatAmount = (amount: number, currency: string) =>
+  `${currencySymbol(currency)}${amount.toFixed(2)}`;
+
+const getTenantStorageKey = () => {
+  if (typeof window === 'undefined') return null;
+  const token = localStorage.getItem('accessToken');
+  if (!token) return 'retail_billing_currency';
+  const payload = token.split('.')[1];
+  if (!payload) return 'retail_billing_currency';
+  try {
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    const tenantId = decoded?.sub || decoded?.userId || decoded?.id;
+    if (tenantId) {
+      return `retail_billing_currency_${tenantId}`;
+    }
+  } catch {
+    return 'retail_billing_currency';
+  }
+  return 'retail_billing_currency';
+};
 
 function BillingHeader({
   subscription,
@@ -79,14 +111,16 @@ function BillingHeader({
 
 function SubscriptionCard({
   subscription,
+  currency,
 }: {
   subscription: { active: boolean; planType: string | null }
+  currency: BillingCurrency
 }) {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
 
   const subscribeMutation = useMutation({
     mutationFn: async (planType: string) => {
-      const res = await subscriptionsApi.subscribe({ planType, currency: 'EUR' });
+      const res = await subscriptionsApi.subscribe({ planType, currency });
       return res.data;
     },
     onSuccess: (data) => {
@@ -213,28 +247,27 @@ function SubscriptionCard({
   );
 }
 
-function CreditTopupCard() {
-  const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
+function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
+  const creditOptions = [100, 250, 500, 1000, 2000];
+  const [selectedCredits, setSelectedCredits] = useState<number>(creditOptions[2]);
   const queryClient = useQueryClient();
 
-  const { data: packages, isLoading: packagesLoading, error: packagesError } = useQuery({
-    queryKey: ['retail-packages'],
+  const { data: priceData, isLoading: priceLoading, error: priceError } = useQuery({
+    queryKey: ['retail-topup-price', selectedCredits, currency],
     queryFn: async () => {
-      const res = await billingApi.getPackages('EUR');
+      const res = await billingApi.calculateTopup(selectedCredits, currency);
       return res.data;
     },
+    enabled: Number.isInteger(selectedCredits) && selectedCredits > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const topupMutation = useMutation({
-    mutationFn: async ({ packId }: { packId: string }) => {
-      const packIdString = String(packId);
-      if (!packIdString || !packIdString.startsWith('pack_')) {
-        throw new Error(
-          `Invalid pack ID format: ${packId}. Expected format: 'pack_100', 'pack_500', etc.`,
-        );
+    mutationFn: async ({ credits }: { credits: number }) => {
+      if (!credits || !Number.isInteger(credits) || credits <= 0) {
+        throw new Error('Credits must be a positive whole number');
       }
-      const res = await billingApi.topup({ packId: packIdString });
+      const res = await billingApi.topup({ credits, currency });
       return res.data;
     },
     onSuccess: (data) => {
@@ -252,77 +285,20 @@ function CreditTopupCard() {
     retry: false,
   });
 
-  // Filter credit packs (type: 'credit_pack')
-  const creditPacks = useMemo(
-    () => packages?.filter((pkg) => pkg.type === 'credit_pack') || [],
-    [packages],
-  );
-
-  // Set default selection to first pack
-  useEffect(() => {
-    if (creditPacks.length > 0 && !selectedPackId) {
-      setSelectedPackId(String(creditPacks[0].id));
-    }
-  }, [creditPacks, selectedPackId]);
-
-  const selectedPack = creditPacks.find((pkg) => String(pkg.id) === selectedPackId);
-
   const handleTopup = () => {
-    if (!selectedPackId) return;
-    topupMutation.mutate({ packId: selectedPackId });
+    if (!selectedCredits) return;
+    topupMutation.mutate({ credits: selectedCredits });
   };
 
-  if (packagesLoading) {
-    return (
-      <RetailCard>
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 bg-surface-light rounded animate-pulse"></div>
-          ))}
-        </div>
-      </RetailCard>
-    );
-  }
-
-  if (packagesError) {
-    return (
-      <RetailCard>
-        <div className="text-sm text-red-400">Error loading credit packs</div>
-      </RetailCard>
-    );
-  }
-
-  if (creditPacks.length === 0) {
-    return (
-      <RetailCard>
-        <div className="flex items-center gap-2 mb-4">
-          <CreditCard className="w-5 h-5 text-accent" />
-          <h3 className="text-lg font-semibold text-text-primary">Buy Credits</h3>
-        </div>
-        <p className="text-sm text-text-secondary">
-          Credit packs are not available at this time. Please contact support.
-        </p>
-      </RetailCard>
-    );
-  }
-
-  // Calculate price - handle both priceCents and priceEur formats
-  const getPrice = (pkg: Package) => {
-    if ('priceCents' in pkg && typeof pkg.priceCents === 'number') {
-      return (pkg.priceCents / 100).toFixed(2);
-    }
-    if ('priceEur' in pkg && typeof pkg.priceEur === 'number') {
-      return pkg.priceEur.toFixed(2);
-    }
-    return pkg.price.toFixed(2);
-  };
-
-  const getUnits = (pkg: Package) => {
-    if ('units' in pkg && pkg.units) {
-      return pkg.units;
-    }
-    return pkg.credits || 0;
-  };
+  const totalPrice = typeof priceData?.priceWithVat === 'number'
+    ? priceData.priceWithVat
+    : typeof priceData?.price === 'number'
+      ? priceData.price
+      : typeof priceData?.priceEurWithVat === 'number'
+        ? priceData.priceEurWithVat
+        : typeof priceData?.priceUsdWithVat === 'number'
+          ? priceData.priceUsdWithVat
+          : null;
 
   return (
     <RetailCard>
@@ -331,45 +307,55 @@ function CreditTopupCard() {
         <h3 className="text-lg font-semibold text-text-primary">Buy Credits</h3>
       </div>
       <p className="text-sm text-text-secondary mb-4">
-        Purchase credit packs. 1 credit = 1 SMS message. Credits can be purchased regardless of
+        Purchase credits. 1 credit = 1 SMS message. Credits can be purchased regardless of
         subscription status, but can only be <strong>used</strong> with an active subscription.
       </p>
       <div className="space-y-4">
         <div>
           <label htmlFor="creditPack" className="block text-sm font-medium text-text-secondary mb-2">
-            Select Credit Pack
+            Select Credits
           </label>
           <Select
-            value={selectedPackId || ''}
-            onValueChange={setSelectedPackId}
+            value={String(selectedCredits)}
+            onValueChange={(value) => setSelectedCredits(Number(value))}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select Credit Pack" />
+              <SelectValue placeholder="Select Credits" />
             </SelectTrigger>
             <SelectContent>
-              {creditPacks.map((pack) => (
-                <SelectItem key={pack.id} value={String(pack.id)}>
-                  {getUnits(pack).toLocaleString()} credits - €{getPrice(pack)}
+              {creditOptions.map((credits) => (
+                <SelectItem key={credits} value={String(credits)}>
+                  {credits.toLocaleString()} credits
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        {selectedPack && (
-          <div className="bg-surface-light rounded-lg p-4">
-            <div className="flex justify-between text-sm text-text-secondary mb-1">
-              <span>Credits:</span>
-              <span className="font-medium text-text-primary">{getUnits(selectedPack).toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-lg font-bold text-text-primary pt-2 border-t border-border">
-              <span>Total:</span>
-              <span>€{getPrice(selectedPack)}</span>
-            </div>
+        <div className="bg-surface-light rounded-lg p-4">
+          <div className="flex justify-between text-sm text-text-secondary mb-1">
+            <span>Credits:</span>
+            <span className="font-medium text-text-primary">{selectedCredits.toLocaleString()}</span>
           </div>
-        )}
+          <div className="flex justify-between text-lg font-bold text-text-primary pt-2 border-t border-border">
+            <span>Total:</span>
+            <span>
+              {priceLoading
+                ? 'Loading...'
+                : totalPrice !== null
+                  ? formatAmount(totalPrice, currency)
+                  : '—'}
+            </span>
+          </div>
+          {priceData?.vatAmount !== undefined && (
+            <div className="mt-2 text-xs text-text-tertiary">
+              Includes VAT {currencySymbol(currency)}
+              {priceData.vatAmount.toFixed(2)}
+            </div>
+          )}
+        </div>
         <Button
           onClick={handleTopup}
-          disabled={!selectedPackId || topupMutation.isPending || (selectedPack as any)?.available === false}
+          disabled={topupMutation.isPending || priceLoading || !!priceError}
           className="w-full"
           size="lg"
         >
@@ -381,13 +367,13 @@ function CreditTopupCard() {
           ) : (
             <>
               <Plus className="w-4 h-4 mr-2" />
-              Buy {selectedPack ? `${getUnits(selectedPack).toLocaleString()} Credits` : 'Credits'}
+              Buy {selectedCredits.toLocaleString()} Credits
             </>
           )}
         </Button>
-        {selectedPack && (selectedPack as any)?.available === false && (
+        {priceError && (
           <p className="text-xs text-text-tertiary text-center">
-            This pack is not available for purchase at this time.
+            Failed to load pricing. Please try again.
           </p>
         )}
       </div>
@@ -395,12 +381,17 @@ function CreditTopupCard() {
   );
 }
 
-function PackageCard({ pkg }: { pkg: Package }) {
+function PackageCard({ pkg, currency }: { pkg: Package; currency: BillingCurrency }) {
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   const purchaseMutation = useMutation({
-    mutationFn: async ({ packageId, currency = 'EUR' }: { packageId: number; currency?: string }) => {
-      const res = await billingApi.purchase({ packageId, currency });
+    mutationFn: async ({
+      packageId,
+      currency = 'EUR',
+      idempotencyKey,
+    }: { packageId: number; currency?: string; idempotencyKey?: string }) => {
+      const res = await billingApi.purchase({ packageId, currency, idempotencyKey });
       return res.data;
     },
     onSuccess: (data) => {
@@ -415,11 +406,15 @@ function PackageCard({ pkg }: { pkg: Package }) {
       toast.error(message);
       setIsPurchasing(false);
     },
+    retry: false,
   });
 
   const getPrice = (pkg: Package) => {
     if ('priceCents' in pkg && typeof pkg.priceCents === 'number') {
       return (pkg.priceCents / 100).toFixed(2);
+    }
+    if ('amount' in pkg && typeof pkg.amount === 'number') {
+      return pkg.amount.toFixed(2);
     }
     if ('priceEur' in pkg && typeof pkg.priceEur === 'number') {
       return pkg.priceEur.toFixed(2);
@@ -435,21 +430,35 @@ function PackageCard({ pkg }: { pkg: Package }) {
   };
 
   const handlePurchase = () => {
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = typeof crypto?.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
     setIsPurchasing(true);
-    purchaseMutation.mutate({ packageId: Number(pkg.id), currency: 'EUR' });
+    purchaseMutation.mutate({
+      packageId: Number(pkg.id),
+      currency,
+      idempotencyKey: idempotencyKeyRef.current || undefined,
+    });
   };
 
   return (
     <RetailCard hover>
       <div className="flex items-center gap-2 mb-3">
         <PackageIcon className="w-5 h-5 text-accent" />
-        <h3 className="text-lg font-semibold text-text-primary">{pkg.name || 'Package'}</h3>
+        <h3 className="text-lg font-semibold text-text-primary">
+          {pkg.displayName || pkg.name || 'Package'}
+        </h3>
       </div>
       <div className="mb-4">
         <div className="text-2xl font-bold text-text-primary mb-1">
           {getUnits(pkg).toLocaleString()} credits
         </div>
-        <div className="text-lg text-text-secondary">€{getPrice(pkg)}</div>
+        <div className="text-lg text-text-secondary">
+          {currencySymbol(pkg.currency || currency)}
+          {getPrice(pkg)}
+        </div>
       </div>
       <Button
         onClick={handlePurchase}
@@ -563,6 +572,9 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
 
 export default function RetailBillingPage() {
   const [transactionsPage, setTransactionsPage] = useState(1);
+  const [selectedCurrency, setSelectedCurrency] = useState<BillingCurrency>('EUR');
+  const [currencyStorageKey, setCurrencyStorageKey] = useState<string | null>(null);
+  const hasStoredSelection = useRef(false);
 
   const { data: balanceData, isLoading: balanceLoading, error: balanceError } = useQuery({
     queryKey: ['retail-balance'],
@@ -573,10 +585,31 @@ export default function RetailBillingPage() {
     staleTime: 60 * 1000, // 1 minute
   });
 
+  useEffect(() => {
+    setCurrencyStorageKey(getTenantStorageKey());
+  }, []);
+
+  useEffect(() => {
+    if (!currencyStorageKey) return;
+    const stored = normalizeCurrency(localStorage.getItem(currencyStorageKey));
+    if (stored) {
+      hasStoredSelection.current = true;
+      setSelectedCurrency(stored);
+      return;
+    }
+
+    if (!hasStoredSelection.current) {
+      const fallback = normalizeCurrency(balanceData?.billingCurrency);
+      if (fallback) {
+        setSelectedCurrency(fallback);
+      }
+    }
+  }, [currencyStorageKey, balanceData?.billingCurrency]);
+
   const { data: packages, isLoading: packagesLoading, error: packagesError } = useQuery({
-    queryKey: ['retail-packages'],
+    queryKey: ['retail-packages', selectedCurrency],
     queryFn: async () => {
-      const res = await billingApi.getPackages('EUR');
+      const res = await billingApi.getPackages(selectedCurrency);
       return res.data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -594,6 +627,27 @@ export default function RetailBillingPage() {
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000, // 30 seconds
   });
+
+  const handleCurrencyChange = (value: string) => {
+    const normalized = normalizeCurrency(value) || 'EUR';
+    setSelectedCurrency(normalized);
+    if (currencyStorageKey) {
+      localStorage.setItem(currencyStorageKey, normalized);
+    }
+    hasStoredSelection.current = true;
+  };
+
+  const currencySelector = (
+    <Select value={selectedCurrency} onValueChange={handleCurrencyChange}>
+      <SelectTrigger className="w-[140px]">
+        <SelectValue placeholder="Currency" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="EUR">EUR (€)</SelectItem>
+        <SelectItem value="USD">USD ($)</SelectItem>
+      </SelectContent>
+    </Select>
+  );
 
   if (balanceLoading) {
     return (
@@ -628,6 +682,9 @@ export default function RetailBillingPage() {
 
   const subscription = balanceData?.subscription || { active: false, planType: null };
   const credits = balanceData?.credits || 0;
+  const availablePackages = Array.isArray(packages)
+    ? packages.filter((pkg) => ['credit_topup', 'subscription_package', 'credit_pack'].includes(pkg.type || ''))
+    : [];
 
   return (
     <RetailPageLayout>
@@ -635,13 +692,14 @@ export default function RetailBillingPage() {
         <RetailPageHeader
           title="Billing"
           description="Manage your subscription and credits"
+          actions={currencySelector}
         />
 
         <BillingHeader subscription={subscription} credits={credits} />
 
         <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <SubscriptionCard subscription={subscription} />
-          <CreditTopupCard />
+          <SubscriptionCard subscription={subscription} currency={selectedCurrency} />
+          <CreditTopupCard currency={selectedCurrency} />
         </div>
 
         {subscription.active && (
@@ -666,13 +724,11 @@ export default function RetailBillingPage() {
             )}
             {!packagesLoading && !packagesError && packages && (
               <>
-                {packages.filter((pkg) => pkg.type === 'subscription_package').length > 0 ? (
+                {availablePackages.length > 0 ? (
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {packages
-                      .filter((pkg) => pkg.type === 'subscription_package')
-                      .map((pkg) => (
-                        <PackageCard key={pkg.id} pkg={pkg} />
-                      ))}
+                    {availablePackages.map((pkg) => (
+                      <PackageCard key={pkg.id} pkg={pkg} currency={selectedCurrency} />
+                    ))}
                   </div>
                 ) : (
                   <RetailCard>

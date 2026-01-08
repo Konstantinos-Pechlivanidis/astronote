@@ -23,6 +23,7 @@ export interface Campaign {
     failed: number
     pendingDelivery?: number
   }
+  lastEnqueueError?: string | null
 }
 
 export interface CampaignListParams {

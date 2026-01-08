@@ -514,6 +514,13 @@ paths:
     get:
       tags: [Billing]
       summary: List active packages
+      parameters:
+        - in: query
+          name: currency
+          schema:
+            type: string
+            enum: [EUR, USD]
+            default: EUR
       responses:
         '200': { description: OK }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -521,12 +528,24 @@ paths:
   /api/billing/purchase:
     post:
       tags: [Billing]
-      summary: Purchase a package (MVP marks as paid and credits wallet)
+      summary: Create a Stripe checkout session for a package
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: { type: string }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { type: object, required: [packageId], properties: { packageId: { type: integer } } }
+            schema:
+              type: object
+              required: [packageId]
+              properties:
+                packageId: { type: integer }
+                currency:
+                  type: string
+                  enum: [EUR, USD]
+                  default: EUR
       responses:
         '201': { description: Created }
         '401': { $ref: '#/components/responses/Unauthorized' }

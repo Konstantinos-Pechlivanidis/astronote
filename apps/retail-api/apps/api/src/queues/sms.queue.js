@@ -80,9 +80,12 @@ if (process.env.QUEUE_DISABLED === '1') {
     }
   } catch (e) {
     console.warn('[SMS Queue] Initialization failed:', e.message);
-    throw e;
+    smsQueue = null;
+    queueReady = null;
   }
 }
 
 module.exports = smsQueue;
-module.exports.queueReady = queueReady;
+if (smsQueue) {
+  module.exports.queueReady = queueReady;
+}

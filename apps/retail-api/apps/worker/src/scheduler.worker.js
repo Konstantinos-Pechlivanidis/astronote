@@ -11,7 +11,7 @@ if (process.env.QUEUE_DISABLED === '1') {
 }
 
 // Dependencies are resolved from apps/api/node_modules because worker runs with cwd=apps/api
-const { Worker } = require('bullmq');
+const { Queue, Worker } = require('bullmq');
 const { getRedisClient } = require('../../api/src/lib/redis');
 const { enqueueCampaign } = require('../../api/src/services/campaignEnqueue.service');
 const prisma = require('../../api/src/lib/prisma');
@@ -44,9 +44,35 @@ if (!connection) {
 logger.info({ queue: 'schedulerQueue', redis: formatRedisInfo(connection) }, 'Starting scheduler worker (Redis will connect on first use)...');
 
 const concurrency = Number(process.env.SCHEDULER_CONCURRENCY || 2);
+const SWEEP_INTERVAL_MS = Number(process.env.SCHEDULE_SWEEP_INTERVAL_MS || 60000);
 const SWEEP_LIMIT = Number(process.env.SCHEDULE_SWEEP_LIMIT || 25);
 const CLAIM_STALE_MINUTES = Number(process.env.SEND_CLAIM_STALE_MINUTES || 15);
 const STALE_RECOVERY_LIMIT = Number(process.env.STALE_RECOVERY_LIMIT || 200);
+const ENQUEUE_LOCK_TTL_SEC = Number(process.env.ENQUEUE_LOCK_TTL_SEC || 600);
+
+const schedulerQueue = new Queue('schedulerQueue', {
+  connection,
+  defaultJobOptions: {
+    removeOnComplete: true,
+    removeOnFail: false,
+  },
+});
+
+schedulerQueue.add(
+  'sweepDueCampaigns',
+  {},
+  {
+    repeat: {
+      every: SWEEP_INTERVAL_MS,
+      immediately: true,
+    },
+    jobId: 'scheduled-campaign-sweeper',
+  },
+).then(() => {
+  logger.info({ intervalMs: SWEEP_INTERVAL_MS }, 'Scheduled campaign sweeper registered');
+}).catch((err) => {
+  logger.error({ err: err.message, intervalMs: SWEEP_INTERVAL_MS }, 'Failed to register campaign sweeper');
+});
 
 const worker = new Worker(
   'schedulerQueue',
@@ -54,53 +80,16 @@ const worker = new Worker(
     logger.info({ jobId: job.id, jobName: job.name, jobData: job.data }, 'Processing scheduled job');
 
     if (job.name === 'sweepDueCampaigns') {
-      return sweepDueCampaigns();
-    }
-    
-    if (job.name !== 'enqueueCampaign') {
-      logger.warn({ jobId: job.id, jobName: job.name }, 'Unknown job name, skipping');
-      return;
-    }
-    
-    const { campaignId } = job.data || {};
-    if (!campaignId) {
-      logger.error({ jobId: job.id, jobData: job.data }, 'Missing campaignId in job data');
-      throw new Error('Missing campaignId in job data');
+      return sweepDueCampaigns(job);
     }
 
-    try {
-      logger.info({ campaignId, jobId: job.id }, 'Calling enqueueCampaign');
-      const result = await enqueueCampaign(Number(campaignId));
-      
-      if (!result.ok) {
-        logger.error({ 
-          campaignId, 
-          jobId: job.id,
-          reason: result.reason,
-          result 
-        }, 'enqueueCampaign failed');
-        throw new Error(`enqueueCampaign failed: ${result.reason || 'unknown error'}`);
-      } else {
-        logger.info({ 
-          campaignId, 
-          jobId: job.id,
-          enqueuedJobs: result.enqueuedJobs 
-        }, 'Campaign enqueued successfully');
-      }
-    } catch (err) {
-      logger.error({ 
-        campaignId, 
-        jobId: job.id,
-        error: err.message,
-        stack: err.stack 
-      }, 'Error processing scheduled campaign job');
-      throw err; // Re-throw to mark job as failed
-    }
+    logger.warn({ jobId: job.id, jobName: job.name }, 'Unknown or legacy scheduler job, skipping');
+    return;
   },
   { connection, concurrency }
 );
 
-async function sweepDueCampaigns() {
+async function sweepDueCampaigns(job) {
   const now = new Date();
   const dueCampaigns = await prisma.campaign.findMany({
     where: { status: 'scheduled', scheduledAt: { lte: now } },
@@ -110,20 +99,29 @@ async function sweepDueCampaigns() {
   });
 
   let enqueued = 0;
+  const sweepId = job?.id || `sweep:${Date.now().toString(36)}`;
   if (!dueCampaigns.length) {
-    logger.debug({ checkedAt: now.toISOString() }, 'No scheduled campaigns ready to enqueue');
+    logger.debug({ checkedAt: now.toISOString(), sweepId }, 'No scheduled campaigns ready to enqueue');
   } else {
     for (const camp of dueCampaigns) {
+      const correlationId = `${sweepId}:${camp.id}`;
+      const lockAcquired = await acquireEnqueueLock(camp.id, correlationId);
+      if (!lockAcquired) {
+        logger.info({ campaignId: camp.id, ownerId: camp.ownerId, sweepId }, 'Enqueue lock held, skipping scheduled campaign');
+        continue;
+      }
       try {
-        const result = await enqueueCampaign(Number(camp.id));
+        const result = await enqueueCampaign(Number(camp.id), { correlationId, source: 'scheduler-sweep' });
         if (result?.ok) {
           enqueued++;
-          logger.info({ campaignId: camp.id, ownerId: camp.ownerId, enqueuedJobs: result.enqueuedJobs }, 'Scheduled campaign enqueued via sweep');
+          logger.info({ campaignId: camp.id, ownerId: camp.ownerId, enqueuedJobs: result.enqueuedJobs, sweepId }, 'Scheduled campaign enqueued via sweep');
         } else {
-          logger.warn({ campaignId: camp.id, ownerId: camp.ownerId, reason: result?.reason }, 'Scheduled sweep enqueue blocked');
+          logger.warn({ campaignId: camp.id, ownerId: camp.ownerId, reason: result?.reason, sweepId }, 'Scheduled sweep enqueue blocked');
         }
       } catch (err) {
-        logger.error({ campaignId: camp.id, ownerId: camp.ownerId, err: err.message }, 'Error enqueuing scheduled campaign during sweep');
+        logger.error({ campaignId: camp.id, ownerId: camp.ownerId, err: err.message, sweepId }, 'Error enqueuing scheduled campaign during sweep');
+      } finally {
+        await releaseEnqueueLock(camp.id, correlationId);
       }
     }
   }
@@ -132,6 +130,29 @@ async function sweepDueCampaigns() {
   const recovered = await recoverStaleProcessingClaims();
 
   return { scanned: dueCampaigns.length, enqueued, recovered };
+}
+
+async function acquireEnqueueLock(campaignId, correlationId) {
+  const lockKey = `campaign:enqueue:${campaignId}`;
+  try {
+    const result = await connection.set(lockKey, correlationId, 'NX', 'EX', ENQUEUE_LOCK_TTL_SEC);
+    return result === 'OK';
+  } catch (err) {
+    logger.warn({ campaignId, err: err.message }, 'Failed to acquire enqueue lock, proceeding without lock');
+    return true;
+  }
+}
+
+async function releaseEnqueueLock(campaignId, correlationId) {
+  const lockKey = `campaign:enqueue:${campaignId}`;
+  try {
+    const current = await connection.get(lockKey);
+    if (!current || current === correlationId) {
+      await connection.del(lockKey);
+    }
+  } catch (err) {
+    logger.warn({ campaignId, err: err.message }, 'Failed to release enqueue lock');
+  }
 }
 
 async function recoverStaleProcessingClaims() {

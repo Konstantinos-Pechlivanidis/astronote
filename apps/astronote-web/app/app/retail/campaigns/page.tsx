@@ -114,6 +114,16 @@ function CampaignsTable({ campaigns }: { campaigns: any[] }) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <StatusBadge status={campaign.status} />
+                      {campaign.status === 'failed' && (
+                        <div className="mt-1 text-xs text-red-400">
+                          Campaign failed. Create a new campaign or contact support.
+                        </div>
+                      )}
+                      {campaign.status === 'failed' && campaign.lastEnqueueError && (
+                        <div className="mt-1 text-xs text-red-400/80">
+                          Last error: {campaign.lastEnqueueError}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-text-primary flex items-center gap-2 tabular-nums">
@@ -183,6 +193,16 @@ function CampaignsTable({ campaigns }: { campaigns: any[] }) {
                     <div>Created: {format(new Date(campaign.createdAt), 'MMM d, yyyy')}</div>
                   )}
                 </div>
+                {campaign.status === 'failed' && (
+                  <div className="text-xs text-red-400">
+                    Campaign failed. Create a new campaign or contact support.
+                    {campaign.lastEnqueueError && (
+                      <div className="mt-1 text-red-400/80">
+                        Last error: {campaign.lastEnqueueError}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </RetailCard>
           </Link>

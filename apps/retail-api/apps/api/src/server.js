@@ -66,8 +66,8 @@ const allowlist = (process.env.CORS_ALLOWLIST || '')
   .filter(Boolean);
 
 // Add default retail frontend URL if not in allowlist
-const defaultRetailFrontend = 'https://astronote.onrender.com';
-// const defaultRetailFrontend = 'http://localhost:3000';
+// const defaultRetailFrontend = 'https://astronote.onrender.com';
+const defaultRetailFrontend = 'http://localhost:3000';
 if (!allowlist.includes(defaultRetailFrontend) && !allowlist.some(a => defaultRetailFrontend.startsWith(a))) {
   allowlist.push(defaultRetailFrontend);
 }
@@ -447,34 +447,16 @@ if (process.env.QUEUE_DISABLED !== '1') {
 }
 
 // ========= SCHEDULED CAMPAIGN SWEEPER =========
-const SCHEDULE_SWEEP_INTERVAL = Number(process.env.SCHEDULE_SWEEP_INTERVAL_MS || 60000); // default: 60s
-if (process.env.QUEUE_DISABLED !== '1') {
-  const schedulerQueue = require('./queues/scheduler.queue');
-  if (schedulerQueue) {
-    schedulerQueue.add(
-      'sweepDueCampaigns',
-      {},
-      {
-        repeat: {
-          every: SCHEDULE_SWEEP_INTERVAL,
-          immediately: true,
-        },
-        jobId: 'scheduled-campaign-sweeper',
-      },
-    ).then(() => {
-      console.log(`[Scheduler] Sweep job scheduled every ${Math.round(SCHEDULE_SWEEP_INTERVAL / 1000)}s`);
-    }).catch(err => {
-      console.error('[Scheduler] Failed to schedule sweep job:', err.message);
-    });
-  }
-}
+// Registered in worker (apps/worker/src/scheduler.worker.js)
 
 // ========= START WORKERS (if enabled) =========
 let workerProcess = null;
 let schedulerWorkerProcess = null;
 let statusRefreshWorkerProcess = null;
 let contactImportWorkerProcess = null;
-const WORKER_ENABLED = process.env.START_WORKER !== '0'; // Default: enabled, set START_WORKER=0 to disable
+const WORKER_ENABLED = process.env.START_WORKER !== undefined
+  ? process.env.START_WORKER !== '0'
+  : process.env.NODE_ENV !== 'production';
 
 if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
   const { spawn } = require('child_process');

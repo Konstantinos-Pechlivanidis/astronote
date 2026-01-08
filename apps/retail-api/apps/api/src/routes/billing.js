@@ -8,6 +8,8 @@ const {
   getPlanConfig,
   calculateTopupPrice,
 } = require('../services/subscription.service');
+const { resolveBillingCurrency } = require('../billing/currency');
+const { CONFIG_ERROR_CODE, getPackagePriceId } = require('../billing/stripePrices');
 const {
   createSubscriptionCheckoutSession,
   createCreditTopupCheckoutSession,
@@ -15,9 +17,83 @@ const {
   cancelSubscription,
 } = require('../services/stripe.service');
 const pino = require('pino');
+const crypto = require('crypto');
 
 const r = Router();
 const logger = pino({ name: 'billing-routes' });
+
+const isValidStripeCustomerId = (value) => typeof value === 'string' && value.startsWith('cus_');
+
+async function resolveStripeCustomerId({
+  userId,
+  subscription,
+  allowCreate = false,
+  requestId = null,
+}) {
+  const stripe = require('../services/stripe.service').stripe;
+  let stripeCustomerId = subscription.stripeCustomerId;
+
+  if (isValidStripeCustomerId(stripeCustomerId)) {
+    return stripeCustomerId;
+  }
+
+  const stripeSubscriptionId = subscription.stripeSubscriptionId;
+  if (stripe && stripeSubscriptionId) {
+    try {
+      const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+      const resolvedCustomerId =
+        typeof stripeSubscription.customer === 'string'
+          ? stripeSubscription.customer
+          : stripeSubscription.customer?.id;
+      if (isValidStripeCustomerId(resolvedCustomerId)) {
+        stripeCustomerId = resolvedCustomerId;
+      }
+    } catch (err) {
+      logger.warn({
+        requestId,
+        userId,
+        stripeSubscriptionId,
+        err: err.message,
+      }, 'Failed to resolve Stripe customer from subscription');
+    }
+  }
+
+  if (!isValidStripeCustomerId(stripeCustomerId) && allowCreate) {
+    if (!stripe) {
+      throw new Error('Stripe is not configured');
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, company: true, billingCurrency: true },
+    });
+    const customer = await stripe.customers.create({
+      email: user?.email || undefined,
+      name: user?.company || undefined,
+      metadata: {
+        ownerId: String(userId),
+        billingCurrency: user?.billingCurrency || 'EUR',
+      },
+    });
+    stripeCustomerId = customer.id;
+  }
+
+  if (!isValidStripeCustomerId(stripeCustomerId)) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { stripeCustomerId: null },
+    });
+    return null;
+  }
+
+  if (stripeCustomerId !== subscription.stripeCustomerId) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { stripeCustomerId },
+    });
+  }
+
+  return stripeCustomerId;
+}
 
 /**
  * GET /billing/balance
@@ -27,7 +103,33 @@ r.get('/billing/balance', requireAuth, async (req, res, next) => {
   try {
     const balance = await getBalance(req.user.id);
     const subscription = await getSubscriptionStatus(req.user.id);
-    res.json({ balance, subscription });
+    if (subscription?.stripeCustomerId && !isValidStripeCustomerId(subscription.stripeCustomerId)) {
+      subscription.stripeCustomerId = await resolveStripeCustomerId({
+        userId: req.user.id,
+        subscription,
+        allowCreate: false,
+      });
+    }
+    res.json({ balance, subscription, billingCurrency: subscription?.billingCurrency || 'EUR' });
+  } catch (e) { next(e); }
+});
+
+/**
+ * GET /billing/wallet
+ * Alias for balance (legacy frontend support)
+ */
+r.get('/billing/wallet', requireAuth, async (req, res, next) => {
+  try {
+    const balance = await getBalance(req.user.id);
+    const subscription = await getSubscriptionStatus(req.user.id);
+    if (subscription?.stripeCustomerId && !isValidStripeCustomerId(subscription.stripeCustomerId)) {
+      subscription.stripeCustomerId = await resolveStripeCustomerId({
+        userId: req.user.id,
+        subscription,
+        allowCreate: false,
+      });
+    }
+    res.json({ balance, subscription, billingCurrency: subscription?.billingCurrency || 'EUR' });
   } catch (e) { next(e); }
 });
 
@@ -68,7 +170,10 @@ r.get('/billing/packages', requireAuth, async (req, res, next) => {
       return res.json([]);
     }
 
-    const currency = (req.query.currency || 'EUR').toUpperCase();
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.query.currency,
+    });
     const items = await prisma.package.findMany({
       where: { active: true },
       orderBy: { units: 'asc' },
@@ -77,6 +182,7 @@ r.get('/billing/packages', requireAuth, async (req, res, next) => {
         name: true,
         units: true,
         priceCents: true,
+        priceCentsUsd: true,
         active: true,
         createdAt: true,
         updatedAt: true,
@@ -86,19 +192,52 @@ r.get('/billing/packages', requireAuth, async (req, res, next) => {
       },
     });
 
-    // Enrich with Stripe price IDs from environment if not in DB
-    const { getStripePriceId } = require('../services/stripe.service');
+    if (items.length === 0) {
+      logger.warn({ userId: req.user.id }, 'No active packages found');
+    }
+
     const enriched = items.map(pkg => {
-      const priceId = getStripePriceId(pkg.name, currency, pkg);
+      const priceId = getPackagePriceId(pkg.name, currency, pkg);
+      const resolvedPriceCents =
+        currency === 'USD' && Number.isFinite(pkg.priceCentsUsd)
+          ? pkg.priceCentsUsd
+          : pkg.priceCents;
+      const amount = Number((resolvedPriceCents / 100).toFixed(2));
 
       return {
-        ...pkg,
+        id: pkg.id,
+        name: pkg.name,
+        displayName: pkg.name,
+        units: pkg.units,
+        priceCents: resolvedPriceCents,
+        amount,
+        price: amount,
+        currency,
+        priceId,
         stripePriceId: priceId,
-        available: !!priceId, // Indicate if Stripe checkout is available
+        available: !!priceId,
+        type: 'credit_topup',
+        createdAt: pkg.createdAt,
+        updatedAt: pkg.updatedAt,
       };
     });
 
-    res.json(enriched);
+    if (enriched.length > 0) {
+      const etagSource = JSON.stringify(enriched.map((pkg) => ({
+        id: pkg.id,
+        updatedAt: pkg.updatedAt,
+        priceCents: pkg.priceCents,
+        priceId: pkg.priceId,
+        currency: pkg.currency,
+      })));
+      const etagValue = `W/"${crypto.createHash('sha256').update(etagSource).digest('hex')}"`;
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch && ifNoneMatch === etagValue) {
+        return res.status(304).end();
+      }
+      res.set('ETag', etagValue);
+    }
+    return res.json(enriched);
   } catch (e) { next(e); }
 });
 
@@ -150,6 +289,7 @@ r.post('/billing/seed-packages', requireAuth, async (req, res, next) => {
       name: String(x.name),
       units: Number(x.units),
       priceCents: Number(x.priceCents),
+      priceCentsUsd: Number.isFinite(Number(x.priceCentsUsd)) ? Number(x.priceCentsUsd) : null,
       active: true,
       stripePriceIdEur: x.stripePriceIdEur || null,
       stripePriceIdUsd: x.stripePriceIdUsd || null,
@@ -162,6 +302,7 @@ r.post('/billing/seed-packages', requireAuth, async (req, res, next) => {
         update: {
           units: p.units,
           priceCents: p.priceCents,
+          priceCentsUsd: p.priceCentsUsd,
           active: true,
           stripePriceIdEur: p.stripePriceIdEur,
           stripePriceIdUsd: p.stripePriceIdUsd,
@@ -182,12 +323,28 @@ r.post('/billing/seed-packages', requireAuth, async (req, res, next) => {
 r.post('/billing/purchase', requireAuth, async (req, res, next) => {
   try {
     const packageId = Number(req.body?.packageId);
-    const currency = (req.body?.currency || 'EUR').toUpperCase();
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.body?.currency,
+    });
+    const idempotencyKeyHeader =
+      req.headers['idempotency-key'] ||
+      req.headers['x-idempotency-key'];
+    const idempotencyKey = idempotencyKeyHeader
+      ? String(idempotencyKeyHeader).trim().slice(0, 128)
+      : null;
 
     if (!packageId) {
       return res.status(400).json({
         message: 'Package ID is required',
         code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (!idempotencyKey) {
+      return res.status(400).json({
+        message: 'Idempotency-Key header is required',
+        code: 'MISSING_IDEMPOTENCY_KEY',
       });
     }
 
@@ -199,16 +356,80 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
       });
     }
 
-    // Create purchase record
-    const purchase = await prisma.purchase.create({
-      data: {
+    const priceCents =
+      currency === 'USD' && Number.isFinite(pkg.priceCentsUsd)
+        ? pkg.priceCentsUsd
+        : pkg.priceCents;
+
+    const stripePriceId = getPackagePriceId(pkg.name, currency, pkg);
+    if (!stripePriceId) {
+      const err = new Error(`Stripe price ID not configured for package ${pkg.name} (${currency})`);
+      err.code = CONFIG_ERROR_CODE;
+      throw err;
+    }
+
+    let purchase = await prisma.purchase.findFirst({
+      where: {
         ownerId: req.user.id,
-        packageId: pkg.id,
-        status: 'pending',
-        amountCents: pkg.priceCents,
-        currency,
+        idempotencyKey,
       },
     });
+
+    if (purchase?.stripeSessionId) {
+      const { getCheckoutSession } = require('../services/stripe.service');
+      let checkoutUrl = null;
+      try {
+        const session = await getCheckoutSession(purchase.stripeSessionId);
+        checkoutUrl = session.url || null;
+      } catch (err) {
+        logger.warn({
+          purchaseId: purchase.id,
+          sessionId: purchase.stripeSessionId,
+          err: err.message,
+        }, 'Failed to retrieve existing checkout session');
+      }
+
+      return res.status(200).json({
+        ok: true,
+        checkoutUrl,
+        sessionId: purchase.stripeSessionId,
+        purchaseId: purchase.id,
+        status: purchase.status,
+        idempotent: true,
+      });
+    }
+
+    if (!purchase) {
+      // Create purchase record
+      try {
+        purchase = await prisma.purchase.create({
+          data: {
+            ownerId: req.user.id,
+            packageId: pkg.id,
+            units: pkg.units,
+            priceCents,
+            status: 'pending',
+            currency,
+            stripePriceId,
+            idempotencyKey,
+          },
+        });
+      } catch (err) {
+        if (err?.code === 'P2002') {
+          purchase = await prisma.purchase.findFirst({
+            where: {
+              ownerId: req.user.id,
+              idempotencyKey,
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
+    }
+    if (!purchase) {
+      throw new Error('Failed to create purchase record');
+    }
 
     // Helper to ensure /retail path is included
     const ensureRetailPath = (url) => {
@@ -234,8 +455,10 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
       userEmail: req.user.email,
       package: pkg,
       currency,
+      priceId: stripePriceId,
       successUrl,
       cancelUrl,
+      idempotencyKey,
     });
 
     // Link session ID to purchase
@@ -255,6 +478,12 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
       return res.status(503).json({
         message: 'Payment processing unavailable',
         code: 'STRIPE_NOT_CONFIGURED',
+      });
+    }
+    if (e?.code === CONFIG_ERROR_CODE || e.message?.includes('Stripe price ID not found')) {
+      return res.status(500).json({
+        message: e.message,
+        code: CONFIG_ERROR_CODE,
       });
     }
     next(e);
@@ -324,11 +553,16 @@ r.post('/subscriptions/subscribe', requireAuth, async (req, res, next) => {
     const successUrl = `${frontendUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${frontendUrl}/billing/cancel`;
 
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.body?.currency,
+    });
+
     const session = await createSubscriptionCheckoutSession({
       ownerId: req.user.id,
       userEmail: req.user.email,
       planType,
-      currency: 'EUR',
+      currency,
       successUrl,
       cancelUrl,
     });
@@ -338,9 +572,16 @@ r.post('/subscriptions/subscribe', requireAuth, async (req, res, next) => {
       checkoutUrl: session.url,
       sessionId: session.id,
       planType,
+      currency,
     });
   } catch (e) {
     // Handle specific error cases
+    if (e?.code === CONFIG_ERROR_CODE) {
+      return res.status(500).json({
+        message: e.message,
+        code: CONFIG_ERROR_CODE,
+      });
+    }
     if (e.message?.includes('Stripe price ID not found')) {
       return res.status(400).json({
         message: e.message,
@@ -455,14 +696,41 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
       // Continue with update anyway
     }
 
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.body?.currency,
+    });
+
     const { updateSubscription } = require('../services/stripe.service');
-    await updateSubscription(subscription.stripeSubscriptionId, planType);
+    await updateSubscription(subscription.stripeSubscriptionId, planType, currency);
+
+    let stripeCustomerId = subscription.stripeCustomerId;
+    const resolvedCustomerId =
+      typeof stripeSubscription?.customer === 'string'
+        ? stripeSubscription.customer
+        : stripeSubscription?.customer?.id;
+    if (isValidStripeCustomerId(resolvedCustomerId)) {
+      stripeCustomerId = resolvedCustomerId;
+      if (stripeCustomerId !== subscription.stripeCustomerId) {
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: { stripeCustomerId },
+        });
+      }
+    }
+
+    if (!isValidStripeCustomerId(stripeCustomerId)) {
+      return res.status(400).json({
+        message: 'Missing valid Stripe customer mapping for subscription update',
+        code: 'MISSING_CUSTOMER_ID',
+      });
+    }
 
     // Update local DB immediately (idempotent - activateSubscription checks current state)
     const { activateSubscription } = require('../services/subscription.service');
     await activateSubscription(
       req.user.id,
-      subscription.stripeCustomerId,
+      stripeCustomerId,
       subscription.stripeSubscriptionId,
       planType,
     );
@@ -478,6 +746,7 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
       ok: true,
       message: `Subscription updated to ${planType} plan successfully`,
       planType,
+      currency,
     });
   } catch (e) {
     if (e.message?.includes('Stripe is not configured')) {
@@ -486,10 +755,10 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
         code: 'STRIPE_NOT_CONFIGURED',
       });
     }
-    if (e.message?.includes('Stripe price ID not found')) {
-      return res.status(400).json({
+    if (e?.code === CONFIG_ERROR_CODE || e.message?.includes('Stripe price ID not found')) {
+      return res.status(500).json({
         message: e.message,
-        code: 'MISSING_PRICE_ID',
+        code: CONFIG_ERROR_CODE,
       });
     }
     next(e);
@@ -537,13 +806,24 @@ r.post('/subscriptions/cancel', requireAuth, async (req, res, next) => {
  * Get Stripe customer portal URL for self-service management
  */
 r.get('/subscriptions/portal', requireAuth, async (req, res, next) => {
+  const requestId =
+    req.id ||
+    req.headers['x-request-id'] ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   try {
     const subscription = await getSubscriptionStatus(req.user.id);
+    const stripeCustomerId = await resolveStripeCustomerId({
+      userId: req.user.id,
+      subscription,
+      allowCreate: true,
+      requestId,
+    });
 
-    if (!subscription.stripeCustomerId) {
+    if (!stripeCustomerId) {
       return res.status(400).json({
         message: 'No payment account found. Please subscribe to a plan first.',
         code: 'MISSING_CUSTOMER_ID',
+        requestId,
       });
     }
 
@@ -557,7 +837,7 @@ r.get('/subscriptions/portal', requireAuth, async (req, res, next) => {
       return `${url}/app/retail/billing`;
     })();
 
-    const portalUrl = await getCustomerPortalUrl(subscription.stripeCustomerId, returnUrl);
+    const portalUrl = await getCustomerPortalUrl(stripeCustomerId, returnUrl);
 
     res.json({ ok: true, portalUrl });
   } catch (e) {
@@ -567,7 +847,17 @@ r.get('/subscriptions/portal', requireAuth, async (req, res, next) => {
         code: 'STRIPE_NOT_CONFIGURED',
       });
     }
-    next(e);
+    logger.error({
+      requestId,
+      userId: req.user.id,
+      err: e.message,
+      stack: e.stack,
+    }, 'Failed to create Stripe customer portal session');
+    return res.status(502).json({
+      message: 'Failed to create customer portal session',
+      code: 'STRIPE_PORTAL_ERROR',
+      requestId,
+    });
   }
 });
 
@@ -600,8 +890,13 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
     // Credit top-ups are available to all users (subscription not required)
     // This allows users to buy credits even without a subscription
 
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.body?.currency || req.query?.currency,
+    });
+
     // Calculate price
-    const price = calculateTopupPrice(credits);
+    const price = calculateTopupPrice(credits, currency);
 
     // Helper to ensure /retail path is included
     const ensureRetailPath = (url) => {
@@ -624,8 +919,8 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       ownerId: req.user.id,
       userEmail: req.user.email,
       credits,
-      priceEur: price.priceEurWithVat,
-      currency: 'EUR',
+      priceAmount: price.priceWithVat,
+      currency,
       successUrl,
       cancelUrl,
     });
@@ -635,7 +930,10 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       checkoutUrl: session.url,
       sessionId: session.id,
       credits,
+      currency,
+      price: price.priceWithVat,
       priceEur: price.priceEurWithVat,
+      priceUsd: price.priceUsdWithVat,
       priceBreakdown: price,
     });
   } catch (e) {
@@ -643,6 +941,12 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       return res.status(503).json({
         message: 'Payment processing unavailable',
         code: 'STRIPE_NOT_CONFIGURED',
+      });
+    }
+    if (e?.code === CONFIG_ERROR_CODE) {
+      return res.status(500).json({
+        message: e.message,
+        code: CONFIG_ERROR_CODE,
       });
     }
     next(e);
@@ -674,7 +978,11 @@ r.get('/billing/topup/calculate', requireAuth, async (req, res, next) => {
       });
     }
 
-    const price = calculateTopupPrice(credits);
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.query.currency,
+    });
+    const price = calculateTopupPrice(credits, currency);
 
     res.json(price);
   } catch (e) {

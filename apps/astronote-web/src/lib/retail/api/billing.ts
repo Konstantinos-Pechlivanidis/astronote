@@ -3,22 +3,33 @@ import { endpoints } from './endpoints';
 
 export interface BalanceResponse {
   balance: number
+  billingCurrency?: string
   subscription?: {
     id: number
     planType: string
     status: string
     active: boolean
+    billingCurrency?: string
   }
 }
 
 export interface Package {
   id: number | string
-  type: 'credit_pack' | 'subscription_package'
+  type?: 'credit_pack' | 'subscription_package' | 'credit_topup'
   credits?: number
+  units?: number
   price: number
+  priceCents?: number
+  amount?: number
   currency: string
+  stripePriceId?: string
+  priceId?: string
+  available?: boolean
   name?: string
+  displayName?: string
   description?: string
+  priceEur?: number
+  priceUsd?: number
 }
 
 export interface Transaction {
@@ -28,6 +39,20 @@ export interface Transaction {
   credits: number
   status: string
   createdAt: string
+}
+
+export interface TopupPrice {
+  credits: number
+  currency: string
+  price: number
+  priceWithVat: number
+  priceCents?: number
+  priceCentsWithVat?: number
+  vatAmount: number
+  priceEur?: number | null
+  priceEurWithVat?: number | null
+  priceUsd?: number | null
+  priceUsdWithVat?: number | null
 }
 
 export interface TransactionsResponse {
@@ -48,6 +73,7 @@ export function normalizeBalanceResponse(data: BalanceResponse | null) {
   return {
     credits: data.balance || 0,
     subscription: data.subscription || { active: false, planType: null },
+    billingCurrency: data.billingCurrency || data.subscription?.billingCurrency || 'EUR',
     _raw: data,
   };
 }
@@ -59,11 +85,15 @@ export function normalizeBalanceResponse(data: BalanceResponse | null) {
 function normalizePackagesResponse(data: Package[]): Package[] {
   if (!Array.isArray(data)) return [];
 
-  return data.map((pkg) => ({
-    ...pkg,
-    // Ensure packId is always string for credit packs
-    id: pkg.type === 'credit_pack' ? String(pkg.id) : pkg.id,
-  }));
+  return data.map((pkg) => {
+    const normalizedType = pkg.type || 'credit_topup';
+    return {
+      ...pkg,
+      type: normalizedType,
+      // Ensure packId is always string for credit packs
+      id: normalizedType === 'credit_pack' ? String(pkg.id) : pkg.id,
+    };
+  });
 }
 
 export const billingApi = {
@@ -119,26 +149,31 @@ export const billingApi = {
    * Purchase subscription package
    * Body: { packageId: number, currency?: string }
    */
-  purchase: (data: { packageId: number; currency?: string }) =>
-    api.post<{ sessionId?: string; url?: string; checkoutUrl?: string }>(
+  purchase: (data: { packageId: number; currency?: string; idempotencyKey?: string }) => {
+    const { idempotencyKey, ...payload } = data;
+    return api.post<{ sessionId?: string; url?: string; checkoutUrl?: string }>(
       endpoints.billing.purchase,
-      data,
-    ),
+      payload,
+      {
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      },
+    );
+  },
 
   /**
-   * Top-up credits using credit pack
-   * Body: { packId: string } - packId MUST be string (e.g., 'pack_100')
+   * Calculate top-up price
    */
-  topup: (data: { packId: string | number }) => {
-    // Ensure packId is string
-    const normalizedData = {
-      ...data,
-      packId: String(data.packId),
-    };
+  calculateTopup: (credits: number, currency?: string) =>
+    api.get<TopupPrice>(endpoints.billing.topupCalculate, { params: { credits, currency } }),
+
+  /**
+   * Top-up credits
+   * Body: { credits: number }
+   */
+  topup: (data: { credits: number; currency?: string }) => {
     return api.post<{ sessionId?: string; url?: string; checkoutUrl?: string }>(
       endpoints.billing.topup,
-      normalizedData,
+      data,
     );
   },
 };
-

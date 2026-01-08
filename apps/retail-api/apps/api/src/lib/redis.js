@@ -21,8 +21,11 @@ const IORedis = require('ioredis');
 function buildRedisConfig() {
   // If REDIS_URL is provided, use it directly (most common for cloud providers)
   if (process.env.REDIS_URL && process.env.REDIS_URL !== 'disabled') {
+    const url = process.env.REDIS_URL;
+    const useTls = url.startsWith('rediss://');
     return {
-      url: process.env.REDIS_URL,
+      url,
+      tls: useTls ? {} : undefined,
       // Connection options
       maxRetriesPerRequest: null, // Allow unlimited retries (BullMQ requirement)
       lazyConnect: true, // Connect on first command, not immediately
@@ -121,6 +124,7 @@ function getRedisClient() {
         reconnectOnError: config.reconnectOnError,
         connectTimeout: config.connectTimeout,
         keepAlive: config.keepAlive,
+        ...(config.tls ? { tls: config.tls } : {}),
       });
     } else {
       redisClient = new IORedis(config);
@@ -187,4 +191,3 @@ module.exports = {
   isRedisEnabled,
   closeRedis,
 };
-

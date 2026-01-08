@@ -13,19 +13,23 @@ const logger = pino({ name: 'subscription-service' });
 const PLANS = {
   starter: {
     priceEur: 40,        // €40/month - configured in Stripe as recurring monthly price
+    priceUsd: 40,        // $40/month (display only; configured in Stripe)
     freeCredits: 100,    // 100 credits allocated on each billing cycle (monthly)
     stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_STARTER_EUR',
   },
   pro: {
     priceEur: 240,       // €240/year - configured in Stripe as recurring yearly price
+    priceUsd: 240,       // $240/year (display only; configured in Stripe)
     freeCredits: 500,    // 500 credits allocated on each billing cycle (yearly)
     stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_PRO_EUR',
   },
 };
 
 // Credit top-up pricing
-const CREDIT_PRICE_EUR = 0.045; // Base price per credit
-const VAT_RATE = 0.24; // 24% VAT
+const CREDIT_PRICE_EUR = Number(process.env.CREDIT_PRICE_EUR || 0.045); // Base price per credit
+const CREDIT_PRICE_USD = Number(process.env.CREDIT_PRICE_USD || CREDIT_PRICE_EUR);
+const VAT_RATE = Number(process.env.CREDIT_VAT_RATE || 0.24); // 24% VAT
+const VAT_RATE_USD = Number(process.env.CREDIT_VAT_RATE_USD || 0);
 
 /**
  * Get free credits for a plan
@@ -83,6 +87,7 @@ async function getSubscriptionStatus(userId) {
         planType: true,
         subscriptionStatus: true,
         lastFreeCreditsAllocatedAt: true,
+        billingCurrency: true,
       },
     });
 
@@ -101,6 +106,7 @@ async function getSubscriptionStatus(userId) {
       stripeCustomerId: user.stripeCustomerId,
       stripeSubscriptionId: user.stripeSubscriptionId,
       lastFreeCreditsAllocatedAt: user.lastFreeCreditsAllocatedAt,
+      billingCurrency: user.billingCurrency || 'EUR',
     };
   } catch (err) {
     logger.error({ userId, err: err.message }, 'Failed to get subscription status');
@@ -309,22 +315,35 @@ async function deactivateSubscription(userId, reason = 'cancelled') {
 /**
  * Calculate credit top-up price
  * @param {number} credits - Number of credits
+ * @param {string} currency - Currency code (EUR/USD)
  * @returns {Object} Price breakdown
  */
-function calculateTopupPrice(credits) {
+function calculateTopupPrice(credits, currency = 'EUR') {
   if (!Number.isInteger(credits) || credits <= 0) {
     throw new Error('Invalid credits amount');
   }
 
-  const basePrice = credits * CREDIT_PRICE_EUR;
-  const vatAmount = basePrice * VAT_RATE;
+  const normalizedCurrency = String(currency || 'EUR').toUpperCase();
+  const pricePerCredit =
+    normalizedCurrency === 'USD' ? CREDIT_PRICE_USD : CREDIT_PRICE_EUR;
+  const vatRate = normalizedCurrency === 'USD' ? VAT_RATE_USD : VAT_RATE;
+
+  const basePrice = credits * pricePerCredit;
+  const vatAmount = basePrice * vatRate;
   const totalPrice = basePrice + vatAmount;
 
   return {
     credits,
-    priceEur: Number(basePrice.toFixed(2)),
+    currency: normalizedCurrency,
+    price: Number(basePrice.toFixed(2)),
     vatAmount: Number(vatAmount.toFixed(2)),
-    priceEurWithVat: Number(totalPrice.toFixed(2)),
+    priceWithVat: Number(totalPrice.toFixed(2)),
+    priceCents: Math.round(basePrice * 100),
+    priceCentsWithVat: Math.round(totalPrice * 100),
+    priceEur: normalizedCurrency === 'EUR' ? Number(basePrice.toFixed(2)) : null,
+    priceEurWithVat: normalizedCurrency === 'EUR' ? Number(totalPrice.toFixed(2)) : null,
+    priceUsd: normalizedCurrency === 'USD' ? Number(basePrice.toFixed(2)) : null,
+    priceUsdWithVat: normalizedCurrency === 'USD' ? Number(totalPrice.toFixed(2)) : null,
   };
 }
 
@@ -342,4 +361,3 @@ module.exports = {
   calculateTopupPrice,
   getBillingPeriodStart,
 };
-
