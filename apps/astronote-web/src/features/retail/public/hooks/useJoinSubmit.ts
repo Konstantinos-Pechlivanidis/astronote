@@ -5,7 +5,7 @@ export interface JoinSubmitPayload {
   firstName: string;
   lastName?: string;
   email?: string;
-  phoneCountryCode: string;
+  countryCode: string;
   phoneNational: string;
 }
 
@@ -16,5 +16,6 @@ export function useJoinSubmit(token: string | null) {
       const res = await publicApi.submitJoin(token, payload);
       return res.data;
     },
+    retry: false,
   });
 }

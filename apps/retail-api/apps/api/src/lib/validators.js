@@ -11,12 +11,12 @@ function validateId(id, fieldName = 'id') {
   if (id === undefined || id === null) {
     return { valid: false, error: `${fieldName} required` };
   }
-  
+
   const num = Number(id);
   if (!num || isNaN(num) || num <= 0 || !Number.isInteger(num)) {
     return { valid: false, error: `invalid ${fieldName}` };
   }
-  
+
   return { valid: true, value: num };
 }
 
@@ -34,22 +34,22 @@ function validateDate(date, fieldName = 'date', options = {}) {
     }
     return { valid: true, value: null };
   }
-  
+
   const dateObj = date instanceof Date ? date : new Date(date);
   if (isNaN(dateObj.getTime())) {
     return { valid: false, error: `invalid ${fieldName}` };
   }
-  
+
   // Check if date must be in the past
   if (options.mustBePast && dateObj >= new Date()) {
     return { valid: false, error: `${fieldName} must be in the past` };
   }
-  
+
   // Check if date must be in the future
   if (options.mustBeFuture && dateObj <= new Date()) {
     return { valid: false, error: `${fieldName} must be in the future` };
   }
-  
+
   return { valid: true, value: dateObj };
 }
 
@@ -64,18 +64,18 @@ function validatePagination(page, pageSize, options = {}) {
   const defaultPage = 1;
   const defaultPageSize = options.defaultPageSize || 20;
   const maxPageSize = options.maxPageSize || 100;
-  
+
   const pageNum = page !== undefined ? Number(page) : defaultPage;
   const pageSizeNum = pageSize !== undefined ? Number(pageSize) : defaultPageSize;
-  
+
   if (isNaN(pageNum) || pageNum < 1 || !Number.isInteger(pageNum)) {
     return { valid: false, error: 'invalid page (must be positive integer)' };
   }
-  
+
   if (isNaN(pageSizeNum) || pageSizeNum < 1 || !Number.isInteger(pageSizeNum) || pageSizeNum > maxPageSize) {
     return { valid: false, error: `invalid pageSize (must be 1-${maxPageSize})` };
   }
-  
+
   return { valid: true, page: pageNum, pageSize: pageSizeNum };
 }
 
@@ -106,21 +106,21 @@ function validateStringLength(value, fieldName, options = {}) {
     }
     return { valid: true };
   }
-  
+
   const str = String(value).trim();
-  
+
   if (options.required && !str) {
     return { valid: false, error: `${fieldName} required` };
   }
-  
+
   if (options.min && str.length < options.min) {
     return { valid: false, error: `${fieldName} must be at least ${options.min} characters` };
   }
-  
+
   if (options.max && str.length > options.max) {
     return { valid: false, error: `${fieldName} must be at most ${options.max} characters` };
   }
-  
+
   return { valid: true };
 }
 
@@ -129,6 +129,6 @@ module.exports = {
   validateDate,
   validatePagination,
   validateRequired,
-  validateStringLength
+  validateStringLength,
 };
 

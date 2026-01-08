@@ -23,13 +23,13 @@ app.use(
       req.headers['x-request-id'] ||
       `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     autoLogging: true,
-    customSuccessMessage: function (req, res) {
+    customSuccessMessage (req, res) {
       return `${req.method} ${req.url} -> ${res.statusCode}`;
     },
-    customErrorMessage: function (req, res, err) {
+    customErrorMessage (req, res, err) {
       return `error on ${req.method} ${req.url}: ${err.message}`;
     },
-  })
+  }),
 );
 
 // ---- Log DB target (sanitized) ----
@@ -56,7 +56,7 @@ app.use(
   helmet({
     // Adjust only if you serve images/assets cross-origin
     crossOriginResourcePolicy: { policy: 'cross-origin' },
-  })
+  }),
 );
 
 // ---- CORS (allowlist from env) ----
@@ -66,8 +66,8 @@ const allowlist = (process.env.CORS_ALLOWLIST || '')
   .filter(Boolean);
 
 // Add default retail frontend URL if not in allowlist
-// const defaultRetailFrontend = 'https://astronote.onrender.com';
-const defaultRetailFrontend = 'http://localhost:3000';
+const defaultRetailFrontend = 'https://astronote.onrender.com';
+// const defaultRetailFrontend = 'http://localhost:3000';
 if (!allowlist.includes(defaultRetailFrontend) && !allowlist.some(a => defaultRetailFrontend.startsWith(a))) {
   allowlist.push(defaultRetailFrontend);
 }
@@ -78,15 +78,15 @@ function isOriginAllowed(origin) {
     if (!origin) {
       return true; // Allow requests with no origin (e.g., Postman, server-to-server)
     }
-    
+
     // If allowlist is empty, allow all (development mode)
     if (allowlist.length === 0) {
       return true;
     }
-    
+
     return allowlist.some((allowed) => {
-      if (!allowed) return false;
-      
+      if (!allowed) {return false;}
+
       // Exact match
       if (origin === allowed) {
         return true;
@@ -113,39 +113,39 @@ function isOriginAllowed(origin) {
 // Allow Postman / server-to-server (no Origin)
 const corsOptions = allowlist.length
   ? {
-      origin(origin, cb) {
-        try {
-          const ok = isOriginAllowed(origin);
-          
-          if (!ok && origin) {
-            // Log for debugging
-            console.warn(`[CORS] Blocked origin: ${origin}. Allowed: ${allowlist.join(', ')}`);
-          }
-          
-          return cb(ok ? null : new Error('Not allowed by CORS'));
-        } catch (err) {
-          console.error('[CORS] Error in origin callback:', err, 'Origin:', origin);
-          // On error, deny for security
-          return cb(new Error('CORS check failed'));
+    origin(origin, cb) {
+      try {
+        const ok = isOriginAllowed(origin);
+
+        if (!ok && origin) {
+          // Log for debugging
+          console.warn(`[CORS] Blocked origin: ${origin}. Allowed: ${allowlist.join(', ')}`);
         }
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID', 'Cookie', 'Idempotency-Key'],
-      exposedHeaders: ['X-Request-ID'],
-      maxAge: 86400, // 24 hours
-      preflightContinue: false,
-      optionsSuccessStatus: 204,
-    }
-  : { 
-      origin: true, 
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID', 'Cookie', 'Idempotency-Key'],
-      exposedHeaders: ['X-Request-ID'],
-      preflightContinue: false,
-      optionsSuccessStatus: 204,
-    };
+
+        return cb(ok ? null : new Error('Not allowed by CORS'));
+      } catch (err) {
+        console.error('[CORS] Error in origin callback:', err, 'Origin:', origin);
+        // On error, deny for security
+        return cb(new Error('CORS check failed'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID', 'Cookie', 'Idempotency-Key'],
+    exposedHeaders: ['X-Request-ID'],
+    maxAge: 86400, // 24 hours
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  }
+  : {
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID', 'Cookie', 'Idempotency-Key'],
+    exposedHeaders: ['X-Request-ID'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  };
 
 // Apply CORS middleware - must be before routes
 // Enable preflight for all routes
@@ -154,7 +154,7 @@ app.use(cors(corsOptions));
 // Additional CORS handling for all requests (including preflight)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  
+
   // Handle preflight OPTIONS requests
   if (req.method === 'OPTIONS') {
     try {
@@ -181,13 +181,13 @@ app.use((req, res, next) => {
       return res.status(500).json({ error: 'CORS preflight error' });
     }
   }
-  
+
   // Ensure CORS headers are set on all responses (not just preflight)
   if (origin && isOriginAllowed(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
-  
+
   next();
 });
 
@@ -199,7 +199,7 @@ app.use(
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
-  })
+  }),
 );
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
@@ -215,6 +215,7 @@ app.get('/', (_req, res) => res.json({ status: 'api-ok' }));
 
 // Public conversion endpoints (before auth)
 app.use('/api/conversion', require('./routes/conversion'));
+app.use(require('./routes/publicAssets.routes'));
 app.use(require('./routes/publicShort.routes'));
 app.use(require('./routes/publicNfc.routes'));
 app.use(require('./routes/publicJoin.routes.js'));
@@ -223,6 +224,8 @@ app.use(require('./routes/publicJoin.routes.js'));
 app.use('/api', require('./routes/auth'));
 app.use('/api', require('./routes/nfc'));
 app.use('/api', require('./routes/publicLinks'));
+app.use('/api', require('./routes/branding'));
+app.use('/api', require('./routes/joinBranding.routes'));
 
 // Me - Get current user with credits
 const requireAuth = require('./middleware/requireAuth');
@@ -237,16 +240,16 @@ app.get('/api/me', requireAuth, async (req, res, next) => {
     if (!req.user || !req.user.id) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    
+
     const prisma = require('./lib/prisma');
     const { getBalance } = require('./services/wallet.service');
-    
+
     // Ensure userId is a number
     const userId = typeof req.user.id === 'string' ? parseInt(req.user.id, 10) : req.user.id;
     if (isNaN(userId) || userId <= 0) {
       return res.status(400).json({ message: 'Invalid user ID' });
     }
-    
+
     // Fetch full user from database
     let user;
     try {
@@ -257,8 +260,8 @@ app.get('/api/me', requireAuth, async (req, res, next) => {
           email: true,
           senderName: true,
           company: true,
-          timezone: true
-        }
+          timezone: true,
+        },
       });
     } catch (dbError) {
       const logger = require('pino')({ name: 'server' });
@@ -267,11 +270,11 @@ app.get('/api/me', requireAuth, async (req, res, next) => {
       err.status = 500;
       return next(err);
     }
-    
+
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    
+
     // Get wallet balance (wrap in try-catch for better error handling)
     let credits = 0;
     try {
@@ -286,14 +289,14 @@ app.get('/api/me', requireAuth, async (req, res, next) => {
       }
       credits = 0;
     }
-    
+
     // Ensure response hasn't been sent
     if (!res.headersSent) {
       res.json({
         user: {
           ...user,
-          credits
-        }
+          credits,
+        },
       });
     }
   } catch (e) {
@@ -308,7 +311,7 @@ app.get('/api/me', requireAuth, async (req, res, next) => {
       const logger = require('pino')({ name: 'server' });
       logger.error({ err: e, userId: req.user?.id }, 'Error in /api/me');
     }
-    
+
     // Only call next if response hasn't been sent
     if (!res.headersSent) {
       next(e);
@@ -355,16 +358,16 @@ app.use(require('./routes/stripe.webhooks'));
 app.use('/tracking', require('./routes/tracking'));
 
 // /docs and /openapi.json
-app.use(require('./routes/docs')); 
+app.use(require('./routes/docs'));
 
 // ========= ERROR HANDLERS =========
 
 // 404 for unknown API routes
 app.use((req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/tracking')) {
-    return res.status(404).json({ 
-      message: 'Endpoint not found', 
-      code: 'RESOURCE_NOT_FOUND' 
+    return res.status(404).json({
+      message: 'Endpoint not found',
+      code: 'RESOURCE_NOT_FOUND',
     });
   }
   return next();
@@ -379,7 +382,7 @@ app.use((err, req, res, _next) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
-  
+
   const { handleError } = require('./lib/errors');
   handleError(err, req, res);
 });
@@ -399,10 +402,10 @@ if (STATUS_REFRESH_ENABLED && process.env.QUEUE_DISABLED !== '1') {
       {
         repeat: {
           every: STATUS_REFRESH_INTERVAL, // Repeat every N milliseconds
-          immediately: false // Don't run immediately on startup
+          immediately: false, // Don't run immediately on startup
         },
-        jobId: 'status-refresh-periodic' // Unique ID to prevent duplicates
-      }
+        jobId: 'status-refresh-periodic', // Unique ID to prevent duplicates
+      },
     ).then(() => {
       console.log(`[Status Refresh] Scheduled periodic refresh every ${STATUS_REFRESH_INTERVAL / 1000 / 60} minutes`);
     }).catch(err => {
@@ -417,10 +420,10 @@ if (STATUS_REFRESH_ENABLED && process.env.QUEUE_DISABLED !== '1') {
       {
         repeat: {
           every: deliveryRefreshInterval,
-          immediately: false
+          immediately: false,
         },
-        jobId: 'delivery-refresh-periodic'
-      }
+        jobId: 'delivery-refresh-periodic',
+      },
     ).then(() => {
       console.log(`[Status Refresh] Scheduled delivery refresh every ${Math.round(deliveryRefreshInterval / 1000)} seconds`);
     }).catch(err => {
@@ -454,10 +457,10 @@ if (process.env.QUEUE_DISABLED !== '1') {
       {
         repeat: {
           every: SCHEDULE_SWEEP_INTERVAL,
-          immediately: true
+          immediately: true,
         },
-        jobId: 'scheduled-campaign-sweeper'
-      }
+        jobId: 'scheduled-campaign-sweeper',
+      },
     ).then(() => {
       console.log(`[Scheduler] Sweep job scheduled every ${Math.round(SCHEDULE_SWEEP_INTERVAL / 1000)}s`);
     }).catch(err => {
@@ -476,19 +479,19 @@ const WORKER_ENABLED = process.env.START_WORKER !== '0'; // Default: enabled, se
 if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
   const { spawn } = require('child_process');
   const path = require('path');
-  
+
   const apiPath = path.resolve(__dirname, '..'); // apps/api directory
   const apiNodeModules = path.join(apiPath, 'node_modules');
-  
+
   // Set NODE_PATH to include apps/api/node_modules for module resolution
   const nodePath = [
     apiNodeModules,
-    process.env.NODE_PATH || ''
+    process.env.NODE_PATH || '',
   ].filter(Boolean).join(path.delimiter);
-  
+
   const workerEnv = {
     ...process.env,
-    NODE_PATH: nodePath
+    NODE_PATH: nodePath,
   };
 
   // Start SMS worker
@@ -497,13 +500,13 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
   workerProcess = spawn('node', [smsWorkerPath], {
     stdio: 'inherit',
     cwd: apiPath,
-    env: workerEnv
+    env: workerEnv,
   });
-  
+
   workerProcess.on('error', (err) => {
     console.error('[Server] Failed to start SMS worker:', err.message);
   });
-  
+
   workerProcess.on('exit', (code, signal) => {
     if (signal) {
       console.log(`[Server] SMS worker stopped by signal: ${signal}`);
@@ -513,7 +516,7 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
       console.log('[Server] SMS worker exited normally');
     }
   });
-  
+
   workerProcess.on('close', (code) => {
     if (code !== 0 && code !== null) {
       console.warn(`[Server] SMS worker process closed with code ${code}`);
@@ -526,13 +529,13 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
   schedulerWorkerProcess = spawn('node', [schedulerWorkerPath], {
     stdio: 'inherit',
     cwd: apiPath,
-    env: workerEnv
+    env: workerEnv,
   });
-  
+
   schedulerWorkerProcess.on('error', (err) => {
     console.error('[Server] Failed to start scheduler worker:', err.message);
   });
-  
+
   schedulerWorkerProcess.on('exit', (code, signal) => {
     if (signal) {
       console.log(`[Server] Scheduler worker stopped by signal: ${signal}`);
@@ -542,7 +545,7 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
       console.log('[Server] Scheduler worker exited normally');
     }
   });
-  
+
   schedulerWorkerProcess.on('close', (code) => {
     if (code !== 0 && code !== null) {
       console.warn(`[Server] Scheduler worker process closed with code ${code}`);
@@ -556,13 +559,13 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
     statusRefreshWorkerProcess = spawn('node', [statusRefreshWorkerPath], {
       stdio: 'inherit',
       cwd: apiPath,
-      env: workerEnv
+      env: workerEnv,
     });
-    
+
     statusRefreshWorkerProcess.on('error', (err) => {
       console.error('[Server] Failed to start status refresh worker:', err.message);
     });
-    
+
     statusRefreshWorkerProcess.on('exit', (code, signal) => {
       if (signal) {
         console.log(`[Server] Status refresh worker stopped by signal: ${signal}`);
@@ -572,7 +575,7 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
         console.log('[Server] Status refresh worker exited normally');
       }
     });
-    
+
     statusRefreshWorkerProcess.on('close', (code) => {
       if (code !== 0 && code !== null) {
         console.warn(`[Server] Status refresh worker process closed with code ${code}`);
@@ -586,13 +589,13 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
   contactImportWorkerProcess = spawn('node', [contactImportWorkerPath], {
     stdio: 'inherit',
     cwd: apiPath,
-    env: workerEnv
+    env: workerEnv,
   });
-  
+
   contactImportWorkerProcess.on('error', (err) => {
     console.error('[Server] Failed to start contact import worker:', err.message);
   });
-  
+
   contactImportWorkerProcess.on('exit', (code, signal) => {
     if (signal) {
       console.log(`[Server] Contact import worker stopped by signal: ${signal}`);
@@ -602,7 +605,7 @@ if (WORKER_ENABLED && process.env.QUEUE_DISABLED !== '1') {
       console.log('[Server] Contact import worker exited normally');
     }
   });
-  
+
   contactImportWorkerProcess.on('close', (code) => {
     if (code !== 0 && code !== null) {
       console.warn(`[Server] Contact import worker process closed with code ${code}`);
@@ -641,7 +644,7 @@ const { closeRedis } = require('./lib/redis');
 
 async function shutdown(signal) {
   console.log(`[${signal}] shutting down...`);
-  
+
   // Stop workers first (in reverse order of importance)
   if (statusRefreshWorkerProcess) {
     console.log('[Server] Stopping status refresh worker...');
@@ -663,7 +666,7 @@ async function shutdown(signal) {
   if (workerProcess || schedulerWorkerProcess || statusRefreshWorkerProcess || contactImportWorkerProcess) {
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  
+
   server.close(async () => {
     console.log('HTTP server closed.');
     // Close Redis connection gracefully

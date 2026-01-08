@@ -13,7 +13,7 @@ const TOKEN_EXPIRY_MS = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
 /**
  * Generate an unsubscribe token for a contact
  * Token encodes: contactId, storeId, optional campaignId
- * 
+ *
  * @param {number} contactId - Contact ID
  * @param {number} storeId - Store/Owner ID
  * @param {number} [campaignId] - Optional campaign ID
@@ -24,7 +24,7 @@ function generateUnsubscribeToken(contactId, storeId, campaignId = null) {
     contactId,
     storeId,
     campaignId,
-    exp: Date.now() + TOKEN_EXPIRY_MS // Expiry timestamp
+    exp: Date.now() + TOKEN_EXPIRY_MS, // Expiry timestamp
   };
 
   // Create a simple signed token using HMAC
@@ -35,14 +35,14 @@ function generateUnsubscribeToken(contactId, storeId, campaignId = null) {
     .digest('base64url');
 
   // Combine payload and signature (base64url encoded)
-  const token = Buffer.from(payloadStr).toString('base64url') + '.' + signature;
+  const token = `${Buffer.from(payloadStr).toString('base64url')}.${signature}`;
 
   return token;
 }
 
 /**
  * Verify and decode an unsubscribe token
- * 
+ *
  * @param {string} token - Token to verify
  * @returns {Object|null} Decoded payload { contactId, storeId, campaignId } or null if invalid
  */
@@ -88,7 +88,7 @@ function verifyUnsubscribeToken(token) {
     return {
       contactId: payload.contactId,
       storeId: payload.storeId,
-      campaignId: payload.campaignId || null
+      campaignId: payload.campaignId || null,
     };
   } catch (err) {
     logger.warn({ err: err.message }, 'Token verification failed');
@@ -98,6 +98,6 @@ function verifyUnsubscribeToken(token) {
 
 module.exports = {
   generateUnsubscribeToken,
-  verifyUnsubscribeToken
+  verifyUnsubscribeToken,
 };
 

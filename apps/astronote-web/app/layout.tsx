@@ -1,11 +1,8 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { Toaster } from 'sonner';
 import { ReactNode } from 'react';
-
-const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Astronote - SMS Marketing That Drives Revenue',
@@ -20,7 +17,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={inter.className}>
+      <body>
         <Providers>
           {children}
           <Toaster
@@ -38,4 +35,3 @@ export default function RootLayout({
     </html>
   );
 }
-

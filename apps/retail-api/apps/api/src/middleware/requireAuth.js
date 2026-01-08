@@ -10,9 +10,9 @@ module.exports = function requireAuth(req, res, next) {
   }
 
   try {
-  const hdr = req.headers.authorization || '';
-  const [type, token] = hdr.split(' ');
-    
+    const hdr = req.headers.authorization || '';
+    const [type, token] = hdr.split(' ');
+
     // Check for missing or invalid authorization header
     if (type !== 'Bearer' || !token) {
       return res.status(401).json({ message: 'Missing token' });
@@ -34,13 +34,13 @@ module.exports = function requireAuth(req, res, next) {
     }
 
     // Set user on request
-    req.user = { 
-      id: userId, 
-      email: p.email || null, 
-      senderName: p.senderName || null, 
-      company: p.company || null 
+    req.user = {
+      id: userId,
+      email: p.email || null,
+      senderName: p.senderName || null,
+      company: p.company || null,
     };
-    
+
     next();
   } catch (err) {
     // Catch any unexpected errors

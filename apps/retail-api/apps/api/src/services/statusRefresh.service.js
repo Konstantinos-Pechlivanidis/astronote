@@ -16,9 +16,9 @@ function mapMittoStatus(deliveryStatus) {
     logger.warn({ deliveryStatus }, 'Empty deliveryStatus from Mitto, defaulting to sent');
     return 'sent';
   }
-  
+
   const status = String(deliveryStatus).toLowerCase().trim();
-  
+
   // Mitto's exact values (case-insensitive)
   // Map "Delivered" to "sent" - we don't track delivered separately
   if (status === 'delivered' || status === 'delivrd' || status === 'completed' || status === 'ok') {
@@ -28,7 +28,7 @@ function mapMittoStatus(deliveryStatus) {
   } else if (status === 'sent') {
     return 'sent';
   }
-  
+
   // Unknown status - log warning and default to 'sent'
   logger.warn({ deliveryStatus, normalized: status }, 'Unknown Mitto deliveryStatus, defaulting to sent');
   return 'sent';
@@ -36,7 +36,7 @@ function mapMittoStatus(deliveryStatus) {
 
 /**
  * Refresh statuses for all messages in a campaign
- * 
+ *
  * @param {number} campaignId - Campaign ID
  * @param {number} ownerId - Owner ID for scoping
  * @returns {Promise<Object>} Summary of refresh operation
@@ -46,7 +46,7 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
     // Verify campaign exists and belongs to owner
     const campaign = await prisma.campaign.findFirst({
       where: { id: campaignId, ownerId },
-      select: { id: true }
+      select: { id: true },
     });
 
     if (!campaign) {
@@ -73,8 +73,8 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
       select: {
         id: true,
         providerMessageId: true,
-        status: true
-      }
+        status: true,
+      },
     });
 
     if (messages.length === 0) {
@@ -96,20 +96,20 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
         // Only update if status changed
         if (newStatus !== msg.status) {
           const updateData = {
-            status: newStatus
+            status: newStatus,
           };
 
           if (newStatus === 'sent') {
-            updateData.sentAt = mittoStatus.updatedAt 
-              ? new Date(mittoStatus.updatedAt) 
+            updateData.sentAt = mittoStatus.updatedAt
+              ? new Date(mittoStatus.updatedAt)
               : new Date();
             updateData.deliveryStatus = mittoStatus.deliveryStatus || null;
             if (mittoStatus.deliveryStatus && String(mittoStatus.deliveryStatus).toLowerCase().includes('deliv')) {
               updateData.deliveredAt = updateData.sentAt;
             }
           } else if (newStatus === 'failed') {
-            updateData.failedAt = mittoStatus.updatedAt 
-              ? new Date(mittoStatus.updatedAt) 
+            updateData.failedAt = mittoStatus.updatedAt
+              ? new Date(mittoStatus.updatedAt)
               : new Date();
             updateData.error = `Mitto status: ${mittoStatus.deliveryStatus}`;
             updateData.deliveryStatus = mittoStatus.deliveryStatus || null;
@@ -117,7 +117,7 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
 
           statusUpdates.push({
             id: msg.id,
-            data: updateData
+            data: updateData,
           });
           updated++;
         }
@@ -125,10 +125,10 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
         refreshed++;
       } catch (err) {
         errors++;
-        logger.error({ 
-          messageId: msg.id, 
+        logger.error({
+          messageId: msg.id,
           providerMessageId: msg.providerMessageId,
-          err: err.message 
+          err: err.message,
         }, 'Failed to refresh message status from Mitto');
         // Continue processing other messages
       }
@@ -140,9 +140,9 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
         statusUpdates.map(update =>
           prisma.campaignMessage.update({
             where: { id: update.id },
-            data: update.data
-          })
-        )
+            data: update.data,
+          }),
+        ),
       );
     }
 
@@ -154,11 +154,11 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
       // Don't fail the entire operation
     }
 
-    logger.info({ 
-      campaignId, 
-      refreshed, 
-      updated, 
-      errors 
+    logger.info({
+      campaignId,
+      refreshed,
+      updated,
+      errors,
     }, 'Campaign status refresh completed');
 
     return { refreshed, updated, errors };
@@ -170,7 +170,7 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
 
 /**
  * Refresh statuses for pending messages across all campaigns
- * 
+ *
  * @param {number} limit - Maximum number of messages to refresh
  * @returns {Promise<Object>} Summary of refresh operation
  */
@@ -194,10 +194,10 @@ async function refreshPendingStatuses(limit = 100) {
         campaignId: true,
         ownerId: true,
         providerMessageId: true,
-        status: true
+        status: true,
       },
       take: limit,
-      orderBy: { createdAt: 'asc' } // Process oldest first
+      orderBy: { createdAt: 'asc' }, // Process oldest first
     });
 
     if (messages.length === 0) {
@@ -214,51 +214,51 @@ async function refreshPendingStatuses(limit = 100) {
     // Refresh each message status
     for (const msg of messages) {
       try {
-        logger.debug({ 
-          messageId: msg.id, 
+        logger.debug({
+          messageId: msg.id,
           providerMessageId: msg.providerMessageId,
-          currentStatus: msg.status 
+          currentStatus: msg.status,
         }, 'Refreshing message status from Mitto');
-        
+
         const mittoStatus = await getMessageStatus(msg.providerMessageId);
         const newStatus = mapMittoStatus(mittoStatus.deliveryStatus);
 
-        logger.debug({ 
-          messageId: msg.id, 
+        logger.debug({
+          messageId: msg.id,
           providerMessageId: msg.providerMessageId,
           mittoDeliveryStatus: mittoStatus.deliveryStatus,
           currentStatus: msg.status,
-          newStatus 
+          newStatus,
         }, 'Mitto status retrieved');
 
         // Only update if status changed
         if (newStatus !== msg.status) {
           const updateData = {
-            status: newStatus
+            status: newStatus,
           };
 
           if (newStatus === 'sent') {
             // Update sentAt timestamp if not already set
-            updateData.sentAt = mittoStatus.updatedAt 
-              ? new Date(mittoStatus.updatedAt) 
+            updateData.sentAt = mittoStatus.updatedAt
+              ? new Date(mittoStatus.updatedAt)
               : new Date();
-            logger.info({ 
-              messageId: msg.id, 
+            logger.info({
+              messageId: msg.id,
               providerMessageId: msg.providerMessageId,
-              originalMittoStatus: mittoStatus.deliveryStatus
+              originalMittoStatus: mittoStatus.deliveryStatus,
             }, 'Message status updated to sent');
           } else if (newStatus === 'failed') {
-            updateData.failedAt = mittoStatus.updatedAt 
-              ? new Date(mittoStatus.updatedAt) 
+            updateData.failedAt = mittoStatus.updatedAt
+              ? new Date(mittoStatus.updatedAt)
               : new Date();
             updateData.error = `Mitto status: ${mittoStatus.deliveryStatus}`;
-            logger.info({ 
-              messageId: msg.id, 
-              providerMessageId: msg.providerMessageId 
+            logger.info({
+              messageId: msg.id,
+              providerMessageId: msg.providerMessageId,
             }, 'Message status updated to failed');
-            logger.info({ 
-              messageId: msg.id, 
-              providerMessageId: msg.providerMessageId 
+            logger.info({
+              messageId: msg.id,
+              providerMessageId: msg.providerMessageId,
             }, 'Message status updated to sent');
           }
 
@@ -266,25 +266,25 @@ async function refreshPendingStatuses(limit = 100) {
             id: msg.id,
             campaignId: msg.campaignId,
             ownerId: msg.ownerId,
-            data: updateData
+            data: updateData,
           });
           affectedCampaigns.add(`${msg.campaignId}:${msg.ownerId}`);
           updated++;
         } else {
-          logger.debug({ 
-            messageId: msg.id, 
-            status: msg.status 
+          logger.debug({
+            messageId: msg.id,
+            status: msg.status,
           }, 'Message status unchanged');
         }
 
         refreshed++;
       } catch (err) {
         errors++;
-        logger.error({ 
-          messageId: msg.id, 
+        logger.error({
+          messageId: msg.id,
           providerMessageId: msg.providerMessageId,
           err: err.message,
-          stack: err.stack 
+          stack: err.stack,
         }, 'Failed to refresh message status from Mitto');
         // Continue processing other messages
       }
@@ -296,9 +296,9 @@ async function refreshPendingStatuses(limit = 100) {
         statusUpdates.map(update =>
           prisma.campaignMessage.update({
             where: { id: update.id },
-            data: update.data
-          })
-        )
+            data: update.data,
+          }),
+        ),
       );
     }
 
@@ -315,11 +315,11 @@ async function refreshPendingStatuses(limit = 100) {
       }
     }
 
-    logger.info({ 
-      refreshed, 
-      updated, 
-      errors, 
-      campaignsUpdated 
+    logger.info({
+      refreshed,
+      updated,
+      errors,
+      campaignsUpdated,
     }, 'Pending status refresh completed');
 
     return { refreshed, updated, errors, campaignsUpdated };
@@ -342,17 +342,17 @@ async function refreshMissingDeliveryStatuses(limit = 50, olderThanSeconds = 60)
       where: {
         providerMessageId: { not: null },
         deliveryStatus: null,
-        sentAt: { lte: cutoff }
+        sentAt: { lte: cutoff },
       },
       select: {
         id: true,
         campaignId: true,
         ownerId: true,
         providerMessageId: true,
-        sentAt: true
+        sentAt: true,
       },
       take: limit,
-      orderBy: { sentAt: 'asc' }
+      orderBy: { sentAt: 'asc' },
     });
 
     if (!messages.length) {
@@ -377,7 +377,7 @@ async function refreshMissingDeliveryStatuses(limit = 50, olderThanSeconds = 60)
         const lower = String(delivery).toLowerCase();
         const updateData = {
           deliveryStatus: delivery,
-          deliveryLastCheckedAt: new Date()
+          deliveryLastCheckedAt: new Date(),
         };
         if (lower.includes('deliv')) {
           updateData.deliveredAt = mittoStatus.updatedAt ? new Date(mittoStatus.updatedAt) : new Date();
@@ -398,8 +398,8 @@ async function refreshMissingDeliveryStatuses(limit = 50, olderThanSeconds = 60)
     if (updates.length) {
       await Promise.all(
         updates.map(u =>
-          prisma.campaignMessage.update({ where: { id: u.id }, data: u.data })
-        )
+          prisma.campaignMessage.update({ where: { id: u.id }, data: u.data }),
+        ),
       );
     }
 
@@ -424,7 +424,7 @@ async function refreshMissingDeliveryStatuses(limit = 50, olderThanSeconds = 60)
 
 /**
  * Refresh statuses for all messages in a bulk batch (by bulkId)
- * 
+ *
  * @param {string} bulkId - Mitto bulkId
  * @param {number} [ownerId] - Optional owner ID for scoping
  * @returns {Promise<Object>} Summary of refresh operation
@@ -448,7 +448,7 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
         { providerMessageId: { not: null } },
       ],
     };
-    
+
     if (ownerId) {
       where.AND.push({ ownerId });
     }
@@ -460,8 +460,8 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
         campaignId: true,
         ownerId: true,
         providerMessageId: true,
-        status: true
-      }
+        status: true,
+      },
     });
 
     if (messages.length === 0) {
@@ -486,16 +486,16 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
         // Only update if status changed
         if (newStatus !== msg.status) {
           const updateData = {
-            status: newStatus
+            status: newStatus,
           };
 
           if (newStatus === 'sent') {
-            updateData.sentAt = mittoStatus.updatedAt 
-              ? new Date(mittoStatus.updatedAt) 
+            updateData.sentAt = mittoStatus.updatedAt
+              ? new Date(mittoStatus.updatedAt)
               : new Date();
           } else if (newStatus === 'failed') {
-            updateData.failedAt = mittoStatus.updatedAt 
-              ? new Date(mittoStatus.updatedAt) 
+            updateData.failedAt = mittoStatus.updatedAt
+              ? new Date(mittoStatus.updatedAt)
               : new Date();
             updateData.error = `Mitto status: ${mittoStatus.deliveryStatus}`;
           }
@@ -504,7 +504,7 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
             id: msg.id,
             campaignId: msg.campaignId,
             ownerId: msg.ownerId,
-            data: updateData
+            data: updateData,
           });
           affectedCampaigns.add(`${msg.campaignId}:${msg.ownerId}`);
           updated++;
@@ -513,11 +513,11 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
         refreshed++;
       } catch (err) {
         errors++;
-        logger.error({ 
-          messageId: msg.id, 
+        logger.error({
+          messageId: msg.id,
           providerMessageId: msg.providerMessageId,
           bulkId,
-          err: err.message 
+          err: err.message,
         }, 'Failed to refresh message status from Mitto');
         // Continue processing other messages
       }
@@ -529,9 +529,9 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
         statusUpdates.map(update =>
           prisma.campaignMessage.update({
             where: { id: update.id },
-            data: update.data
-          })
-        )
+            data: update.data,
+          }),
+        ),
       );
     }
 
@@ -548,13 +548,13 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
       }
     }
 
-    logger.info({ 
+    logger.info({
       bulkId,
       ownerId,
-      refreshed, 
-      updated, 
+      refreshed,
+      updated,
       errors,
-      campaignsUpdated 
+      campaignsUpdated,
     }, 'Bulk status refresh completed');
 
     return { refreshed, updated, errors, campaignsUpdated };
@@ -568,5 +568,5 @@ module.exports = {
   refreshCampaignStatuses,
   refreshPendingStatuses,
   refreshMissingDeliveryStatuses,
-  refreshBulkStatuses
+  refreshBulkStatuses,
 };

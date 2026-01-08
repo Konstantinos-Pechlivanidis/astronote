@@ -25,7 +25,7 @@ async function getPredefinedLists(ownerId) {
         isSystem: true,
         filterGender: null,
         filterAgeGroup: null,
-        memberCount: allContacts.length
+        memberCount: allContacts.length,
       });
     } catch (error) {
       // If "All Contacts" fails, still add it with 0 count
@@ -36,7 +36,7 @@ async function getPredefinedLists(ownerId) {
         isSystem: true,
         filterGender: null,
         filterAgeGroup: null,
-        memberCount: 0
+        memberCount: 0,
       });
     }
 
@@ -52,7 +52,7 @@ async function getPredefinedLists(ownerId) {
           isSystem: true,
           filterGender: gender,
           filterAgeGroup: null,
-          memberCount: contacts.length
+          memberCount: contacts.length,
         };
       } catch (error) {
         // If this gender list fails, return it with 0 count
@@ -63,7 +63,7 @@ async function getPredefinedLists(ownerId) {
           isSystem: true,
           filterGender: gender,
           filterAgeGroup: null,
-          memberCount: 0
+          memberCount: 0,
         };
       }
     });
@@ -74,7 +74,7 @@ async function getPredefinedLists(ownerId) {
     const ageGroups = [
       { key: '18_24', name: '18-24', min: 18, max: 24 },
       { key: '25_39', name: '25-39', min: 25, max: 39 },
-      { key: '40_plus', name: '40+', min: 40, max: null }
+      { key: '40_plus', name: '40+', min: 40, max: null },
     ];
 
     const agePromises = ageGroups.map(async (ageGroup) => {
@@ -87,7 +87,7 @@ async function getPredefinedLists(ownerId) {
           isSystem: true,
           filterGender: null,
           filterAgeGroup: ageGroup.key,
-          memberCount: contacts.length
+          memberCount: contacts.length,
         };
       } catch (error) {
         // If this age group list fails, return it with 0 count
@@ -98,16 +98,16 @@ async function getPredefinedLists(ownerId) {
           isSystem: true,
           filterGender: null,
           filterAgeGroup: ageGroup.key,
-          memberCount: 0
+          memberCount: 0,
         };
       }
     });
     const ageLists = await Promise.all(agePromises);
     lists.push(...ageLists);
 
-  // Combined gender + age group lists (optional - can be commented out if too many)
-  // Uncomment if you want all combinations
-  /*
+    // Combined gender + age group lists (optional - can be commented out if too many)
+    // Uncomment if you want all combinations
+    /*
   const combinedPromises = [];
   for (const gender of genders) {
     for (const ageGroup of ageGroups) {
@@ -138,7 +138,7 @@ async function getPredefinedLists(ownerId) {
       isSystem: true,
       filterGender: null,
       filterAgeGroup: null,
-      memberCount: 0
+      memberCount: 0,
     }];
   }
 }
@@ -187,12 +187,12 @@ async function getPredefinedListContacts(listId, ownerId, page = 1, pageSize = 2
     items,
     total,
     page,
-    pageSize
+    pageSize,
   };
 }
 
 module.exports = {
   getPredefinedLists,
-  getPredefinedListContacts
+  getPredefinedListContacts,
 };
 

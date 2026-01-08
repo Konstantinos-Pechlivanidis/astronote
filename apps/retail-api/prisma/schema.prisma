@@ -58,6 +58,8 @@ model User {
   publicLinkTokens PublicLinkToken[] @relation("PublicLinkTokenOwner")
   retailBranding  RetailBranding? @relation("RetailBrandingOwner")
   publicSignupEvents PublicSignupEvent[] @relation("PublicSignupEventOwner")
+  retailJoinBranding RetailJoinBranding? @relation("RetailJoinBrandingOwner")
+  retailAssets RetailAsset[] @relation("RetailAssetOwner")
 
   @@index([stripeCustomerId])
   @@index([stripeSubscriptionId])
@@ -376,6 +378,7 @@ model PublicLinkToken {
   token     String   @unique
   type      String   @default("signup")
   isActive  Boolean  @default(true)
+  rotationEnabled Boolean @default(false)
   createdAt DateTime @default(now())
   rotatedAt DateTime?
   lastUsedAt DateTime?
@@ -391,17 +394,84 @@ model RetailBranding {
   id          Int      @id @default(autoincrement())
   ownerId     Int      @unique
   storeName   String
+  storeDisplayName String?
   logoUrl     String?  @db.Text
   primaryColor String?
   accentColor  String?
+  backgroundStyle String?
   headline     String?
+  subheadline  String?
   benefits     Json?
+  benefitsJson Json?
+  incentiveText String?
+  merchantBlurb String? @db.Text
+  legalText    String?
   privacyUrl   String?  @db.Text
   termsUrl     String?  @db.Text
   updatedAt   DateTime @updatedAt
   createdAt   DateTime @default(now())
 
   owner User @relation("RetailBrandingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model RetailAsset {
+  id          Int      @id @default(autoincrement())
+  ownerId     Int
+  kind        String
+  mimeType    String
+  fileName    String
+  byteSize    Int
+  storagePath String   @db.Text
+  createdAt   DateTime @default(now())
+
+  owner User @relation("RetailAssetOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  joinBrandingLogo RetailJoinBranding? @relation("JoinBrandingLogo")
+  joinBrandingOg RetailJoinBranding? @relation("JoinBrandingOg")
+
+  @@index([ownerId])
+  @@index([kind])
+}
+
+model RetailJoinBranding {
+  id              Int      @id @default(autoincrement())
+  ownerId         Int      @unique
+  storeDisplayName String
+  logoAssetId     Int?     @unique
+  ogImageAssetId  Int?     @unique
+  logoUrl         String?  @db.Text
+  ogImageUrl      String?  @db.Text
+  primaryColor    String   @default("#111827")
+  secondaryColor  String   @default("#4B5563")
+  backgroundColor String   @default("#FFFFFF")
+  textColor       String   @default("#111827")
+  accentColor     String   @default("#3B82F6")
+  marketingHeadline String?
+  marketingBullets Json?
+  merchantBlurb   String?  @db.Text
+  // Bilingual fields
+  headlineEn      String?
+  headlineEl      String?
+  subheadlineEn   String?  @db.Text
+  subheadlineEl   String?  @db.Text
+  bulletsEn       Json?
+  bulletsEl       Json?
+  merchantBlurbEn String?  @db.Text
+  merchantBlurbEl String?  @db.Text
+  pageTitle       String?
+  pageDescription String?
+  websiteUrl      String?  @db.Text
+  facebookUrl     String?  @db.Text
+  instagramUrl    String?  @db.Text
+  rotateEnabled   Boolean  @default(false)
+  showPoweredBy   Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  owner User @relation("RetailJoinBrandingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  logoAsset RetailAsset? @relation("JoinBrandingLogo", fields: [logoAssetId], references: [id], onDelete: SetNull)
+  ogImageAsset RetailAsset? @relation("JoinBrandingOg", fields: [ogImageAssetId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId])
 }
 
 model PublicSignupEvent {

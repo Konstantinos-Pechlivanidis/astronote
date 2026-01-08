@@ -17,8 +17,8 @@ async function getContactsMatchingFilters(listId, ownerId) {
       id: true,
       filterGender: true,
       filterAgeMin: true,
-      filterAgeMax: true
-    }
+      filterAgeMax: true,
+    },
   });
 
   if (!list) {
@@ -28,7 +28,7 @@ async function getContactsMatchingFilters(listId, ownerId) {
   // Build where clause for contacts
   const where = {
     ownerId,
-    isSubscribed: true // Only subscribed contacts
+    isSubscribed: true, // Only subscribed contacts
   };
 
   // Filter by gender if specified
@@ -46,18 +46,18 @@ async function getContactsMatchingFilters(listId, ownerId) {
         ownerId,
         isSubscribed: true,
         ...(list.filterGender ? { gender: list.filterGender } : {}),
-        birthday: { not: null } // Only contacts with birthday can be age-filtered
+        birthday: { not: null }, // Only contacts with birthday can be age-filtered
       },
       select: {
         id: true,
-        birthday: true
-      }
+        birthday: true,
+      },
     });
 
     // Filter by age
     const matchingContacts = allContacts.filter(contact => {
       if (!contact.birthday) {return false;}
-      
+
       const age = calculateAge(contact.birthday);
       if (age === null) {return false;}
 
@@ -77,12 +77,12 @@ async function getContactsMatchingFilters(listId, ownerId) {
     const allContacts = await prisma.contact.findMany({
       where: {
         ...where,
-        birthday: { not: null } // Need birthday to verify age
+        birthday: { not: null }, // Need birthday to verify age
       },
       select: {
         id: true,
-        birthday: true
-      }
+        birthday: true,
+      },
     });
 
     // Filter to only include 18+ contacts
@@ -110,7 +110,7 @@ async function syncListMemberships(listId, ownerId) {
   // Get current memberships
   const currentMemberships = await prisma.listMembership.findMany({
     where: { listId },
-    select: { contactId: true }
+    select: { contactId: true },
   });
 
   const currentContactIds = new Set(currentMemberships.map(m => m.contactId));
@@ -118,7 +118,7 @@ async function syncListMemberships(listId, ownerId) {
 
   // Find contacts to add
   const toAdd = matchingContactIds.filter(id => !currentContactIds.has(id));
-  
+
   // Find contacts to remove
   const toRemove = Array.from(currentContactIds).filter(id => !targetContactIds.has(id));
 
@@ -128,7 +128,7 @@ async function syncListMemberships(listId, ownerId) {
     if (toAdd.length > 0) {
       await tx.listMembership.createMany({
         data: toAdd.map(contactId => ({ listId, contactId })),
-        skipDuplicates: true
+        skipDuplicates: true,
       });
     }
 
@@ -137,8 +137,8 @@ async function syncListMemberships(listId, ownerId) {
       await tx.listMembership.deleteMany({
         where: {
           listId,
-          contactId: { in: toRemove }
-        }
+          contactId: { in: toRemove },
+        },
       });
     }
   });
@@ -146,7 +146,7 @@ async function syncListMemberships(listId, ownerId) {
   return {
     added: toAdd.length,
     removed: toRemove.length,
-    total: matchingContactIds.length
+    total: matchingContactIds.length,
   };
 }
 
@@ -164,6 +164,6 @@ async function getListMatchCount(listId, ownerId) {
 module.exports = {
   getContactsMatchingFilters,
   syncListMemberships,
-  getListMatchCount
+  getListMatchCount,
 };
 

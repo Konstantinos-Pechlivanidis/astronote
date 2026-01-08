@@ -17,35 +17,35 @@ function handlePrismaError(error) {
   }
 
   switch (error.code) {
-    case 'P2002': {
-      // Unique constraint violation
-      // Try to extract field name from meta for better error message
-      const field = error.meta?.target?.[0] || 'resource';
-      return { 
-        status: 409, 
-        message: `A ${field} with this value already exists. Please choose a different value.`, 
-        code: 'DUPLICATE_RESOURCE' 
-      };
-    }
-    
-    case 'P2003':
-      // Foreign key constraint violation
-      return { 
-        status: 404, 
-        message: 'A referenced resource was not found. Please check your input and try again.', 
-        code: 'REFERENCE_NOT_FOUND' 
-      };
-    
-    case 'P2025':
-      // Record not found (update/delete)
-      return { 
-        status: 404, 
-        message: 'The requested resource was not found.', 
-        code: 'RESOURCE_NOT_FOUND' 
-      };
-    
-    default:
-      return null;
+  case 'P2002': {
+    // Unique constraint violation
+    // Try to extract field name from meta for better error message
+    const field = error.meta?.target?.[0] || 'resource';
+    return {
+      status: 409,
+      message: `A ${field} with this value already exists. Please choose a different value.`,
+      code: 'DUPLICATE_RESOURCE',
+    };
+  }
+
+  case 'P2003':
+    // Foreign key constraint violation
+    return {
+      status: 404,
+      message: 'A referenced resource was not found. Please check your input and try again.',
+      code: 'REFERENCE_NOT_FOUND',
+    };
+
+  case 'P2025':
+    // Record not found (update/delete)
+    return {
+      status: 404,
+      message: 'The requested resource was not found.',
+      code: 'RESOURCE_NOT_FOUND',
+    };
+
+  default:
+    return null;
   }
 }
 
@@ -58,6 +58,6 @@ function isPrismaError(error) {
 
 module.exports = {
   handlePrismaError,
-  isPrismaError
+  isPrismaError,
 };
 

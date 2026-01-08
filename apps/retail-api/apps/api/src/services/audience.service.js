@@ -23,7 +23,7 @@ async function buildAudience(ownerId, filterGender = null, filterAgeGroup = null
   // Base where clause - only subscribed contacts, 18+ (adults only)
   const where = {
     ownerId,
-    isSubscribed: true
+    isSubscribed: true,
   };
 
   // Gender filter
@@ -45,7 +45,7 @@ async function buildAudience(ownerId, filterGender = null, filterAgeGroup = null
     const searchTerm = nameSearch.trim();
     where.OR = [
       { firstName: { contains: searchTerm, mode: 'insensitive' } },
-      { lastName: { contains: searchTerm, mode: 'insensitive' } }
+      { lastName: { contains: searchTerm, mode: 'insensitive' } },
     ];
   }
 
@@ -61,8 +61,8 @@ async function buildAudience(ownerId, filterGender = null, filterAgeGroup = null
         firstName: true,
         lastName: true,
         gender: true,
-        birthday: true
-      }
+        birthday: true,
+      },
     });
   } catch (err) {
     logger.error({ ownerId, err: err.message }, 'Error fetching contacts in buildAudience');
@@ -95,7 +95,7 @@ async function buildAudience(ownerId, filterGender = null, filterAgeGroup = null
     const age = calculateAge(contact.birthday);
     return age !== null && age >= 18;
   });
-  
+
   return filtered;
 }
 
@@ -114,6 +114,6 @@ async function countAudience(ownerId, filterGender = null, filterAgeGroup = null
 
 module.exports = {
   buildAudience,
-  countAudience
+  countAudience,
 };
 

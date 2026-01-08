@@ -25,9 +25,9 @@ function handleError(error, req, res, defaultMessage = 'Internal Server Error') 
     status: error?.status,
     name: error?.name,
     path: req.path,
-    method: req.method
+    method: req.method,
   };
-  
+
   if (req.log) {
     req.log.error({ err: error, details: errorDetails }, 'Request error');
   } else {
@@ -38,9 +38,9 @@ function handleError(error, req, res, defaultMessage = 'Internal Server Error') 
   if (isPrismaError(error)) {
     const prismaResponse = handlePrismaError(error);
     if (prismaResponse) {
-      return res.status(prismaResponse.status).json({ 
+      return res.status(prismaResponse.status).json({
         message: prismaResponse.message,
-        code: prismaResponse.code || 'DATABASE_ERROR'
+        code: prismaResponse.code || 'DATABASE_ERROR',
       });
     }
   }
@@ -65,9 +65,9 @@ function handleError(error, req, res, defaultMessage = 'Internal Server Error') 
       errorMessage.includes('jwt expired') ||
       errorMessage.includes('jwt malformed') ||
       errorMessage.includes('jwt signature')) {
-    return res.status(401).json({ 
+    return res.status(401).json({
       message: 'Your session has expired. Please log in again.',
-      code: 'UNAUTHORIZED'
+      code: 'UNAUTHORIZED',
     });
   }
 
@@ -80,38 +80,38 @@ function handleError(error, req, res, defaultMessage = 'Internal Server Error') 
     if (errorMessage.includes('required')) {
       userMessage = errorMessage.replace(/required/gi, 'is required');
     }
-    return res.status(400).json({ 
+    return res.status(400).json({
       message: userMessage,
-      code: 'VALIDATION_ERROR'
+      code: 'VALIDATION_ERROR',
     });
   }
 
   // Handle conflict errors (duplicate resources)
   if (errorMessage.includes('already in use') ||
       errorMessage.includes('already exists')) {
-    return res.status(409).json({ 
-      message: errorMessage.includes('already exists') 
-        ? errorMessage 
+    return res.status(409).json({
+      message: errorMessage.includes('already exists')
+        ? errorMessage
         : 'This resource is already in use. Please choose a different value.',
-      code: 'DUPLICATE_RESOURCE'
+      code: 'DUPLICATE_RESOURCE',
     });
   }
 
   // Default to 500 - but include the actual error message if available
   // In production, don't expose internal error details
   const isProduction = process.env.NODE_ENV === 'production';
-  const finalMessage = isProduction && errorMessage !== defaultMessage 
-    ? defaultMessage 
+  const finalMessage = isProduction && errorMessage !== defaultMessage
+    ? defaultMessage
     : (errorMessage !== defaultMessage ? errorMessage : defaultMessage);
-  
+
   // Provide user-friendly message for internal errors
-  const userMessage = isProduction 
+  const userMessage = isProduction
     ? 'An unexpected error occurred. Please try again later or contact support if the problem persists.'
     : finalMessage;
-  
-  return res.status(500).json({ 
+
+  return res.status(500).json({
     message: userMessage,
-    code: 'INTERNAL_ERROR'
+    code: 'INTERNAL_ERROR',
   });
 }
 
@@ -158,6 +158,6 @@ module.exports = {
   validationError,
   notFoundError,
   unauthorizedError,
-  forbiddenError
+  forbiddenError,
 };
 

@@ -1,0 +1,30 @@
+export const joinCopyClean = {
+  headline: 'Subscribe to get member benefits',
+  subheadline: 'Get offers, updates, and member-only perks from this store.',
+  cta: 'Subscribe',
+  submitting: 'Subscribing...',
+  consentText: 'By subscribing you agree to receive SMS updates.',
+  fields: {
+    firstName: 'First name',
+    lastName: 'Last name (optional)',
+    phoneCountry: 'Code',
+    phone: 'Mobile number',
+    email: 'Email (optional)',
+  },
+  trustLine: 'No spam. Unsubscribe anytime.',
+  benefits: [
+    'Exclusive discounts & offers',
+    'Early access to new arrivals',
+    'Priority updates & announcements',
+    'Member-only surprises',
+  ],
+  successTitle: 'Successfully subscribed ✓',
+  successMessage: 'You will now receive member benefits and updates.',
+  invalidTitle: 'Link unavailable',
+  invalidMessage: 'This subscription link is invalid or has expired.',
+  rateLimitTitle: 'Too many attempts',
+  rateLimitMessage: 'Please wait a moment and try again.',
+  loading: 'Loading...',
+  errorMessage: 'Something went wrong. Please try again.',
+} as const;
+

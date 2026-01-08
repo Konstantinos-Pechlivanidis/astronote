@@ -1,5 +1,4 @@
 // apps/api/src/services/urlShortener.service.js
-const crypto = require('node:crypto');
 const { nanoid } = require('nanoid');
 const prisma = require('../lib/prisma');
 const pino = require('pino');
@@ -26,7 +25,7 @@ const TINYURL_API_KEY = process.env.TINYURL_API_KEY;
 
 // Helper function to ensure base URL includes /retail path
 function normalizeBase(url) {
-  if (!url) return '';
+  if (!url) {return '';}
   return url.trim().replace(/\/$/, '');
 }
 
@@ -58,7 +57,7 @@ async function shortenCustom(originalUrl, opts = {}) {
         targetUrl: opts.targetUrl || originalUrl,
         kind: opts.kind || null,
         ownerId: opts.ownerId || null,
-        campaignId: opts.campaignId || null
+        campaignId: opts.campaignId || null,
       },
       create: {
         shortCode,
@@ -66,8 +65,8 @@ async function shortenCustom(originalUrl, opts = {}) {
         targetUrl: opts.targetUrl || originalUrl,
         kind: opts.kind || null,
         ownerId: opts.ownerId || null,
-        campaignId: opts.campaignId || null
-      }
+        campaignId: opts.campaignId || null,
+      },
     });
 
     return shortUrl;
@@ -171,13 +170,13 @@ async function shortenUrl(originalUrl, opts = {}) {
 
   try {
     switch (SHORTENER_TYPE) {
-      case 'bitly':
-        return await shortenBitly(originalUrl);
-      case 'tinyurl':
-        return await shortenTinyURL(originalUrl);
-      case 'custom':
-      default:
-        return shortenCustom(originalUrl, opts);
+    case 'bitly':
+      return await shortenBitly(originalUrl);
+    case 'tinyurl':
+      return await shortenTinyURL(originalUrl);
+    case 'custom':
+    default:
+      return shortenCustom(originalUrl, opts);
     }
   } catch (error) {
     logger.error({ err: error.message, originalUrl, type: SHORTENER_TYPE }, 'URL shortening failed, using original');

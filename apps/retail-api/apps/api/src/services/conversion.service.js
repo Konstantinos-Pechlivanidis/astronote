@@ -9,7 +9,7 @@ const logger = pino({ name: 'conversion-service' });
 
 /**
  * Record a conversion event (in-store visit confirmation via NFC)
- * 
+ *
  * @param {Object} params
  * @param {number} params.storeId - Store ID
  * @param {string} params.phone - Contact phone number (E.164 format)
@@ -30,9 +30,9 @@ async function recordConversion({ storeId, phone, nfcTagId, campaignId, campaign
     where: {
       ownerId_phone: {
         ownerId: storeId,
-        phone: normalizedPhone
-      }
-    }
+        phone: normalizedPhone,
+      },
+    },
   });
 
   if (!contact) {
@@ -49,19 +49,19 @@ async function recordConversion({ storeId, phone, nfcTagId, campaignId, campaign
       where: {
         ownerId: storeId,
         contactId: contact.id,
-        status: 'sent' // Note: "delivered" is mapped to "sent"
+        status: 'sent', // Note: "delivered" is mapped to "sent"
       },
       orderBy: {
-        sentAt: 'desc'
+        sentAt: 'desc',
       },
       include: {
         campaign: {
           select: {
             id: true,
-            status: true
-          }
-        }
-      }
+            status: true,
+          },
+        },
+      },
     });
 
     if (recentMessage) {
@@ -74,10 +74,10 @@ async function recordConversion({ storeId, phone, nfcTagId, campaignId, campaign
   const nfcTag = await prisma.nfcTag.findFirst({
     where: {
       id: nfcTagId,
-      storeId: storeId,
+      storeId,
       type: 'conversion',
-      status: 'active'
-    }
+      status: 'active',
+    },
   });
 
   if (!nfcTag) {
@@ -95,8 +95,8 @@ async function recordConversion({ storeId, phone, nfcTagId, campaignId, campaign
       occurredAt: new Date(),
       metadata: {
         phone: normalizedPhone,
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     },
     include: {
       contact: {
@@ -104,23 +104,23 @@ async function recordConversion({ storeId, phone, nfcTagId, campaignId, campaign
           id: true,
           phone: true,
           firstName: true,
-          lastName: true
-        }
+          lastName: true,
+        },
       },
       campaign: {
         select: {
           id: true,
-          name: true
-        }
+          name: true,
+        },
       },
       nfcTag: {
         select: {
           id: true,
           label: true,
-          publicId: true
-        }
-      }
-    }
+          publicId: true,
+        },
+      },
+    },
   });
 
   logger.info({
@@ -128,7 +128,7 @@ async function recordConversion({ storeId, phone, nfcTagId, campaignId, campaign
     contactId: contact.id,
     nfcTagId,
     campaignId: finalCampaignId,
-    conversionEventId: conversionEvent.id
+    conversionEventId: conversionEvent.id,
   }, 'Conversion event recorded');
 
   return conversionEvent;
@@ -136,7 +136,7 @@ async function recordConversion({ storeId, phone, nfcTagId, campaignId, campaign
 
 /**
  * Get conversion events for a campaign
- * 
+ *
  * @param {number} campaignId - Campaign ID
  * @param {number} ownerId - Store owner ID (for scoping)
  * @returns {Promise<Array>} Array of conversion events
@@ -145,7 +145,7 @@ async function getCampaignConversions(campaignId, ownerId) {
   return await prisma.conversionEvent.findMany({
     where: {
       campaignId,
-      storeId: ownerId
+      storeId: ownerId,
     },
     include: {
       contact: {
@@ -153,26 +153,26 @@ async function getCampaignConversions(campaignId, ownerId) {
           id: true,
           phone: true,
           firstName: true,
-          lastName: true
-        }
+          lastName: true,
+        },
       },
       nfcTag: {
         select: {
           id: true,
           label: true,
-          publicId: true
-        }
-      }
+          publicId: true,
+        },
+      },
     },
     orderBy: {
-      occurredAt: 'desc'
-    }
+      occurredAt: 'desc',
+    },
   });
 }
 
 /**
  * Get conversion count for a campaign
- * 
+ *
  * @param {number} campaignId - Campaign ID
  * @param {number} ownerId - Store owner ID (for scoping)
  * @returns {Promise<number>} Conversion count
@@ -181,14 +181,14 @@ async function getCampaignConversionCount(campaignId, ownerId) {
   return await prisma.conversionEvent.count({
     where: {
       campaignId,
-      storeId: ownerId
-    }
+      storeId: ownerId,
+    },
   });
 }
 
 module.exports = {
   recordConversion,
   getCampaignConversions,
-  getCampaignConversionCount
+  getCampaignConversionCount,
 };
 

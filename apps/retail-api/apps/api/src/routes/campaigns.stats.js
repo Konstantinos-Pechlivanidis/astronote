@@ -9,9 +9,9 @@ r.get('/campaigns/:id/stats', requireAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!id || isNaN(id)) {
-      return res.status(400).json({ 
-        message: 'Invalid campaign ID', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'Invalid campaign ID',
+        code: 'VALIDATION_ERROR',
       });
     }
 
@@ -23,9 +23,9 @@ r.get('/campaigns/:id/stats', requireAuth, async (req, res, next) => {
     res.json(payload);
   } catch (e) {
     if (e?.code === 'NOT_FOUND') {
-      return res.status(404).json({ 
-        message: 'Campaign not found', 
-        code: 'RESOURCE_NOT_FOUND' 
+      return res.status(404).json({
+        message: 'Campaign not found',
+        code: 'RESOURCE_NOT_FOUND',
       });
     }
     next(e);

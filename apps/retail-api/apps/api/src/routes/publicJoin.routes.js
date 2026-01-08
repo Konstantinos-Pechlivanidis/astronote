@@ -1,12 +1,15 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
-const { rateLimitByIp } = require('../services/rateLimiter.service');
+const { createLimiter } = require('../lib/ratelimit');
 const { normalizePhoneToE164 } = require('../lib/phone');
+const pino = require('pino');
 
 const router = express.Router();
-
-const viewLimiter = { points: 60, duration: 60 };
-const submitLimiter = { points: 30, duration: 60 };
+const logger = pino({ name: 'public-join-route' });
+// generous for views: 300 requests / 5 minutes per ip
+const viewLimiter = createLimiter({ keyPrefix: 'rl:public:join:view', points: 300, duration: 300 });
+// safer for submits: 30 requests / 5 minutes per ip+token
+const submitLimiter = createLimiter({ keyPrefix: 'rl:public:join:submit', points: 30, duration: 300 });
 
 function publicBase() {
   const base =
@@ -17,81 +20,154 @@ function publicBase() {
   return base.replace(/\/$/, '');
 }
 
+function requestBase(req) {
+  const protoHeader = req.headers['x-forwarded-proto'];
+  const hostHeader = req.headers['x-forwarded-host'];
+  const proto = (Array.isArray(protoHeader) ? protoHeader[0] : protoHeader) || req.protocol || 'http';
+  const host = (Array.isArray(hostHeader) ? hostHeader[0] : hostHeader) || req.get('host');
+  if (!host) {return '';}
+  return `${proto}`.includes('://') ? `${proto}${host}` : `${proto}://${host}`;
+}
+
+function buildAssetUrl(req, assetId) {
+  if (!assetId) {return null;}
+  const base = requestBase(req);
+  const path = `/public/assets/${assetId}`;
+  return base ? `${base}${path}` : path;
+}
+
 async function ensureBranding(ownerId) {
-  const branding = await prisma.retailBranding.findUnique({ where: { ownerId } });
-  if (branding) return branding;
+  const branding = await prisma.retailJoinBranding.findUnique({
+    where: { ownerId },
+    include: { logoAsset: true, ogImageAsset: true },
+  });
+  if (branding) {return branding;}
   const owner = await prisma.user.findUnique({ where: { id: ownerId } });
   const storeName = owner?.company || owner?.senderName || 'Store';
-  return prisma.retailBranding.upsert({
-    where: { ownerId },
-    update: { storeName },
-    create: { ownerId, storeName }
+  return prisma.retailJoinBranding.create({
+    data: { ownerId, storeDisplayName: storeName },
+    include: { logoAsset: true, ogImageAsset: true },
   });
 }
 
 async function getToken(token) {
   return prisma.publicLinkToken.findFirst({
     where: { token, isActive: true, type: 'signup' },
-    select: { id: true, ownerId: true }
+    select: { id: true, ownerId: true },
   });
 }
 
 // GET /public/join/:token
-router.get('/public/join/:token', rateLimitByIp(viewLimiter), async (req, res, next) => {
+router.get('/public/join/:token', async (req, res, next) => {
   try {
     const { token } = req.params;
+    const key = req.ip || 'unknown';
+    try {
+      const consumed = await viewLimiter.consume(key);
+      res.set('X-RateLimit-Remaining', String(consumed.remainingPoints ?? ''));
+    } catch (rl) {
+      const ms = rl?.msBeforeNext ?? 60_000;
+      res.set('Retry-After', Math.ceil(ms / 1000));
+      logger.warn({ ip: req.ip, token, path: req.path, userAgent: req.headers['user-agent'] || null, referer: req.headers.referer || null }, 'Public join view rate limited');
+      return res.status(429).json({ message: 'Too many requests', code: 'RATE_LIMITED' });
+    }
+
     const link = await getToken(token);
     if (!link) {
       return res.status(404).json({ message: 'Not found', code: 'NOT_FOUND' });
     }
 
     const branding = await ensureBranding(link.ownerId);
+    const primaryColor = branding.primaryColor || '#111827';
+    const accentColor = branding.accentColor || '#3B82F6';
+    const logoUrl = buildAssetUrl(req, branding.logoAssetId) || branding.logoUrl || null;
+    const ogImageUrl = buildAssetUrl(req, branding.ogImageAssetId) || branding.ogImageUrl || null;
     await prisma.publicSignupEvent.create({
       data: {
         ownerId: link.ownerId,
         tokenId: link.id,
         ip: req.ip || null,
         userAgent: req.headers['user-agent'] || null,
-        meta: { action: 'view' }
-      }
+        meta: { action: 'view' },
+      },
     });
 
+    res.set('Cache-Control', 'public, max-age=30');
     res.json({
       ok: true,
+      active: true,
+      storeName: branding.storeDisplayName,
       branding: {
-        storeName: branding.storeName,
-        logoUrl: branding.logoUrl,
-        primaryColor: branding.primaryColor,
-        accentColor: branding.accentColor,
-        headline: branding.headline,
-        benefits: branding.benefits,
-        privacyUrl: branding.privacyUrl,
-        termsUrl: branding.termsUrl,
+        storeName: branding.storeDisplayName,
+        storeDisplayName: branding.storeDisplayName,
+        logoUrl,
+        ogImageUrl,
+        primaryColor,
+        secondaryColor: branding.secondaryColor || '#4B5563',
+        backgroundColor: branding.backgroundColor || '#FFFFFF',
+        textColor: branding.textColor || '#111827',
+        accentColor,
+        headline: branding.marketingHeadline,
+        headlineOverride: branding.marketingHeadline,
+        subheadline: null,
+        benefits: branding.marketingBullets,
+        benefitsOverride: branding.marketingBullets,
+        incentiveText: null,
+        merchantBlurb: branding.merchantBlurb,
+        extraTextBox: branding.merchantBlurb,
+        // Bilingual fields
+        headlineEn: branding.headlineEn || null,
+        headlineEl: branding.headlineEl || null,
+        subheadlineEn: branding.subheadlineEn || null,
+        subheadlineEl: branding.subheadlineEl || null,
+        bulletsEn: branding.bulletsEn || null,
+        bulletsEl: branding.bulletsEl || null,
+        merchantBlurbEn: branding.merchantBlurbEn || null,
+        merchantBlurbEl: branding.merchantBlurbEl || null,
+        pageTitle: branding.pageTitle,
+        pageDescription: branding.pageDescription,
+        websiteUrl: branding.websiteUrl,
+        facebookUrl: branding.facebookUrl,
+        instagramUrl: branding.instagramUrl,
+        rotateEnabled: branding.rotateEnabled,
+        showPoweredBy: branding.showPoweredBy !== false,
       },
       defaults: {
-        phoneCountryCode: '+30'
+        phoneCountryCode: '+30',
       },
-      publicBase: publicBase()
+      publicBase: publicBase(),
     });
   } catch (e) {
     next(e);
   }
 });
 
-// POST /public/join/:token/submit
-router.post('/public/join/:token/submit', rateLimitByIp(submitLimiter), async (req, res, next) => {
+// POST /public/join/:token (alias keeps /submit for backward compatibility)
+const joinSubmitHandler = async (req, res, next) => {
   try {
     const { token } = req.params;
+    const key = `${req.ip || 'unknown'}:${token || ''}`;
+    try {
+      const consumed = await submitLimiter.consume(key);
+      res.set('X-RateLimit-Remaining', String(consumed.remainingPoints ?? ''));
+    } catch (rl) {
+      const ms = rl?.msBeforeNext ?? 60_000;
+      res.set('Retry-After', Math.ceil(ms / 1000));
+      logger.warn({ ip: req.ip, token, path: req.path, userAgent: req.headers['user-agent'] || null, referer: req.headers.referer || null }, 'Public join submit rate limited');
+      return res.status(429).json({ message: 'Too many requests', code: 'RATE_LIMITED' });
+    }
+
     const link = await getToken(token);
     if (!link) {
       return res.status(404).json({ message: 'Not found', code: 'NOT_FOUND' });
     }
 
-    const { firstName, lastName, email, phoneCountryCode, phoneNational } = req.body || {};
+    const { firstName, lastName, email, phoneCountryCode, phoneNational, countryCode } = req.body || {};
     if (!firstName || typeof firstName !== 'string') {
       return res.status(400).json({ message: 'First name is required', code: 'VALIDATION_ERROR' });
     }
-    const country = (phoneCountryCode || '+30').replace('+', '');
+    const cc = countryCode || phoneCountryCode || '+30';
+    const country = cc.replace('+', '') || '30';
     const national = (phoneNational || '').replace(/\D/g, '');
     const combined = `+${country}${national}`;
     const phone = normalizePhoneToE164(combined, 'GR');
@@ -119,8 +195,8 @@ router.post('/public/join/:token/submit', rateLimitByIp(submitLimiter), async (r
           tokenId: link.id,
           ip: req.ip || null,
           userAgent: req.headers['user-agent'] || null,
-          url: req.originalUrl
-        }
+          url: req.originalUrl,
+        },
       },
       update: {
         firstName,
@@ -137,9 +213,9 @@ router.post('/public/join/:token/submit', rateLimitByIp(submitLimiter), async (r
           tokenId: link.id,
           ip: req.ip || null,
           userAgent: req.headers['user-agent'] || null,
-          url: req.originalUrl
-        }
-      }
+          url: req.originalUrl,
+        },
+      },
     });
 
     await prisma.publicSignupEvent.create({
@@ -149,19 +225,22 @@ router.post('/public/join/:token/submit', rateLimitByIp(submitLimiter), async (r
         contactId: contact.id,
         ip: req.ip || null,
         userAgent: req.headers['user-agent'] || null,
-        meta: { action: 'submit' }
-      }
+        meta: { action: 'submit' },
+      },
     });
 
     res.json({
       ok: true,
       status: 'ok',
       contactId: contact.id,
-      phone
+      phone,
     });
   } catch (e) {
     next(e);
   }
-});
+};
+
+router.post('/public/join/:token', joinSubmitHandler);
+router.post('/public/join/:token/submit', joinSubmitHandler);
 
 module.exports = router;

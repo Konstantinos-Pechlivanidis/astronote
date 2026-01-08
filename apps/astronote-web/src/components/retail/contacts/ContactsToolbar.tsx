@@ -5,14 +5,15 @@ import Link from 'next/link';
 import { Plus, Upload, Search, RadioTower } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { List } from '@/src/lib/retail/api/lists';
 
 interface ContactsToolbarProps {
   search: string
   onSearchChange: (_value: string) => void
   onAddClick: () => void
-  onOpenJoin?: () => void
+  joinHref?: string
   listId: number | null
   onListChange: (_listId: number | null) => void
   systemLists: List[]
@@ -27,7 +28,7 @@ export function ContactsToolbar({
   onListChange,
   systemLists,
   isLoadingLists,
-  onOpenJoin,
+  joinHref,
 }: ContactsToolbarProps) {
   const [localSearch, setLocalSearch] = useState(search);
 
@@ -88,12 +89,15 @@ export function ContactsToolbar({
             <Plus className="w-4 h-4 mr-2" />
             Add Contact
           </Button>
-          {onOpenJoin && (
-            <Button onClick={onOpenJoin} size="sm" variant="outline">
+          {joinHref ? (
+            <Link
+              href={joinHref}
+              className={cn(buttonVariants({ size: 'sm', variant: 'outline' }))}
+            >
               <RadioTower className="w-4 h-4 mr-2" />
-              NFC / Share link
-            </Button>
-          )}
+              NFC / Signup
+            </Link>
+          ) : null}
         </div>
       </div>
 

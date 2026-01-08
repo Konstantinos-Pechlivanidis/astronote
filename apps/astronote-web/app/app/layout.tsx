@@ -20,6 +20,11 @@ export default function AppLayout({
       return;
     }
 
+    // Skip auth check for retail routes - they have their own layout (RetailShell)
+    if (pathname?.startsWith('/app/retail')) {
+      return;
+    }
+
     // Check if user is authenticated
     const retailToken = localStorage.getItem('retail_access_token');
     const shopifyToken = localStorage.getItem('shopify_access_token');
@@ -31,6 +36,12 @@ export default function AppLayout({
 
   // Skip layout for shopify routes - they have their own layout (ShopifyShell)
   if (pathname?.startsWith('/app/shopify')) {
+    return <>{children}</>;
+  }
+
+  // Skip layout for retail routes - they have their own layout (RetailShell)
+  // Retail routes are in app/app/retail/* and use app/app/retail/layout.tsx
+  if (pathname?.startsWith('/app/retail')) {
     return <>{children}</>;
   }
 
@@ -49,4 +60,3 @@ export default function AppLayout({
     </div>
   );
 }
-

@@ -83,33 +83,33 @@ exports.enqueueCampaign = async (campaignId) => {
 
   // Build audience OUTSIDE transaction (this can be slow with many contacts)
   let contacts = [];
-  
+
   // Use new system-defined segmentation (allows both filters to be null = all eligible contacts)
   if (camp.filterGender !== null || camp.filterAgeGroup !== null || camp.listId === null) {
     const { buildAudience } = require('./audience.service');
-    
+
     // Map Prisma enum back to normalized format
     const { mapAgeGroupToApi } = require('../lib/routeHelpers');
     const ageGroup = mapAgeGroupToApi(camp.filterAgeGroup);
-    
+
     contacts = await buildAudience(
       camp.ownerId,
       camp.filterGender,
       ageGroup,
-      null // No name search when enqueuing
+      null, // No name search when enqueuing
     );
   } else if (camp.listId) {
     // Legacy: use list memberships (only if filters are not set and listId exists)
     const members = await prisma.listMembership.findMany({
       where: { listId: camp.listId, contact: { isSubscribed: true } },
-      include: { contact: true }
+      include: { contact: true },
     });
     contacts = members.map(m => m.contact);
   } else {
     // No filters and no list - invalid campaign
     await prisma.campaign.updateMany({
       where: { id: camp.id, ownerId: camp.ownerId },
-      data: { status: 'failed', finishedAt: new Date(), total: 0 }
+      data: { status: 'failed', finishedAt: new Date(), total: 0 },
     });
     return { ok: false, reason: 'no_filters_or_list', enqueuedJobs: 0 };
   }
@@ -118,7 +118,7 @@ exports.enqueueCampaign = async (campaignId) => {
     logger.warn({ campaignId: camp.id, ownerId: camp.ownerId }, 'No eligible recipients found');
     await prisma.campaign.updateMany({
       where: { id: camp.id, ownerId: camp.ownerId },
-      data: { status: 'failed', finishedAt: new Date(), total: 0 }
+      data: { status: 'failed', finishedAt: new Date(), total: 0 },
     });
     return { ok: false, reason: 'no_recipients', enqueuedJobs: 0 };
   }
@@ -137,7 +137,7 @@ exports.enqueueCampaign = async (campaignId) => {
   const { getBalance } = require('./wallet.service');
   const currentBalance = await getBalance(camp.ownerId);
   const requiredCredits = contacts.length;
-  
+
   if (currentBalance < requiredCredits) {
     logger.warn({ campaignId: camp.id, ownerId: camp.ownerId, currentBalance, requiredCredits }, 'Insufficient credits');
     return { ok: false, reason: 'insufficient_credits', enqueuedJobs: 0 };
@@ -148,9 +148,9 @@ exports.enqueueCampaign = async (campaignId) => {
     // Double-check status hasn't changed (optimistic locking)
     const currentCamp = await tx.campaign.findUnique({
       where: { id: campaignId },
-      select: { status: true, ownerId: true }
+      select: { status: true, ownerId: true },
     });
-    
+
     if (!currentCamp) {
       return { ok: false, reason: 'not_found' };
     }
@@ -173,9 +173,9 @@ exports.enqueueCampaign = async (campaignId) => {
           },
         ],
       },
-      data: { status: 'sending', startedAt: new Date() }
+      data: { status: 'sending', startedAt: new Date() },
     });
-    
+
     if (upd.count === 0) {
       return { ok: false, reason: 'already_sending' };
     }
@@ -183,7 +183,7 @@ exports.enqueueCampaign = async (campaignId) => {
     return { ok: true };
   }, {
     timeout: 5000, // 5 second timeout (should be fast now)
-    maxWait: 5000
+    maxWait: 5000,
   });
 
   if (!txResult.ok) {return { ...txResult, enqueuedJobs: 0 };}
@@ -193,46 +193,46 @@ exports.enqueueCampaign = async (campaignId) => {
   const ownerId = camp.ownerId;
   // Use messageText (required field, no template association)
   const messageTemplate = camp.messageText;
-  
+
   if (!messageTemplate || !messageTemplate.trim()) {
     logger.error({ campaignId: camp.id }, 'Campaign has no message text');
     await prisma.campaign.updateMany({
       where: { id: camp.id, ownerId },
-      data: { status: 'failed', finishedAt: new Date() }
+      data: { status: 'failed', finishedAt: new Date() },
     });
     return { ok: false, reason: 'no_message_text', enqueuedJobs: 0 };
   }
-  
+
   logger.info({ campaignId: camp.id, contactCount: contacts.length }, '[ENQUEUE] Generating messages with tracking IDs and links');
 
   // Generate messages with offer and unsubscribe links appended
   const messagesData = await Promise.all(contacts.map(async (contact) => {
     // Render message template
     let messageText = render(messageTemplate, contact);
-    
+
     // Shorten any URLs in the message text first
     messageText = await shortenUrlsInText(messageText);
-    
+
     // Generate tracking ID for offer link
     const trackingId = newTrackingId();
     const offerUrl = `${PUBLIC_RETAIL_BASE_URL}/o/${trackingId}`;
-    const shortenedOfferUrl = await shortenUrl(offerUrl, {
+    await shortenUrl(offerUrl, {
       ownerId,
       campaignId: camp.id,
       kind: 'offer',
-      targetUrl: offerUrl
+      targetUrl: offerUrl,
     });
-    
+
     // Generate unsubscribe token
     const unsubscribeToken = generateUnsubscribeToken(contact.id, ownerId, camp.id);
     const unsubscribeUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-    const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl, {
+    await shortenUrl(unsubscribeUrl, {
       ownerId,
       campaignId: camp.id,
       kind: 'unsubscribe',
-      targetUrl: unsubscribeUrl
+      targetUrl: unsubscribeUrl,
     });
-    
+
     return {
       ownerId,
       campaignId: camp.id,
@@ -240,7 +240,7 @@ exports.enqueueCampaign = async (campaignId) => {
       to: contact.phone,
       text: messageText,
       trackingId,
-      status: 'queued'
+      status: 'queued',
     };
   }));
 
@@ -252,15 +252,15 @@ exports.enqueueCampaign = async (campaignId) => {
 
     if (messageCount > BATCH_SIZE) {
       logger.info({ campaignId: camp.id, messageCount }, 'Large campaign detected, using batched inserts');
-      
+
       // Update campaign totals first
       await prisma.campaign.updateMany({
         where: { id: camp.id, ownerId },
-        data: { 
+        data: {
           total: contacts.length,
           sent: 0,
-          failed: 0
-        }
+          failed: 0,
+        },
       });
 
       // Batch create messages
@@ -268,7 +268,7 @@ exports.enqueueCampaign = async (campaignId) => {
         const batch = messagesData.slice(i, i + BATCH_SIZE);
         await prisma.campaignMessage.createMany({
           data: batch,
-          skipDuplicates: true
+          skipDuplicates: true,
         });
         logger.debug({ campaignId: camp.id, batch: Math.floor(i / BATCH_SIZE) + 1, totalBatches: Math.ceil(messageCount / BATCH_SIZE) }, 'Batch inserted');
       }
@@ -277,19 +277,19 @@ exports.enqueueCampaign = async (campaignId) => {
       await prisma.$transaction([
         prisma.campaign.updateMany({
           where: { id: camp.id, ownerId },
-          data: { 
+          data: {
             total: contacts.length,
             sent: 0,
-            failed: 0
-          }
+            failed: 0,
+          },
         }),
         prisma.campaignMessage.createMany({
           data: messagesData,
-          skipDuplicates: true
-        })
+          skipDuplicates: true,
+        }),
       ], {
         timeout: 10000, // 10 seconds for bulk insert (should be fast)
-        maxWait: 5000
+        maxWait: 5000,
       });
       createdCount = messagesData.length;
     }
@@ -307,7 +307,7 @@ exports.enqueueCampaign = async (campaignId) => {
     // Revert campaign status (no credits to refund since we don't debit upfront)
     await prisma.campaign.updateMany({
       where: { id: camp.id, ownerId },
-      data: { status: 'draft', startedAt: null }
+      data: { status: 'draft', startedAt: null },
     });
     throw e;
   }
@@ -317,13 +317,13 @@ exports.enqueueCampaign = async (campaignId) => {
     ownerId,
     createdMessages: messagesData.length,
     createdCount,
-    statusBefore: initialStatus
+    statusBefore: initialStatus,
   }, '[ENQUEUE] Messages created');
 
   // 5) Enqueue jobs to Redis (OUTSIDE transaction, non-blocking)
   const toEnqueue = await prisma.campaignMessage.findMany({
     where: { ownerId, campaignId: camp.id, status: 'queued', providerMessageId: null },
-    select: { id: true }
+    select: { id: true },
   });
 
   // Unique run token per enqueue attempt to avoid jobId collisions blocking jobs
@@ -335,7 +335,7 @@ exports.enqueueCampaign = async (campaignId) => {
     // Mitto's bulk API can handle 1M+ messages, so we use a simple fixed batch size
     // This protects our infrastructure while keeping logic simple and predictable
     const BATCH_SIZE = Number(process.env.SMS_BATCH_SIZE || 5000);
-    
+
     // Group messages into fixed-size batches
     const batches = [];
     for (let i = 0; i < toEnqueue.length; i += BATCH_SIZE) {
@@ -343,14 +343,14 @@ exports.enqueueCampaign = async (campaignId) => {
     }
 
     const jobIds = batches.map((_b, idx) => `campaign:${camp.id}:${runToken}:batch:${idx}`);
-    logger.info({ 
-      campaignId: camp.id, 
+    logger.info({
+      campaignId: camp.id,
       ownerId: camp.ownerId,
       totalMessages: toEnqueue.length,
       batchCount: batches.length,
       batchSize: BATCH_SIZE,
       runToken,
-      jobIds
+      jobIds,
     }, '[ENQUEUE JOBS] Adding bulk SMS batch jobs');
 
     // Enqueue batch jobs
@@ -359,15 +359,15 @@ exports.enqueueCampaign = async (campaignId) => {
       return smsQueue.add('sendBulkSMS', {
         campaignId: camp.id,
         ownerId: camp.ownerId,
-        messageIds
-      }, { 
+        messageIds,
+      }, {
         jobId,
         attempts: 1,
         removeOnComplete: true,
-        backoff: { type: 'exponential', delay: 3000 }
+        backoff: { type: 'exponential', delay: 3000 },
       })
-        .then(() => { 
-          enqueuedJobs += messageIds.length; 
+        .then(() => {
+          enqueuedJobs += messageIds.length;
           logger.debug({ campaignId: camp.id, batchIndex, messageCount: messageIds.length, jobId }, 'Batch job enqueued');
         })
         .catch(err => {
@@ -375,14 +375,14 @@ exports.enqueueCampaign = async (campaignId) => {
           // Continue even if some batches fail to enqueue
         });
     });
-    
+
     // Wait for initial batches (first 10) to ensure some jobs are enqueued
     try {
       await Promise.all(enqueuePromises.slice(0, Math.min(10, enqueuePromises.length)));
     } catch (err) {
       logger.error({ campaignId: camp.id, err: err.message }, 'Some batch jobs failed to enqueue initially');
     }
-    
+
     // Continue enqueuing remaining batches in background (fire and forget)
     if (enqueuePromises.length > 10) {
       Promise.all(enqueuePromises.slice(10)).catch(err => {
@@ -401,17 +401,17 @@ exports.enqueueCampaign = async (campaignId) => {
         const ids = toEnqueue.map((m) => m.id);
         await prisma.$transaction([
           prisma.campaignMessage.deleteMany({
-            where: { id: { in: ids }, ownerId }
+            where: { id: { in: ids }, ownerId },
           }),
           prisma.campaign.updateMany({
             where: { id: camp.id, ownerId },
-            data: rollbackData
-          })
+            data: rollbackData,
+          }),
         ]);
       } else {
         await prisma.campaign.updateMany({
           where: { id: camp.id, ownerId },
-          data: rollbackData
+          data: rollbackData,
         });
       }
     } catch (cleanupErr) {
@@ -420,12 +420,12 @@ exports.enqueueCampaign = async (campaignId) => {
     return { ok: false, reason: 'enqueue_failed', created: messagesData.length, enqueuedJobs: 0 };
   }
 
-    logger.info({ 
-      campaignId: camp.id, 
-      ownerId: camp.ownerId, 
-      created: messagesData.length, 
-      enqueuedJobs 
-    }, '[ENQUEUE DONE] Campaign enqueued successfully');
+  logger.info({
+    campaignId: camp.id,
+    ownerId: camp.ownerId,
+    created: messagesData.length,
+    enqueuedJobs,
+  }, '[ENQUEUE DONE] Campaign enqueued successfully');
 
   return { ok: true, created: messagesData.length, enqueuedJobs, campaignId: camp.id };
 };

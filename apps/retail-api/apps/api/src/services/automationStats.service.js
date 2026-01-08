@@ -16,7 +16,7 @@ function rate(numerator, denominator) {
 /**
  * Get stats for a single automation
  * Scoped to ownerId to prevent data leakage
- * 
+ *
  * @param {number} automationId - Automation ID
  * @param {number} ownerId - Store owner ID (for scoping)
  * @returns {Promise<Object>} Stats object
@@ -27,13 +27,13 @@ async function getAutomationStats(automationId, ownerId) {
   // Ensure the automation belongs to owner
   const automation = await prisma.automation.findFirst({
     where: { id: automationId, ownerId },
-    select: { 
+    select: {
       id: true,
       type: true,
-      updatedAt: true
-    }
+      updatedAt: true,
+    },
   });
-  
+
   if (!automation) {
     const err = new Error('automation not found');
     err.code = 'NOT_FOUND';
@@ -43,27 +43,27 @@ async function getAutomationStats(automationId, ownerId) {
   // Count messages by status
   const [total, sent, failed] = await Promise.all([
     prisma.automationMessage.count({
-      where: { automationId, ownerId }
+      where: { automationId, ownerId },
     }),
     prisma.automationMessage.count({
       where: {
         automationId,
         ownerId,
-        status: 'sent'
-      }
+        status: 'sent',
+      },
     }),
     prisma.automationMessage.count({
       where: {
         automationId,
         ownerId,
-        status: 'failed'
-      }
-    })
+        status: 'failed',
+      },
+    }),
   ]);
 
   // Get conversions count from AutomationRedemption table
   const conversions = await prisma.automationRedemption.count({
-    where: { ownerId, automationId }
+    where: { ownerId, automationId },
   });
 
   return {
@@ -75,14 +75,14 @@ async function getAutomationStats(automationId, ownerId) {
     conversions,
     conversionRate: rate(conversions, sent),
     failureRate: rate(failed, sent),
-    updatedAt: automation.updatedAt
+    updatedAt: automation.updatedAt,
   };
 }
 
 /**
  * Bulk stats for multiple automations
  * Uses groupBy for efficiency
- * 
+ *
  * @param {Array<number>} automationIds - Array of automation IDs
  * @param {number} ownerId - Store owner ID (for scoping)
  * @returns {Promise<Array>} Array of stats objects
@@ -97,8 +97,8 @@ async function getManyAutomationsStats(automationIds, ownerId) {
     select: {
       id: true,
       type: true,
-      updatedAt: true
-    }
+      updatedAt: true,
+    },
   });
 
   const ids = automations.map(a => a.id);
@@ -107,13 +107,13 @@ async function getManyAutomationsStats(automationIds, ownerId) {
   const msgs = await prisma.automationMessage.groupBy({
     by: ['automationId', 'status'],
     where: { ownerId, automationId: { in: ids } },
-    _count: { _all: true }
+    _count: { _all: true },
   });
 
   const reds = await prisma.automationRedemption.groupBy({
     by: ['automationId'],
     where: { ownerId, automationId: { in: ids } },
-    _count: { _all: true }
+    _count: { _all: true },
   });
 
   // Build stats map
@@ -130,7 +130,7 @@ async function getManyAutomationsStats(automationIds, ownerId) {
       s.failed += row._count._all;
     }
   }
-  
+
   for (const row of reds) {
     const s = statsMap.get(row.automationId);
     if (s) {s.redemptions = row._count._all;}
@@ -148,7 +148,7 @@ async function getManyAutomationsStats(automationIds, ownerId) {
       conversions: s.redemptions,
       conversionRate: rate(s.redemptions, s.sent),
       failureRate: rate(s.failed, s.sent),
-      updatedAt: a.updatedAt
+      updatedAt: a.updatedAt,
     };
   });
 
@@ -157,6 +157,6 @@ async function getManyAutomationsStats(automationIds, ownerId) {
 
 module.exports = {
   getAutomationStats,
-  getManyAutomationsStats
+  getManyAutomationsStats,
 };
 

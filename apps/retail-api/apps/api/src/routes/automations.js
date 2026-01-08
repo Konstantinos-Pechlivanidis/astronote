@@ -18,7 +18,7 @@ const router = express.Router();
 router.get('/automations', requireAuth, async (req, res, next) => {
   try {
     const automations = await getAutomations(req.user.id);
-    
+
     // Get stats for both automations
     const automationIds = [];
     if (automations.welcome) {
@@ -27,13 +27,13 @@ router.get('/automations', requireAuth, async (req, res, next) => {
     if (automations.birthday) {
       automationIds.push(automations.birthday.id);
     }
-    
-    const statsArray = automationIds.length > 0 
+
+    const statsArray = automationIds.length > 0
       ? await getManyAutomationsStats(automationIds, req.user.id)
       : [];
-    
+
     const statsMap = new Map(statsArray.map(s => [s.automationId, s]));
-    
+
     // Add stats to response
     const response = {};
     if (automations.welcome) {
@@ -44,8 +44,8 @@ router.get('/automations', requireAuth, async (req, res, next) => {
           total: stats.total,
           sent: stats.sent,
           conversions: stats.conversions,
-          conversionRate: stats.conversionRate
-        } : { total: 0, sent: 0, conversions: 0, conversionRate: 0 }
+          conversionRate: stats.conversionRate,
+        } : { total: 0, sent: 0, conversions: 0, conversionRate: 0 },
       };
     }
     if (automations.birthday) {
@@ -56,11 +56,11 @@ router.get('/automations', requireAuth, async (req, res, next) => {
           total: stats.total,
           sent: stats.sent,
           conversions: stats.conversions,
-          conversionRate: stats.conversionRate
-        } : { total: 0, sent: 0, conversions: 0, conversionRate: 0 }
+          conversionRate: stats.conversionRate,
+        } : { total: 0, sent: 0, conversions: 0, conversionRate: 0 },
       };
     }
-    
+
     res.json(response);
   } catch (err) {
     next(err);
@@ -77,9 +77,9 @@ router.get('/automations/:type', requireAuth, async (req, res, next) => {
     const { type } = req.params;
 
     if (![AUTOMATION_TYPES.WELCOME, AUTOMATION_TYPES.BIRTHDAY].includes(type)) {
-      return res.status(400).json({ 
-        message: 'Invalid automation type. Must be welcome_message or birthday_message.', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'Invalid automation type. Must be welcome_message or birthday_message.',
+        code: 'VALIDATION_ERROR',
       });
     }
 
@@ -103,9 +103,9 @@ router.put('/automations/:type', requireAuth, async (req, res, next) => {
     const { isActive, messageBody } = req.body || {};
 
     if (![AUTOMATION_TYPES.WELCOME, AUTOMATION_TYPES.BIRTHDAY].includes(type)) {
-      return res.status(400).json({ 
-        message: 'Invalid automation type. Must be welcome_message or birthday_message.', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'Invalid automation type. Must be welcome_message or birthday_message.',
+        code: 'VALIDATION_ERROR',
       });
     }
 
@@ -113,9 +113,9 @@ router.put('/automations/:type', requireAuth, async (req, res, next) => {
     const updates = {};
     if (isActive !== undefined) {
       if (typeof isActive !== 'boolean') {
-        return res.status(400).json({ 
-          message: 'isActive must be a boolean value', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'isActive must be a boolean value',
+          code: 'VALIDATION_ERROR',
         });
       }
       updates.isActive = isActive;
@@ -123,9 +123,9 @@ router.put('/automations/:type', requireAuth, async (req, res, next) => {
 
     if (messageBody !== undefined) {
       if (typeof messageBody !== 'string' || !messageBody.trim()) {
-        return res.status(400).json({ 
-          message: 'Message body must be a non-empty string', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'Message body must be a non-empty string',
+          code: 'VALIDATION_ERROR',
         });
       }
       const { sanitizeString } = require('../lib/sanitize');
@@ -134,9 +134,9 @@ router.put('/automations/:type', requireAuth, async (req, res, next) => {
     }
 
     if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ 
-        message: 'No updates provided. Please provide isActive or messageBody.', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'No updates provided. Please provide isActive or messageBody.',
+        code: 'VALIDATION_ERROR',
       });
     }
 
@@ -148,7 +148,7 @@ router.put('/automations/:type', requireAuth, async (req, res, next) => {
       isActive: automation.isActive,
       messageBody: automation.messageBody,
       createdAt: automation.createdAt,
-      updatedAt: automation.updatedAt
+      updatedAt: automation.updatedAt,
     });
   } catch (err) {
     next(err);
@@ -160,9 +160,9 @@ router.put('/automations/:type', requireAuth, async (req, res, next) => {
  * Users cannot create automations
  */
 router.post('/automations', requireAuth, (_req, res) => {
-  res.status(403).json({ 
-    message: 'Automations are system-defined. You can only enable/disable and edit messages.', 
-    code: 'FORBIDDEN' 
+  res.status(403).json({
+    message: 'Automations are system-defined. You can only enable/disable and edit messages.',
+    code: 'FORBIDDEN',
   });
 });
 
@@ -175,9 +175,9 @@ router.get('/automations/:type/stats', requireAuth, async (req, res, next) => {
     const { type } = req.params;
 
     if (![AUTOMATION_TYPES.WELCOME, AUTOMATION_TYPES.BIRTHDAY].includes(type)) {
-      return res.status(400).json({ 
-        message: 'Invalid automation type. Must be welcome_message or birthday_message.', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'Invalid automation type. Must be welcome_message or birthday_message.',
+        code: 'VALIDATION_ERROR',
       });
     }
 
@@ -185,9 +185,9 @@ router.get('/automations/:type/stats', requireAuth, async (req, res, next) => {
     const automation = type === AUTOMATION_TYPES.WELCOME ? automations.welcome : automations.birthday;
 
     if (!automation) {
-      return res.status(404).json({ 
-        message: 'Automation not found', 
-        code: 'RESOURCE_NOT_FOUND' 
+      return res.status(404).json({
+        message: 'Automation not found',
+        code: 'RESOURCE_NOT_FOUND',
       });
     }
 
@@ -195,9 +195,9 @@ router.get('/automations/:type/stats', requireAuth, async (req, res, next) => {
     res.json(stats);
   } catch (err) {
     if (err.code === 'NOT_FOUND') {
-      return res.status(404).json({ 
-        message: err.message || 'Automation not found', 
-        code: 'RESOURCE_NOT_FOUND' 
+      return res.status(404).json({
+        message: err.message || 'Automation not found',
+        code: 'RESOURCE_NOT_FOUND',
       });
     }
     next(err);
@@ -209,9 +209,9 @@ router.get('/automations/:type/stats', requireAuth, async (req, res, next) => {
  * Users cannot delete automations
  */
 router.delete('/automations/:type', requireAuth, (_req, res) => {
-  res.status(403).json({ 
-    message: 'Automations cannot be deleted. You can only disable them.', 
-    code: 'FORBIDDEN' 
+  res.status(403).json({
+    message: 'Automations cannot be deleted. You can only disable them.',
+    code: 'FORBIDDEN',
   });
 });
 

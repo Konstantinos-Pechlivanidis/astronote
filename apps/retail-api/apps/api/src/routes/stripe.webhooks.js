@@ -6,7 +6,7 @@ const { credit } = require('../services/wallet.service');
 const {
   allocateFreeCredits,
   activateSubscription,
-  deactivateSubscription
+  deactivateSubscription,
   // calculateTopupPrice // Unused - kept for potential future use
 } = require('../services/subscription.service');
 const pino = require('pino');
@@ -26,8 +26,8 @@ async function persistWebhookEvent(eventType, payload, stripeEventId) {
         provider: 'stripe',
         eventType,
         payload,
-        providerMessageId: stripeEventId || null
-      }
+        providerMessageId: stripeEventId || null,
+      },
     });
   } catch (e) {
     logger.warn({ err: e?.message }, 'Failed to persist Stripe webhook event');
@@ -71,9 +71,9 @@ async function handleCheckoutCompleted(session) {
       stripeSessionId: session.id,
       ownerId,
       packageId,
-      status: 'pending'
+      status: 'pending',
     },
-    include: { package: true }
+    include: { package: true },
   });
 
   // Fallback: find by session ID only (in case metadata doesn't match exactly)
@@ -81,9 +81,9 @@ async function handleCheckoutCompleted(session) {
     purchase = await prisma.purchase.findFirst({
       where: {
         stripeSessionId: session.id,
-        status: 'pending'
+        status: 'pending',
       },
-      include: { package: true }
+      include: { package: true },
     });
   }
 
@@ -94,10 +94,10 @@ async function handleCheckoutCompleted(session) {
 
   // Validate ownerId matches if we found by session ID only
   if (purchase.ownerId !== ownerId) {
-    logger.warn({ 
-      sessionId: session.id, 
-      purchaseOwnerId: purchase.ownerId, 
-      metadataOwnerId: ownerId 
+    logger.warn({
+      sessionId: session.id,
+      purchaseOwnerId: purchase.ownerId,
+      metadataOwnerId: ownerId,
     }, 'Owner ID mismatch in purchase record');
     return;
   }
@@ -111,17 +111,17 @@ async function handleCheckoutCompleted(session) {
   // Validate payment amount matches expected amount (fraud prevention)
   const expectedAmountCents = purchase.amountCents;
   const actualAmountCents = session.amount_total || 0;
-  
+
   // Allow small rounding differences (up to 1 cent)
   if (Math.abs(actualAmountCents - expectedAmountCents) > 1) {
-    logger.error({ 
-      ownerId, 
+    logger.error({
+      ownerId,
       sessionId: session.id,
       purchaseId: purchase.id,
-      expectedAmountCents, 
+      expectedAmountCents,
       actualAmountCents,
       packageId,
-      units
+      units,
     }, 'Payment amount mismatch - potential fraud or configuration error');
     throw new Error(`Payment amount mismatch: expected ${expectedAmountCents} cents, got ${actualAmountCents} cents`);
   }
@@ -136,8 +136,8 @@ async function handleCheckoutCompleted(session) {
           status: 'paid',
           stripePaymentIntentId: session.payment_intent || null,
           stripeCustomerId: session.customer || null,
-          updatedAt: new Date()
-        }
+          updatedAt: new Date(),
+        },
       });
 
       // Credit the wallet (pass tx to avoid nested transaction)
@@ -148,16 +148,16 @@ async function handleCheckoutCompleted(session) {
           packageId: purchase.packageId,
           stripeSessionId: session.id,
           stripePaymentIntentId: session.payment_intent,
-          currency
-        }
+          currency,
+        },
       }, tx);
     });
   } catch (err) {
-    logger.error({ 
-      err, 
-      purchaseId: purchase.id, 
-      ownerId, 
-      units 
+    logger.error({
+      err,
+      purchaseId: purchase.id,
+      ownerId,
+      units,
     }, 'Failed to process purchase completion');
     throw err; // Re-throw to be caught by webhook handler
   }
@@ -178,8 +178,8 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     const purchase = await prisma.purchase.findFirst({
       where: {
         stripePaymentIntentId: paymentIntent.id,
-        status: 'pending'
-      }
+        status: 'pending',
+      },
     });
 
     if (purchase) {
@@ -203,9 +203,9 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
       stripePaymentIntentId: paymentIntent.id,
       ownerId,
       packageId,
-      status: 'pending'
+      status: 'pending',
     },
-    include: { package: true }
+    include: { package: true },
   });
 
   // Fallback: find by payment intent ID only
@@ -213,9 +213,9 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     purchase = await prisma.purchase.findFirst({
       where: {
         stripePaymentIntentId: paymentIntent.id,
-        status: 'pending'
+        status: 'pending',
       },
-      include: { package: true }
+      include: { package: true },
     });
   }
 
@@ -226,10 +226,10 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
 
   // Validate ownerId matches if we found by payment intent ID only
   if (purchase.ownerId !== ownerId) {
-    logger.warn({ 
-      paymentIntentId: paymentIntent.id, 
-      purchaseOwnerId: purchase.ownerId, 
-      metadataOwnerId: ownerId 
+    logger.warn({
+      paymentIntentId: paymentIntent.id,
+      purchaseOwnerId: purchase.ownerId,
+      metadataOwnerId: ownerId,
     }, 'Owner ID mismatch in purchase record');
     return;
   }
@@ -249,8 +249,8 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
         data: {
           status: 'paid',
           stripeCustomerId: paymentIntent.customer || null,
-          updatedAt: new Date()
-        }
+          updatedAt: new Date(),
+        },
       });
 
       // Credit wallet (pass tx to avoid nested transaction)
@@ -260,16 +260,16 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
           purchaseId: purchase.id,
           packageId: purchase.packageId,
           stripePaymentIntentId: paymentIntent.id,
-          currency
-        }
+          currency,
+        },
       }, tx);
     });
   } catch (err) {
-    logger.error({ 
-      err, 
-      purchaseId: purchase.id, 
-      ownerId, 
-      units 
+    logger.error({
+      err,
+      purchaseId: purchase.id,
+      ownerId,
+      units,
     }, 'Failed to process payment intent success');
     throw err; // Re-throw to be caught by webhook handler
   }
@@ -284,8 +284,8 @@ async function handlePaymentFailed(paymentIntent) {
   const purchase = await prisma.purchase.findFirst({
     where: {
       stripePaymentIntentId: paymentIntent.id,
-      status: 'pending'
-    }
+      status: 'pending',
+    },
   });
 
   if (purchase) {
@@ -293,8 +293,8 @@ async function handlePaymentFailed(paymentIntent) {
       where: { id: purchase.id },
       data: {
         status: 'failed',
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      },
     });
     logger.info({ purchaseId: purchase.id }, 'Purchase marked as failed');
   }
@@ -329,7 +329,7 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
 
   try {
     logger.info({ ownerId, planType, subscriptionId, sessionId: session.id }, 'Processing subscription checkout completion');
-    
+
     // Get subscription details from Stripe first (needed for billing period)
     let stripeSubscription = null;
     try {
@@ -349,32 +349,32 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
     // Pass planType explicitly to avoid race condition with database read
     logger.info({ ownerId, planType, subscriptionId }, 'Allocating free credits for subscription');
     const result = await allocateFreeCredits(ownerId, planType, `sub_${subscriptionId}`, stripeSubscription);
-    
+
     if (!result.allocated) {
-      logger.warn({ 
-        ownerId, 
-        planType, 
-        subscriptionId, 
+      logger.warn({
+        ownerId,
+        planType,
+        subscriptionId,
         reason: result.reason,
-        credits: result.credits || 0 
+        credits: result.credits || 0,
       }, 'Free credits not allocated - may already be processed or subscription not active');
     } else {
-      logger.info({ 
-        ownerId, 
-        planType, 
-        subscriptionId, 
+      logger.info({
+        ownerId,
+        planType,
+        subscriptionId,
         credits: result.credits,
-        invoiceId: `sub_${subscriptionId}`
+        invoiceId: `sub_${subscriptionId}`,
       }, 'Subscription activated and free credits allocated successfully');
     }
   } catch (err) {
-    logger.error({ 
-      ownerId, 
-      planType, 
+    logger.error({
+      ownerId,
+      planType,
       subscriptionId,
       sessionId: session.id,
-      err: err.message, 
-      stack: err.stack 
+      err: err.message,
+      stack: err.stack,
     }, 'Failed to process subscription checkout');
     throw err;
   }
@@ -399,16 +399,16 @@ async function handleCheckoutSessionCompletedForTopup(session) {
   // Validate payment amount matches expected amount (fraud prevention)
   const expectedAmountCents = Math.round(priceEur * 100);
   const actualAmountCents = session.amount_total || 0;
-  
+
   // Allow small rounding differences (up to 1 cent)
   if (Math.abs(actualAmountCents - expectedAmountCents) > 1) {
-    logger.error({ 
-      ownerId, 
+    logger.error({
+      ownerId,
       sessionId: session.id,
-      expectedAmountCents, 
+      expectedAmountCents,
       actualAmountCents,
       credits,
-      priceEur
+      priceEur,
     }, 'Payment amount mismatch - potential fraud or configuration error');
     throw new Error(`Payment amount mismatch: expected ${expectedAmountCents} cents, got ${actualAmountCents} cents`);
   }
@@ -420,17 +420,17 @@ async function handleCheckoutSessionCompletedForTopup(session) {
       reason: 'stripe:topup',
       meta: {
         path: ['sessionId'],
-        equals: session.id
-      }
-    }
+        equals: session.id,
+      },
+    },
   });
 
   if (existingTxn) {
-    logger.info({ 
-      ownerId, 
+    logger.info({
+      ownerId,
       sessionId: session.id,
       transactionId: existingTxn.id,
-      credits 
+      credits,
     }, 'Credit top-up already processed (idempotency check)');
     return;
   }
@@ -447,17 +447,17 @@ async function handleCheckoutSessionCompletedForTopup(session) {
           customerId: session.customer || null,
           credits,
           priceEur,
-          purchasedAt: new Date().toISOString()
-        }
+          purchasedAt: new Date().toISOString(),
+        },
       }, tx);
     });
 
-    logger.info({ 
-      ownerId, 
-      credits, 
-      priceEur, 
+    logger.info({
+      ownerId,
+      credits,
+      priceEur,
       sessionId: session.id,
-      paymentIntentId: session.payment_intent 
+      paymentIntentId: session.payment_intent,
     }, 'Credit top-up processed successfully');
   } catch (err) {
     logger.error({ ownerId, credits, err: err.message, stack: err.stack }, 'Failed to process credit top-up');
@@ -471,14 +471,14 @@ async function handleCheckoutSessionCompletedForTopup(session) {
  */
 async function handleInvoicePaymentSucceeded(invoice) {
   logger.info({ invoiceId: invoice.id, billingReason: invoice.billing_reason }, 'Processing invoice payment succeeded');
-  
+
   // Skip subscription_create invoices - they are handled by checkout.session.completed
   // This prevents race conditions where invoice.payment_succeeded fires before checkout.session.completed
   if (invoice.billing_reason === 'subscription_create') {
     logger.debug({ invoiceId: invoice.id, billingReason: invoice.billing_reason }, 'Skipping subscription_create invoice (handled by checkout.session.completed)');
     return;
   }
-  
+
   // Only process subscription_cycle invoices (recurring billing)
   if (invoice.billing_reason !== 'subscription_cycle') {
     logger.debug({ invoiceId: invoice.id, billingReason: invoice.billing_reason }, 'Skipping non-subscription-cycle invoice');
@@ -498,14 +498,14 @@ async function handleInvoicePaymentSucceeded(invoice) {
   // Find user by Stripe customer ID
   const user = await prisma.user.findFirst({
     where: {
-      stripeCustomerId: customerId
+      stripeCustomerId: customerId,
     },
     select: {
       id: true,
       planType: true,
       subscriptionStatus: true,
-      stripeSubscriptionId: true
-    }
+      stripeSubscriptionId: true,
+    },
   });
 
   if (!user) {
@@ -515,19 +515,19 @@ async function handleInvoicePaymentSucceeded(invoice) {
 
   // Verify subscription ID matches
   if (user.stripeSubscriptionId !== subscriptionId) {
-    logger.warn({ 
-      userId: user.id, 
+    logger.warn({
+      userId: user.id,
       userSubscriptionId: user.stripeSubscriptionId,
-      invoiceSubscriptionId: subscriptionId 
+      invoiceSubscriptionId: subscriptionId,
     }, 'Subscription ID mismatch between user and invoice');
     return;
   }
 
   if (user.subscriptionStatus !== 'active') {
-    logger.warn({ 
-      userId: user.id, 
+    logger.warn({
+      userId: user.id,
       subscriptionStatus: user.subscriptionStatus,
-      invoiceId: invoice.id 
+      invoiceId: invoice.id,
     }, 'User subscription not active - skipping credit allocation');
     return;
   }
@@ -536,48 +536,48 @@ async function handleInvoicePaymentSucceeded(invoice) {
   let stripeSubscription = null;
   try {
     stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
-    logger.debug({ 
-      subscriptionId, 
+    logger.debug({
+      subscriptionId,
       billingPeriodStart: stripeSubscription.current_period_start,
-      billingPeriodEnd: stripeSubscription.current_period_end
+      billingPeriodEnd: stripeSubscription.current_period_end,
     }, 'Retrieved subscription details from Stripe');
   } catch (err) {
     logger.warn({ subscriptionId, err: err.message }, 'Failed to retrieve subscription from Stripe');
   }
 
   // Allocate free credits for this billing cycle (idempotent)
-  logger.info({ 
-    userId: user.id, 
-    planType: user.planType, 
+  logger.info({
+    userId: user.id,
+    planType: user.planType,
     invoiceId: invoice.id,
-    subscriptionId 
+    subscriptionId,
   }, 'Allocating free credits for billing cycle');
-  
+
   try {
     const result = await allocateFreeCredits(user.id, user.planType, invoice.id, stripeSubscription);
     if (result.allocated) {
-      logger.info({ 
-        userId: user.id, 
-        planType: user.planType, 
-        invoiceId: invoice.id, 
+      logger.info({
+        userId: user.id,
+        planType: user.planType,
+        invoiceId: invoice.id,
         credits: result.credits,
-        subscriptionId
+        subscriptionId,
       }, 'Free credits allocated successfully for billing cycle');
     } else {
-      logger.info({ 
-        userId: user.id, 
+      logger.info({
+        userId: user.id,
         invoiceId: invoice.id,
         reason: result.reason,
-        credits: result.credits || 0
+        credits: result.credits || 0,
       }, 'Free credits not allocated (already allocated or other reason)');
     }
   } catch (err) {
-    logger.error({ 
-      userId: user.id, 
-      invoiceId: invoice.id, 
+    logger.error({
+      userId: user.id,
+      invoiceId: invoice.id,
       subscriptionId,
-      err: err.message, 
-      stack: err.stack 
+      err: err.message,
+      stack: err.stack,
     }, 'Failed to allocate free credits for invoice');
     throw err;
   }
@@ -589,7 +589,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
  */
 async function handleInvoicePaymentFailed(invoice) {
   logger.info({ invoiceId: invoice.id, billingReason: invoice.billing_reason }, 'Processing invoice payment failed');
-  
+
   // Only process subscription invoices
   if (invoice.billing_reason !== 'subscription_cycle' && invoice.billing_reason !== 'subscription_update') {
     logger.debug({ invoiceId: invoice.id, billingReason: invoice.billing_reason }, 'Skipping non-subscription invoice');
@@ -609,14 +609,14 @@ async function handleInvoicePaymentFailed(invoice) {
   // Find user by Stripe customer ID
   const user = await prisma.user.findFirst({
     where: {
-      stripeCustomerId: customerId
+      stripeCustomerId: customerId,
     },
     select: {
       id: true,
       planType: true,
       subscriptionStatus: true,
-      stripeSubscriptionId: true
-    }
+      stripeSubscriptionId: true,
+    },
   });
 
   if (!user) {
@@ -626,10 +626,10 @@ async function handleInvoicePaymentFailed(invoice) {
 
   // Verify subscription ID matches
   if (user.stripeSubscriptionId !== subscriptionId) {
-    logger.warn({ 
-      userId: user.id, 
+    logger.warn({
+      userId: user.id,
       userSubscriptionId: user.stripeSubscriptionId,
-      invoiceSubscriptionId: subscriptionId 
+      invoiceSubscriptionId: subscriptionId,
     }, 'Subscription ID mismatch between user and invoice');
     return;
   }
@@ -638,9 +638,9 @@ async function handleInvoicePaymentFailed(invoice) {
   let stripeSubscription = null;
   try {
     stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
-    logger.debug({ 
-      subscriptionId, 
-      stripeStatus: stripeSubscription.status
+    logger.debug({
+      subscriptionId,
+      stripeStatus: stripeSubscription.status,
     }, 'Retrieved subscription details from Stripe');
   } catch (err) {
     logger.warn({ subscriptionId, err: err.message }, 'Failed to retrieve subscription from Stripe');
@@ -651,24 +651,24 @@ async function handleInvoicePaymentFailed(invoice) {
   // If subscription is cancelled, mark as cancelled
   const stripeStatus = stripeSubscription?.status;
   let newStatus = user.subscriptionStatus;
-  
+
   if (stripeStatus === 'past_due' || stripeStatus === 'unpaid') {
     newStatus = 'inactive';
-    logger.info({ 
-      userId: user.id, 
+    logger.info({
+      userId: user.id,
       subscriptionId,
       stripeStatus,
       oldStatus: user.subscriptionStatus,
-      newStatus
+      newStatus,
     }, 'Subscription payment failed - marking as inactive');
   } else if (stripeStatus === 'cancelled') {
     newStatus = 'cancelled';
-    logger.info({ 
-      userId: user.id, 
+    logger.info({
+      userId: user.id,
       subscriptionId,
       stripeStatus,
       oldStatus: user.subscriptionStatus,
-      newStatus
+      newStatus,
     }, 'Subscription cancelled after payment failure');
   }
 
@@ -677,30 +677,30 @@ async function handleInvoicePaymentFailed(invoice) {
     try {
       await prisma.user.update({
         where: { id: user.id },
-        data: { subscriptionStatus: newStatus }
+        data: { subscriptionStatus: newStatus },
       });
-      logger.info({ 
-        userId: user.id, 
-        subscriptionId, 
-        oldStatus: user.subscriptionStatus, 
+      logger.info({
+        userId: user.id,
+        subscriptionId,
+        oldStatus: user.subscriptionStatus,
         newStatus,
-        invoiceId: invoice.id
+        invoiceId: invoice.id,
       }, 'Subscription status updated after payment failure');
     } catch (err) {
-      logger.error({ 
-        userId: user.id, 
-        subscriptionId, 
+      logger.error({
+        userId: user.id,
+        subscriptionId,
         err: err.message,
-        stack: err.stack
+        stack: err.stack,
       }, 'Failed to update subscription status after payment failure');
       throw err;
     }
   } else {
-    logger.debug({ 
-      userId: user.id, 
+    logger.debug({
+      userId: user.id,
       subscriptionId,
       status: user.subscriptionStatus,
-      stripeStatus
+      stripeStatus,
     }, 'Subscription status unchanged after payment failure');
   }
 }
@@ -711,10 +711,10 @@ async function handleInvoicePaymentFailed(invoice) {
  */
 async function handleChargeRefunded(charge) {
   logger.info({ chargeId: charge.id, amount: charge.amount, amountRefunded: charge.amount_refunded }, 'Processing charge refunded event');
-  
+
   const paymentIntentId = charge.payment_intent;
   const customerId = charge.customer;
-  
+
   if (!paymentIntentId) {
     logger.warn({ chargeId: charge.id }, 'Charge missing payment intent ID');
     return;
@@ -730,23 +730,23 @@ async function handleChargeRefunded(charge) {
           reason: 'stripe:topup',
           meta: {
             path: ['paymentIntentId'],
-            equals: paymentIntentId
-          }
+            equals: paymentIntentId,
+          },
         },
         {
           reason: {
-            startsWith: 'stripe:purchase:'
+            startsWith: 'stripe:purchase:',
           },
           meta: {
             path: ['stripePaymentIntentId'],
-            equals: paymentIntentId
-          }
-        }
-      ]
+            equals: paymentIntentId,
+          },
+        },
+      ],
     },
     orderBy: {
-      createdAt: 'desc'
-    }
+      createdAt: 'desc',
+    },
   });
 
   if (!creditTxn) {
@@ -758,7 +758,7 @@ async function handleChargeRefunded(charge) {
   // For credit top-ups, use the credits amount from metadata
   // For credit packs, use the units from the purchase
   let creditsToDeduct = 0;
-  
+
   if (creditTxn.reason === 'stripe:topup') {
     const meta = creditTxn.meta || {};
     creditsToDeduct = meta.credits || 0;
@@ -767,11 +767,11 @@ async function handleChargeRefunded(charge) {
     const purchase = await prisma.purchase.findFirst({
       where: {
         stripePaymentIntentId: paymentIntentId,
-        ownerId: creditTxn.ownerId
+        ownerId: creditTxn.ownerId,
       },
-      include: { package: true }
+      include: { package: true },
     });
-    
+
     if (purchase && purchase.package) {
       creditsToDeduct = purchase.package.units;
     } else {
@@ -796,30 +796,30 @@ async function handleChargeRefunded(charge) {
       reason: 'stripe:refund',
       meta: {
         path: ['chargeId'],
-        equals: charge.id
-      }
-    }
+        equals: charge.id,
+      },
+    },
   });
 
   if (existingRefund) {
-    logger.info({ 
-      chargeId: charge.id, 
+    logger.info({
+      chargeId: charge.id,
       transactionId: creditTxn.id,
-      refundTransactionId: existingRefund.id
+      refundTransactionId: existingRefund.id,
     }, 'Refund already processed (idempotency check)');
     return;
   }
 
   try {
-    logger.info({ 
-      ownerId: creditTxn.ownerId, 
-      creditsToDeduct, 
+    logger.info({
+      ownerId: creditTxn.ownerId,
+      creditsToDeduct,
       chargeId: charge.id,
-      originalTransactionId: creditTxn.id
+      originalTransactionId: creditTxn.id,
     }, 'Processing refund - deducting credits');
 
     const { debit } = require('../services/wallet.service');
-    
+
     await prisma.$transaction(async (tx) => {
       // Debit credits
       await debit(creditTxn.ownerId, creditsToDeduct, {
@@ -830,16 +830,16 @@ async function handleChargeRefunded(charge) {
           customerId,
           originalTransactionId: creditTxn.id,
           originalReason: creditTxn.reason,
-          refundedAt: new Date().toISOString()
-        }
+          refundedAt: new Date().toISOString(),
+        },
       }, tx);
 
       // Update purchase status if it exists
       const purchase = await tx.purchase.findFirst({
         where: {
           stripePaymentIntentId: paymentIntentId,
-          ownerId: creditTxn.ownerId
-        }
+          ownerId: creditTxn.ownerId,
+        },
       });
 
       if (purchase) {
@@ -847,26 +847,26 @@ async function handleChargeRefunded(charge) {
           where: { id: purchase.id },
           data: {
             status: 'refunded',
-            updatedAt: new Date()
-          }
+            updatedAt: new Date(),
+          },
         });
         logger.info({ purchaseId: purchase.id }, 'Purchase marked as refunded');
       }
     });
 
-    logger.info({ 
-      ownerId: creditTxn.ownerId, 
-      creditsToDeduct, 
+    logger.info({
+      ownerId: creditTxn.ownerId,
+      creditsToDeduct,
       chargeId: charge.id,
-      originalTransactionId: creditTxn.id
+      originalTransactionId: creditTxn.id,
     }, 'Refund processed successfully - credits deducted');
   } catch (err) {
-    logger.error({ 
-      ownerId: creditTxn.ownerId, 
-      creditsToDeduct, 
+    logger.error({
+      ownerId: creditTxn.ownerId,
+      creditsToDeduct,
       chargeId: charge.id,
-      err: err.message, 
-      stack: err.stack 
+      err: err.message,
+      stack: err.stack,
     }, 'Failed to process refund');
     throw err;
   }
@@ -889,13 +889,13 @@ async function handleSubscriptionDeleted(subscription) {
   // Find user by Stripe subscription ID
   const user = await prisma.user.findFirst({
     where: {
-      stripeSubscriptionId: subscriptionId
+      stripeSubscriptionId: subscriptionId,
     },
     select: {
       id: true,
       subscriptionStatus: true,
-      planType: true
-    }
+      planType: true,
+    },
   });
 
   if (!user) {
@@ -903,27 +903,27 @@ async function handleSubscriptionDeleted(subscription) {
     return;
   }
 
-  logger.info({ 
-    userId: user.id, 
+  logger.info({
+    userId: user.id,
     subscriptionId,
     currentStatus: user.subscriptionStatus,
-    planType: user.planType
+    planType: user.planType,
   }, 'Deactivating subscription in local database');
 
   // Deactivate subscription
   try {
     await deactivateSubscription(user.id, 'cancelled');
-    logger.info({ 
-      userId: user.id, 
+    logger.info({
+      userId: user.id,
       subscriptionId,
-      planType: user.planType
+      planType: user.planType,
     }, 'Subscription deactivated successfully');
   } catch (err) {
-    logger.error({ 
-      userId: user.id, 
-      subscriptionId, 
+    logger.error({
+      userId: user.id,
+      subscriptionId,
       err: err.message,
-      stack: err.stack
+      stack: err.stack,
     }, 'Failed to deactivate subscription');
     throw err;
   }
@@ -947,13 +947,13 @@ async function handleSubscriptionUpdated(subscription) {
   // Find user by Stripe subscription ID
   const user = await prisma.user.findFirst({
     where: {
-      stripeSubscriptionId: subscriptionId
+      stripeSubscriptionId: subscriptionId,
     },
     select: {
       id: true,
       subscriptionStatus: true,
-      planType: true
-    }
+      planType: true,
+    },
   });
 
   if (!user) {
@@ -965,7 +965,7 @@ async function handleSubscriptionUpdated(subscription) {
   let newPlanType = user.planType;
   const subscriptionMetadata = subscription.metadata || {};
   const metadataPlanType = subscriptionMetadata.planType;
-  
+
   // Try to get planType from metadata first
   if (metadataPlanType && ['starter', 'pro'].includes(metadataPlanType)) {
     newPlanType = metadataPlanType;
@@ -973,11 +973,11 @@ async function handleSubscriptionUpdated(subscription) {
     // Fallback: determine planType from price ID
     const priceId = subscription.items.data[0].price.id;
     const { getStripeSubscriptionPriceId } = require('../services/stripe.service');
-    
+
     // Check which plan this price ID belongs to
     const starterPriceId = getStripeSubscriptionPriceId('starter', 'EUR');
     const proPriceId = getStripeSubscriptionPriceId('pro', 'EUR');
-    
+
     if (priceId === starterPriceId) {
       newPlanType = 'starter';
     } else if (priceId === proPriceId) {
@@ -996,11 +996,11 @@ async function handleSubscriptionUpdated(subscription) {
   } else if (status === 'past_due' || status === 'incomplete' || status === 'paused') {
     // Keep as inactive but log for monitoring
     newStatus = 'inactive';
-    logger.info({ 
-      userId: user.id, 
-      subscriptionId, 
+    logger.info({
+      userId: user.id,
+      subscriptionId,
       stripeStatus: status,
-      currentStatus: user.subscriptionStatus 
+      currentStatus: user.subscriptionStatus,
     }, 'Subscription in non-active state, setting to inactive');
   }
 
@@ -1009,16 +1009,16 @@ async function handleSubscriptionUpdated(subscription) {
   const planTypeChanged = newPlanType && user.planType !== newPlanType;
 
   if (statusChanged || planTypeChanged) {
-    logger.info({ 
-      userId: user.id, 
+    logger.info({
+      userId: user.id,
       subscriptionId,
       oldStatus: user.subscriptionStatus,
       newStatus,
       oldPlanType: user.planType,
       newPlanType,
-      stripeStatus: status
+      stripeStatus: status,
     }, 'Updating subscription status and/or planType');
-    
+
     try {
       const updateData = {};
       if (statusChanged) {
@@ -1027,35 +1027,35 @@ async function handleSubscriptionUpdated(subscription) {
       if (planTypeChanged) {
         updateData.planType = newPlanType;
       }
-      
+
       await prisma.user.update({
         where: { id: user.id },
-        data: updateData
+        data: updateData,
       });
-      logger.info({ 
-        userId: user.id, 
-        subscriptionId, 
-        oldStatus: user.subscriptionStatus, 
+      logger.info({
+        userId: user.id,
+        subscriptionId,
+        oldStatus: user.subscriptionStatus,
         newStatus,
         oldPlanType: user.planType,
-        newPlanType
+        newPlanType,
       }, 'Subscription updated successfully');
     } catch (err) {
-      logger.error({ 
-        userId: user.id, 
-        subscriptionId, 
+      logger.error({
+        userId: user.id,
+        subscriptionId,
         err: err.message,
-        stack: err.stack
+        stack: err.stack,
       }, 'Failed to update subscription');
       throw err;
     }
   } else {
-    logger.debug({ 
-      userId: user.id, 
+    logger.debug({
+      userId: user.id,
       subscriptionId,
       status: user.subscriptionStatus,
       planType: user.planType,
-      stripeStatus: status
+      stripeStatus: status,
     }, 'Subscription status and planType unchanged');
   }
 }
@@ -1091,58 +1091,58 @@ router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async
   // Handle event
   try {
     switch (event.type) {
-      case 'checkout.session.completed':
-        await handleCheckoutCompleted(event.data.object);
-        break;
+    case 'checkout.session.completed':
+      await handleCheckoutCompleted(event.data.object);
+      break;
 
-      case 'payment_intent.succeeded':
-        await handlePaymentIntentSucceeded(event.data.object);
-        break;
+    case 'payment_intent.succeeded':
+      await handlePaymentIntentSucceeded(event.data.object);
+      break;
 
-      case 'payment_intent.payment_failed':
-        await handlePaymentFailed(event.data.object);
-        break;
+    case 'payment_intent.payment_failed':
+      await handlePaymentFailed(event.data.object);
+      break;
 
-      case 'invoice.payment_succeeded':
-        await handleInvoicePaymentSucceeded(event.data.object);
-        break;
+    case 'invoice.payment_succeeded':
+      await handleInvoicePaymentSucceeded(event.data.object);
+      break;
 
-      case 'invoice.payment_failed':
-        await handleInvoicePaymentFailed(event.data.object);
-        break;
+    case 'invoice.payment_failed':
+      await handleInvoicePaymentFailed(event.data.object);
+      break;
 
-      case 'charge.refunded':
-        await handleChargeRefunded(event.data.object);
-        break;
+    case 'charge.refunded':
+      await handleChargeRefunded(event.data.object);
+      break;
 
-      case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object);
-        break;
+    case 'customer.subscription.deleted':
+      await handleSubscriptionDeleted(event.data.object);
+      break;
 
-      case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(event.data.object);
-        break;
+    case 'customer.subscription.updated':
+      await handleSubscriptionUpdated(event.data.object);
+      break;
 
-      default:
-        logger.debug({ type: event.type }, 'Unhandled Stripe event type');
+    default:
+      logger.debug({ type: event.type }, 'Unhandled Stripe event type');
     }
 
     // Return 200 to acknowledge successful processing
     res.json({ received: true });
   } catch (err) {
     logger.error({ err, eventType: event.type, errMessage: err.message, errStack: err.stack }, 'Error processing Stripe webhook');
-    
+
     // Determine if error is retryable
     // Retryable errors: database connection issues, temporary service unavailability
     // Non-retryable errors: validation errors, business logic errors, data not found
-    const isRetryable = 
+    const isRetryable =
       err.message?.includes('ECONNREFUSED') ||
       err.message?.includes('ETIMEDOUT') ||
       err.message?.includes('database') ||
       err.message?.includes('connection') ||
       err.code === 'ECONNREFUSED' ||
       err.code === 'ETIMEDOUT';
-    
+
     if (isRetryable) {
       // Return 500 to allow Stripe to retry
       logger.warn({ eventType: event.type, err: err.message }, 'Retryable error - returning 500 for Stripe retry');

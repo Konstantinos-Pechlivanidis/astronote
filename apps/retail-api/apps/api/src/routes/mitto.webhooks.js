@@ -65,8 +65,8 @@ async function persistWebhook(provider, eventType, payload, providerMessageId) {
         provider,
         eventType,
         payload,
-        providerMessageId: providerMessageId || null
-      }
+        providerMessageId: providerMessageId || null,
+      },
     });
   } catch (e) {
     logger.warn({ err: e?.message }, 'WebhookEvent persist failed');
@@ -96,7 +96,7 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
       const doneAtRaw  = ev?.updatedAt || ev?.doneAt || ev?.timestamp || ev?.Timestamp || ev?.createdAt || new Date().toISOString();
       let doneAt       = new Date(doneAtRaw);
       const errorDesc  = ev?.error || ev?.Error || ev?.description || ev?.errorMessage || null;
-      
+
       // Validate doneAt date
       if (isNaN(doneAt.getTime())) {
         logger.warn({ providerId, doneAtRaw }, 'DLR: invalid timestamp, using current time');
@@ -112,18 +112,18 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
       }
 
       const mapped = mapStatus(statusIn);
-      
-      logger.info({ 
-        providerId, 
-        statusIn, 
-        mapped, 
-        doneAt: doneAt.toISOString() 
+
+      logger.info({
+        providerId,
+        statusIn,
+        mapped,
+        doneAt: doneAt.toISOString(),
       }, 'DLR webhook received');
 
       try {
         const msgs = await prisma.campaignMessage.findMany({
           where: { providerMessageId: providerId },
-          select: { id: true, campaignId: true, ownerId: true, status: true }
+          select: { id: true, campaignId: true, ownerId: true, status: true },
         });
 
         if (msgs.length === 0) {
@@ -131,23 +131,23 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
           continue;
         }
 
-        logger.info({ 
-          providerId, 
-          messageCount: msgs.length, 
+        logger.info({
+          providerId,
+          messageCount: msgs.length,
           currentStatuses: msgs.map(m => m.status),
-          newStatus: mapped 
+          newStatus: mapped,
         }, 'DLR: updating messages');
 
         if (mapped === 'sent') {
           const r = await prisma.campaignMessage.updateMany({
             where: { providerMessageId: providerId },
-            data: { 
-              status: 'sent', 
+            data: {
+              status: 'sent',
               sentAt: doneAt,
               deliveryStatus: statusIn || 'sent',
               deliveredAt: (statusIn && String(statusIn).toLowerCase().includes('deliv')) ? doneAt : undefined,
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           });
           updated += r.count;
           logger.info({ providerId, updated: r.count, originalStatus: statusIn }, 'DLR: marked as sent');
@@ -160,8 +160,8 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
               failedAt: doneAt,
               deliveryStatus: statusIn || 'failed',
               error: errorDesc || 'FAILED_DLR',
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           });
           updated += r.count;
           logger.info({ providerId, updated: r.count }, 'DLR: marked as failed');
@@ -205,8 +205,8 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
 function normalizeMsisdn(s) {
   if (!s) {return null;}
   let v = String(s).trim();
-  if (v.startsWith('00')) {v = '+' + v.slice(2);}
-  if (!v.startsWith('+') && /^\d{10,15}$/.test(v)) {v = '+30' + v;} // adjust default country as needed
+  if (v.startsWith('00')) {v = `+${v.slice(2)}`;}
+  if (!v.startsWith('+') && /^\d{10,15}$/.test(v)) {v = `+30${v}`;} // adjust default country as needed
   return v;
 }
 
@@ -231,7 +231,7 @@ router.post('/webhooks/mitto/inbound', async (req, res) => {
       // In a multi-tenant system, you might want to scope by owner if phone is not globally unique
       const r = await prisma.contact.updateMany({
         where: { phone, isSubscribed: true },
-        data: { isSubscribed: false, unsubscribedAt: new Date() }
+        data: { isSubscribed: false, unsubscribedAt: new Date() },
       });
       logger.info({ phone, count: r.count }, 'Inbound STOP → unsubscribed');
     }

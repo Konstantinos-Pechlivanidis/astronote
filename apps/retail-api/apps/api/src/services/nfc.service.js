@@ -55,25 +55,25 @@ async function resolveNfcTag(publicId) {
           id: true,
           email: true,
           company: true,
-          senderName: true
-        }
+          senderName: true,
+        },
       },
       campaign: {
         select: {
           id: true,
           name: true,
-          status: true
-        }
+          status: true,
+        },
       },
       formConfig: {
         select: {
           id: true,
           fields: true,
           consentText: true,
-          language: true
-        }
-      }
-    }
+          language: true,
+        },
+      },
+    },
   });
 
   return tag;
@@ -100,32 +100,32 @@ async function getNfcConfig(publicId) {
       publicId: tag.publicId,
       label: tag.label,
       status: tag.status,
-      type: tag.type || 'opt_in' // Default to opt_in for backward compatibility
+      type: tag.type || 'opt_in', // Default to opt_in for backward compatibility
     },
     store: {
       id: tag.store.id,
       name: tag.store.company || tag.store.email,
-      email: tag.store.email
+      email: tag.store.email,
     },
     campaign: tag.campaign ? {
       id: tag.campaign.id,
       name: tag.campaign.name,
-      status: tag.campaign.status
+      status: tag.campaign.status,
     } : null,
     formConfig: tag.formConfig ? {
       fields: tag.formConfig.fields,
       consentText: tag.formConfig.consentText,
-      language: tag.formConfig.language
+      language: tag.formConfig.language,
     } : {
       fields: {
         phone: { required: true, type: 'tel' },
         email: { required: false, type: 'email' },
         firstName: { required: false, type: 'text' },
-        lastName: { required: false, type: 'text' }
+        lastName: { required: false, type: 'text' },
       },
       consentText: 'I consent to receive marketing communications.',
-      language: 'en'
-    }
+      language: 'en',
+    },
   };
 }
 
@@ -193,9 +193,9 @@ async function createOrUpdateContactFromNfc(storeId, tagId, campaignId, formData
     where: {
       ownerId_phone: {
         ownerId: storeId,
-        phone: normalizedPhone
-      }
-    }
+        phone: normalizedPhone,
+      },
+    },
   });
 
   let contact;
@@ -208,7 +208,7 @@ async function createOrUpdateContactFromNfc(storeId, tagId, campaignId, formData
       unsubscribedAt: null,
       email: email.trim(), // Required for NFC opt-in
       firstName: firstName.trim(), // Required for NFC opt-in
-      lastName: lastName.trim() // Required for NFC opt-in
+      lastName: lastName.trim(), // Required for NFC opt-in
     };
 
     if (normalizedGender) {updateData.gender = normalizedGender;}
@@ -216,7 +216,7 @@ async function createOrUpdateContactFromNfc(storeId, tagId, campaignId, formData
 
     contact = await prisma.contact.update({
       where: { id: existingContact.id },
-      data: updateData
+      data: updateData,
     });
   } else {
     // Create new contact
@@ -232,8 +232,8 @@ async function createOrUpdateContactFromNfc(storeId, tagId, campaignId, formData
         gender: normalizedGender,
         birthday: birthdayDate,
         isSubscribed: true,
-        unsubscribeTokenHash: hash
-      }
+        unsubscribeTokenHash: hash,
+      },
     });
     isNew = true;
 
@@ -261,8 +261,8 @@ async function recordNfcScan(tagId, storeId, status, metadata = {}) {
         ipAddress: metadata.ipAddress || null,
         userAgent: metadata.userAgent || null,
         deviceType: metadata.deviceType || null,
-        contactId: metadata.contactId || null
-      }
+        contactId: metadata.contactId || null,
+      },
     });
     return scan;
   } catch (err) {
@@ -278,7 +278,7 @@ async function linkNfcScanToContact(scanId, contactId) {
   try {
     await prisma.nfcScan.update({
       where: { id: scanId },
-      data: { contactId, status: 'submitted' }
+      data: { contactId, status: 'submitted' },
     });
   } catch (err) {
     logger.warn({ scanId, contactId, err: err.message }, 'Failed to link scan to contact');
@@ -293,6 +293,6 @@ module.exports = {
   linkNfcScanToContact,
   isPlausiblePhone,
   normalizePhone,
-  isValidEmail
+  isValidEmail,
 };
 

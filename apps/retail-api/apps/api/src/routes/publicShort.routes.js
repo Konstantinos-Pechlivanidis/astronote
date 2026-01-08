@@ -1,11 +1,11 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
-const { rateLimitByIp } = require('../services/rateLimiter.service');
+const { createLimiter, rateLimitByIp } = require('../lib/ratelimit');
 const pino = require('pino');
 
 const logger = pino({ name: 'public-short-route' });
 const router = express.Router();
-const shortLimiter = { points: 60, duration: 60 };
+const shortLimiter = createLimiter({ keyPrefix: 'rl:public:short', points: 300, duration: 60 });
 
 function isValidShortCode(code) {
   return /^[A-Za-z0-9_-]{4,64}$/.test(code || '');
@@ -28,8 +28,8 @@ router.get('/public/s/:shortCode', rateLimitByIp(shortLimiter), async (req, res,
       where: { shortCode },
       data: {
         clickCount: { increment: 1 },
-        lastClickedAt: new Date()
-      }
+        lastClickedAt: new Date(),
+      },
     });
 
     const target = link.targetUrl || link.originalUrl;

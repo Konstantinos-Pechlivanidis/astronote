@@ -13,22 +13,22 @@ const logger = pino({ name: 'conversion-route' });
 const router = express.Router();
 
 // Rate limiters
-const configIpLimiter = createLimiter({ 
-  keyPrefix: 'rl:conversion:config:ip', 
-  points: 60, 
-  duration: 60 
+const configIpLimiter = createLimiter({
+  keyPrefix: 'rl:conversion:config:ip',
+  points: 60,
+  duration: 60,
 });
 
-const submitIpLimiter = createLimiter({ 
-  keyPrefix: 'rl:conversion:submit:ip', 
-  points: 30, 
-  duration: 60 
+const submitIpLimiter = createLimiter({
+  keyPrefix: 'rl:conversion:submit:ip',
+  points: 30,
+  duration: 60,
 });
 
-const submitPhoneLimiter = createLimiter({ 
-  keyPrefix: 'rl:conversion:submit:phone', 
-  points: 5, 
-  duration: 3600 // 1 hour
+const submitPhoneLimiter = createLimiter({
+  keyPrefix: 'rl:conversion:submit:phone',
+  points: 5,
+  duration: 3600, // 1 hour
 });
 
 /**
@@ -43,33 +43,33 @@ router.get(
       const { tagPublicId } = req.params;
 
       if (!tagPublicId || typeof tagPublicId !== 'string' || tagPublicId.length < 6 || tagPublicId.length > 64) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           code: 'INVALID_PUBLIC_ID',
-          message: 'Invalid NFC tag identifier' 
+          message: 'Invalid NFC tag identifier',
         });
       }
 
       const tag = await resolveNfcTag(tagPublicId);
 
       if (!tag) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           code: 'TAG_NOT_FOUND',
-          message: 'NFC tag not found' 
+          message: 'NFC tag not found',
         });
       }
 
       if (tag.type !== 'conversion') {
-        return res.status(400).json({ 
+        return res.status(400).json({
           code: 'INVALID_TAG_TYPE',
-          message: 'This NFC tag is not configured for visit confirmation' 
+          message: 'This NFC tag is not configured for visit confirmation',
         });
       }
 
       if (tag.status !== 'active' && tag.status !== 'test') {
-        return res.status(403).json({ 
+        return res.status(403).json({
           code: 'TAG_INACTIVE',
           message: 'NFC tag is not active',
-          status: tag.status
+          status: tag.status,
         });
       }
 
@@ -82,14 +82,14 @@ router.get(
           store: {
             id: tag.store.id,
             company: tag.store.company || 'Store',
-            senderName: tag.store.senderName
-          }
-        }
+            senderName: tag.store.senderName,
+          },
+        },
       });
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 /**
@@ -111,17 +111,17 @@ router.post(
 
       // Validate publicId
       if (!tagPublicId || typeof tagPublicId !== 'string' || tagPublicId.length < 6 || tagPublicId.length > 64) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           code: 'INVALID_PUBLIC_ID',
-          message: 'Invalid NFC tag identifier' 
+          message: 'Invalid NFC tag identifier',
         });
       }
 
       // Validate phone
       if (!phone || typeof phone !== 'string') {
-        return res.status(400).json({ 
+        return res.status(400).json({
           code: 'PHONE_REQUIRED',
-          message: 'Phone number is required' 
+          message: 'Phone number is required',
         });
       }
 
@@ -129,23 +129,23 @@ router.post(
       const tag = await resolveNfcTag(tagPublicId);
 
       if (!tag) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           code: 'TAG_NOT_FOUND',
-          message: 'NFC tag not found' 
+          message: 'NFC tag not found',
         });
       }
 
       if (tag.type !== 'conversion') {
-        return res.status(400).json({ 
+        return res.status(400).json({
           code: 'INVALID_TAG_TYPE',
-          message: 'This NFC tag is not configured for visit confirmation' 
+          message: 'This NFC tag is not configured for visit confirmation',
         });
       }
 
       if (tag.status !== 'active' && tag.status !== 'test') {
-        return res.status(403).json({ 
+        return res.status(403).json({
           code: 'TAG_INACTIVE',
-          message: 'NFC tag is not active' 
+          message: 'NFC tag is not active',
         });
       }
 
@@ -157,35 +157,35 @@ router.post(
           phone,
           nfcTagId: tag.id,
           campaignId: tag.campaignId || null,
-          campaignMessageId: null // Will be auto-detected if not provided
+          campaignMessageId: null, // Will be auto-detected if not provided
         });
       } catch (err) {
         if (err.message === 'INVALID_PHONE') {
-          return res.status(400).json({ 
+          return res.status(400).json({
             code: 'INVALID_PHONE',
-            message: 'Invalid phone number format' 
+            message: 'Invalid phone number format',
           });
         }
         if (err.message === 'CONTACT_NOT_FOUND') {
-          return res.status(404).json({ 
+          return res.status(404).json({
             code: 'CONTACT_NOT_FOUND',
-            message: 'No contact found with this phone number for this store' 
+            message: 'No contact found with this phone number for this store',
           });
         }
         if (err.message === 'NFC_TAG_NOT_FOUND_OR_INACTIVE') {
-          return res.status(404).json({ 
+          return res.status(404).json({
             code: 'NFC_TAG_NOT_FOUND_OR_INACTIVE',
-            message: 'NFC tag not found or inactive' 
+            message: 'NFC tag not found or inactive',
           });
         }
         throw err;
       }
 
       // Record metadata
-      const ipAddress = req.ip || 
-                       req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
-                       req.headers['x-real-ip'] || 
-                       req.connection?.remoteAddress || 
+      const ipAddress = req.ip ||
+                       req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+                       req.headers['x-real-ip'] ||
+                       req.connection?.remoteAddress ||
                        'unknown';
       const userAgent = req.headers['user-agent'] || null;
       const ua = (userAgent || '').toLowerCase();
@@ -207,9 +207,9 @@ router.post(
             ipAddress,
             userAgent,
             deviceType,
-            submittedAt: new Date().toISOString()
-          }
-        }
+            submittedAt: new Date().toISOString(),
+          },
+        },
       }).catch(err => {
         logger.warn({ conversionEventId: conversionEvent.id, err: err.message }, 'Failed to update conversion metadata');
       });
@@ -222,18 +222,18 @@ router.post(
           occurredAt: conversionEvent.occurredAt,
           contact: {
             firstName: conversionEvent.contact.firstName,
-            lastName: conversionEvent.contact.lastName
+            lastName: conversionEvent.contact.lastName,
           },
           campaign: conversionEvent.campaign ? {
             id: conversionEvent.campaign.id,
-            name: conversionEvent.campaign.name
-          } : null
-        }
+            name: conversionEvent.campaign.name,
+          } : null,
+        },
       });
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 module.exports = router;

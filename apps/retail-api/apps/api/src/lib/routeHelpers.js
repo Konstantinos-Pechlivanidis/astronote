@@ -64,7 +64,7 @@ function mapAgeGroupToApi(ageGroup) {
   const map = {
     'age_18_24': '18_24',
     'age_25_39': '25_39',
-    'age_40_plus': '40_plus'
+    'age_40_plus': '40_plus',
   };
   return map[ageGroup] || ageGroup;
 }
@@ -81,7 +81,7 @@ function mapAgeGroupToPrisma(ageGroup) {
   const map = {
     '18_24': 'age_18_24',
     '25_39': 'age_25_39',
-    '40_plus': 'age_40_plus'
+    '40_plus': 'age_40_plus',
   };
   return map[ageGroup] || null;
 }
@@ -91,6 +91,6 @@ module.exports = {
   validateRoutePagination,
   asyncHandler,
   mapAgeGroupToApi,
-  mapAgeGroupToPrisma
+  mapAgeGroupToPrisma,
 };
 

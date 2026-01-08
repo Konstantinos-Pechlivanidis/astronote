@@ -14,13 +14,13 @@ const PLANS = {
   starter: {
     priceEur: 40,        // €40/month - configured in Stripe as recurring monthly price
     freeCredits: 100,    // 100 credits allocated on each billing cycle (monthly)
-    stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_STARTER_EUR'
+    stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_STARTER_EUR',
   },
   pro: {
     priceEur: 240,       // €240/year - configured in Stripe as recurring yearly price
     freeCredits: 500,    // 500 credits allocated on each billing cycle (yearly)
-    stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_PRO_EUR'
-  }
+    stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_PRO_EUR',
+  },
 };
 
 // Credit top-up pricing
@@ -59,7 +59,7 @@ async function isSubscriptionActive(userId) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { subscriptionStatus: true }
+      select: { subscriptionStatus: true },
     });
     return user?.subscriptionStatus === 'active';
   } catch (err) {
@@ -82,15 +82,15 @@ async function getSubscriptionStatus(userId) {
         stripeSubscriptionId: true,
         planType: true,
         subscriptionStatus: true,
-        lastFreeCreditsAllocatedAt: true
-      }
+        lastFreeCreditsAllocatedAt: true,
+      },
     });
 
     if (!user) {
       return {
         active: false,
         planType: null,
-        status: 'inactive'
+        status: 'inactive',
       };
     }
 
@@ -100,7 +100,7 @@ async function getSubscriptionStatus(userId) {
       status: user.subscriptionStatus,
       stripeCustomerId: user.stripeCustomerId,
       stripeSubscriptionId: user.stripeSubscriptionId,
-      lastFreeCreditsAllocatedAt: user.lastFreeCreditsAllocatedAt
+      lastFreeCreditsAllocatedAt: user.lastFreeCreditsAllocatedAt,
     };
   } catch (err) {
     logger.error({ userId, err: err.message }, 'Failed to get subscription status');
@@ -142,8 +142,8 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
       select: {
         planType: true,
         subscriptionStatus: true,
-        lastFreeCreditsAllocatedAt: true
-      }
+        lastFreeCreditsAllocatedAt: true,
+      },
     });
 
     if (!user) {
@@ -155,7 +155,7 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
       logger.warn({ userId, subscriptionStatus: user.subscriptionStatus }, 'Subscription not active');
       return { allocated: false, reason: 'subscription_not_active' };
     }
-    
+
     // Trust the planType parameter passed in (it was set by activateSubscription)
     // Only warn if there's a mismatch, but don't block allocation
     if (user.planType && user.planType !== planType) {
@@ -180,7 +180,7 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
       // Check if last allocation was in current month
       const lastAllocated = new Date(user.lastFreeCreditsAllocatedAt);
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      
+
       if (lastAllocated >= currentMonthStart) {
         logger.info({ userId, lastAllocated, currentMonthStart }, 'Credits already allocated for this billing period');
         return { allocated: false, reason: 'already_allocated', credits: freeCredits };
@@ -196,9 +196,9 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
           reason: `subscription:${planType}:cycle`,
           meta: {
             path: ['invoiceId'],
-            equals: invoiceId
-          }
-        }
+            equals: invoiceId,
+          },
+        },
       });
 
       if (existingTxn) {
@@ -216,14 +216,14 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
           invoiceId: invoiceId || null,
           planType,
           allocatedAt: now.toISOString(),
-          billingPeriodStart: billingPeriodStart ? billingPeriodStart.toISOString() : null
-        }
+          billingPeriodStart: billingPeriodStart ? billingPeriodStart.toISOString() : null,
+        },
       }, tx);
 
       // Update last allocated timestamp
       await tx.user.update({
         where: { id: userId },
-        data: { lastFreeCreditsAllocatedAt: now }
+        data: { lastFreeCreditsAllocatedAt: now },
       });
     });
 
@@ -255,15 +255,15 @@ async function activateSubscription(userId, stripeCustomerId, stripeSubscription
         stripeCustomerId,
         stripeSubscriptionId,
         planType,
-        subscriptionStatus: 'active'
+        subscriptionStatus: 'active',
       },
       select: {
         id: true,
         planType: true,
         subscriptionStatus: true,
         stripeCustomerId: true,
-        stripeSubscriptionId: true
-      }
+        stripeSubscriptionId: true,
+      },
     });
 
     logger.info({ userId, planType, stripeSubscriptionId }, 'Subscription activated');
@@ -287,15 +287,15 @@ async function deactivateSubscription(userId, reason = 'cancelled') {
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
-        subscriptionStatus: status
+        subscriptionStatus: status,
         // Keep stripeCustomerId and stripeSubscriptionId for reference
         // Keep planType for historical reference
       },
       select: {
         id: true,
         planType: true,
-        subscriptionStatus: true
-      }
+        subscriptionStatus: true,
+      },
     });
 
     logger.info({ userId, reason, status }, 'Subscription deactivated');
@@ -324,7 +324,7 @@ function calculateTopupPrice(credits) {
     credits,
     priceEur: Number(basePrice.toFixed(2)),
     vatAmount: Number(vatAmount.toFixed(2)),
-    priceEurWithVat: Number(totalPrice.toFixed(2))
+    priceEurWithVat: Number(totalPrice.toFixed(2)),
   };
 }
 
@@ -340,6 +340,6 @@ module.exports = {
   activateSubscription,
   deactivateSubscription,
   calculateTopupPrice,
-  getBillingPeriodStart
+  getBillingPeriodStart,
 };
 

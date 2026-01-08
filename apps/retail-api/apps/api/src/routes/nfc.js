@@ -21,9 +21,9 @@ function randomToken() {
 async function ensureDefaultTag(ownerId) {
   const existing = await prisma.nfcTag.findFirst({
     where: { storeId: ownerId, type: 'opt_in', status: 'active' },
-    orderBy: { createdAt: 'asc' }
+    orderBy: { createdAt: 'asc' },
   });
-  if (existing) return existing;
+  if (existing) {return existing;}
   return prisma.nfcTag.create({
     data: {
       publicId: randomToken(),
@@ -32,8 +32,8 @@ async function ensureDefaultTag(ownerId) {
       label: 'Default NFC',
       type: 'opt_in',
       status: 'active',
-      createdById: ownerId
-    }
+      createdById: ownerId,
+    },
   });
 }
 
@@ -49,7 +49,7 @@ router.get('/me/nfc', requireAuth, async (req, res, next) => {
       ok: true,
       token: tag.publicId,
       nfcUrl: buildNfcUrl(tag.publicId),
-      label: tag.label
+      label: tag.label,
     });
   } catch (e) {
     next(e);
@@ -62,7 +62,7 @@ router.post('/me/nfc/rotate', requireAuth, async (req, res, next) => {
     // deactivate old
     await prisma.nfcTag.updateMany({
       where: { storeId: req.user.id, type: 'opt_in', status: 'active' },
-      data: { status: 'inactive', updatedAt: new Date() }
+      data: { status: 'inactive', updatedAt: new Date() },
     });
     const tag = await prisma.nfcTag.create({
       data: {
@@ -71,14 +71,14 @@ router.post('/me/nfc/rotate', requireAuth, async (req, res, next) => {
         label: 'Default NFC',
         type: 'opt_in',
         status: 'active',
-        createdById: req.user.id
-      }
+        createdById: req.user.id,
+      },
     });
     res.json({
       ok: true,
       token: tag.publicId,
       nfcUrl: buildNfcUrl(tag.publicId),
-      label: tag.label
+      label: tag.label,
     });
   } catch (e) {
     next(e);

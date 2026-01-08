@@ -27,7 +27,7 @@ async function buildPublicLinks({ trackingId, unsubscribeToken, ownerId, campaig
   return {
     offerUrl: offer,
     unsubscribeUrl: unsubShort || unsubLong,
-    redeemUrl: redeemUrl(trackingId)
+    redeemUrl: redeemUrl(trackingId),
   };
 }
 
@@ -35,5 +35,5 @@ module.exports = {
   buildPublicLinks,
   offerUrl,
   unsubscribeUrl,
-  redeemUrl
+  redeemUrl,
 };

@@ -8,7 +8,7 @@ const logger = pino({ name: 'campaign-aggregates-service' });
  * Update campaign aggregates (total, sent, failed, processed) from CampaignMessage counts
  * Phase 2.2: sent = only actually sent (status='sent'), processed = sent + failed
  * Note: "delivered" status is mapped to "sent" - we only track sent/failed
- * 
+ *
  * @param {number} campaignId - Campaign ID
  * @param {number} ownerId - Owner ID for scoping
  * @returns {Promise<Object>} Updated aggregate counts
@@ -24,8 +24,8 @@ async function updateCampaignAggregates(campaignId, ownerId) {
         startedAt: true,
         finishedAt: true,
         deliverySlaSeconds: true,
-        createdAt: true
-      }
+        createdAt: true,
+      },
     });
 
     if (!campaign) {
@@ -49,8 +49,8 @@ async function updateCampaignAggregates(campaignId, ownerId) {
     // SLA calculation
     const defaultSlaSeconds =
       total <= 100 ? 600 :
-      total <= 5000 ? 1800 :
-      3600;
+        total <= 5000 ? 1800 :
+          3600;
     const slaSeconds = campaign.deliverySlaSeconds || defaultSlaSeconds;
     const startedAt = campaign.startedAt || campaign.createdAt;
     const slaExceeded = startedAt ? (Date.now() - new Date(startedAt).getTime()) / 1000 > slaSeconds : false;
@@ -78,7 +78,7 @@ async function updateCampaignAggregates(campaignId, ownerId) {
       sent: deliveredCount,
       failed: failedDeliveryCount,
       processed,
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     if (!campaign.startedAt && (campaignStatus === 'sending')) {
@@ -96,18 +96,18 @@ async function updateCampaignAggregates(campaignId, ownerId) {
 
     await prisma.campaign.updateMany({
       where: { id: campaignId, ownerId },
-      data: updateData
+      data: updateData,
     });
 
-    logger.info({ 
-      campaignId, 
+    logger.info({
+      campaignId,
       total,
       sent: deliveredCount,
       processed,
       failed: failedDeliveryCount,
       queued: queuedCombined,
       pendingDelivery,
-      campaignStatus: campaignStatus || 'unchanged'
+      campaignStatus: campaignStatus || 'unchanged',
     }, 'Campaign aggregates updated');
 
     return { total, sent: deliveredCount, processed, failed: failedDeliveryCount, campaignStatus };
@@ -121,7 +121,7 @@ async function updateCampaignAggregates(campaignId, ownerId) {
 /**
  * Recalculate aggregates for all campaigns owned by a user
  * Useful for bulk updates or data consistency checks
- * 
+ *
  * @param {number} ownerId - Owner ID
  * @returns {Promise<Object>} Summary of updates
  */
@@ -129,7 +129,7 @@ async function recalculateAllCampaignAggregates(ownerId) {
   try {
     const campaigns = await prisma.campaign.findMany({
       where: ownerId ? { ownerId } : {},
-      select: { id: true, ownerId: true }
+      select: { id: true, ownerId: true },
     });
 
     let updated = 0;
@@ -155,5 +155,5 @@ async function recalculateAllCampaignAggregates(ownerId) {
 
 module.exports = {
   updateCampaignAggregates,
-  recalculateAllCampaignAggregates
+  recalculateAllCampaignAggregates,
 };

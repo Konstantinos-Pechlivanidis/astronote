@@ -34,9 +34,9 @@ router.get(
     try {
       const { trackingId } = req.params;
       if (!isPlausibleTrackingId(trackingId)) {
-        return res.status(404).json({ 
-          message: 'Invalid tracking ID', 
-          code: 'INVALID_TRACKING_ID' 
+        return res.status(404).json({
+          message: 'Invalid tracking ID',
+          code: 'INVALID_TRACKING_ID',
         });
       }
 
@@ -49,17 +49,17 @@ router.get(
               owner: {
                 select: {
                   company: true,
-                  senderName: true
-                }
-              }
-            }
+                  senderName: true,
+                },
+              },
+            },
           },
           redemption: {
             select: {
-              redeemedAt: true
-            }
-          }
-        }
+              redeemedAt: true,
+            },
+          },
+        },
       });
 
       let storeName, offerText, isRedeemed, campaignId, automationId;
@@ -67,8 +67,8 @@ router.get(
       if (msg) {
         // Campaign message found
         // isAutomation = false; // Redundant - already initialized as false
-        storeName = msg.campaign.owner.company || 
-                   msg.campaign.owner.senderName || 
+        storeName = msg.campaign.owner.company ||
+                   msg.campaign.owner.senderName ||
                    'Store';
         offerText = msg.campaign.name || msg.text || 'Special offer';
         isRedeemed = !!msg.redemption;
@@ -82,7 +82,7 @@ router.get(
           contactId: msg.contactId,
           ownerId: msg.ownerId,
           ipAddress: req.ip,
-          userAgent: req.get('user-agent')
+          userAgent: req.get('user-agent'),
         }).catch(err => {
           logger.warn({ trackingId, campaignMessageId: msg.id, err: err.message }, 'Failed to record offer view event');
         });
@@ -96,42 +96,42 @@ router.get(
                 owner: {
                   select: {
                     company: true,
-                    senderName: true
-                  }
-                }
-              }
+                    senderName: true,
+                  },
+                },
+              },
             },
             redemption: {
               select: {
-                redeemedAt: true
-              }
-            }
-          }
+                redeemedAt: true,
+              },
+            },
+          },
         });
 
         if (!autoMsg) {
           logger.debug({ trackingId }, 'Offer not found for trackingId');
-          return res.status(404).json({ 
-            message: 'Offer not found', 
-            code: 'RESOURCE_NOT_FOUND' 
+          return res.status(404).json({
+            message: 'Offer not found',
+            code: 'RESOURCE_NOT_FOUND',
           });
         }
 
         // Automation message found
-        storeName = autoMsg.automation.owner.company || 
-                   autoMsg.automation.owner.senderName || 
+        storeName = autoMsg.automation.owner.company ||
+                   autoMsg.automation.owner.senderName ||
                    'Store';
         offerText = autoMsg.automation.messageBody || autoMsg.text || 'Special offer';
         isRedeemed = !!autoMsg.redemption;
         campaignId = null;
         automationId = autoMsg.automationId;
 
-        logger.debug({ 
-          trackingId, 
-          automationId: autoMsg.automationId, 
+        logger.debug({
+          trackingId,
+          automationId: autoMsg.automationId,
           contactId: autoMsg.contactId,
           ownerId: autoMsg.ownerId,
-          isRedeemed: !!autoMsg.redemption 
+          isRedeemed: !!autoMsg.redemption,
         }, 'Automation offer retrieved successfully');
       }
 
@@ -141,12 +141,12 @@ router.get(
         offerText,
         isRedeemed,
         campaignId,
-        automationId
+        automationId,
       });
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 /**
@@ -181,8 +181,8 @@ async function recordOfferViewEvent({ campaignMessageId, campaignId, contactId, 
         ownerId,
         ipAddress: ipAddress || null,
         userAgent: userAgent || null,
-        deviceType
-      }
+        deviceType,
+      },
     });
   } catch (err) {
     // If table doesn't exist yet or other error, just log and continue
@@ -190,8 +190,8 @@ async function recordOfferViewEvent({ campaignMessageId, campaignId, contactId, 
     // Check for common errors (table doesn't exist, constraint violations, etc.)
     const errorCode = err?.code || '';
     const errorMessage = err?.message || '';
-    if (errorCode === 'P2021' || errorCode === 'P2001' || 
-        errorMessage.includes('does not exist') || 
+    if (errorCode === 'P2021' || errorCode === 'P2001' ||
+        errorMessage.includes('does not exist') ||
         errorMessage.includes('not exist')) {
       // Table doesn't exist yet - this is fine, just log at debug level
       logger.debug({ campaignMessageId, err: err.message }, 'OfferViewEvent table does not exist yet (non-critical)');
@@ -221,34 +221,34 @@ router.get(
       // Try CampaignMessage first
       const msg = await prisma.campaignMessage.findUnique({
         where: { trackingId },
-        include: { redemption: true }
+        include: { redemption: true },
       });
 
       // If not found, try AutomationMessage
       if (!msg) {
         const autoMsg = await prisma.automationMessage.findUnique({
           where: { trackingId },
-          include: { redemption: true }
+          include: { redemption: true },
         });
-        
+
         if (!autoMsg) {
           return res.status(404).json({ exists: false });
         }
 
         res.json({
           exists: true,
-          alreadyRedeemed: !!autoMsg.redemption
+          alreadyRedeemed: !!autoMsg.redemption,
         });
       } else {
         res.json({
           exists: true,
-          alreadyRedeemed: !!msg.redemption
+          alreadyRedeemed: !!msg.redemption,
         });
       }
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 /**
@@ -268,7 +268,7 @@ router.post(
 
       const msg = await prisma.campaignMessage.findUnique({
         where: { trackingId },
-        select: { id: true, campaignId: true, contactId: true, ownerId: true }
+        select: { id: true, campaignId: true, contactId: true, ownerId: true },
       });
 
       if (!msg) {
@@ -283,7 +283,7 @@ router.post(
       const evidence = {
         ip: req.ip,
         userAgent: req.headers['user-agent'] || null,
-        publicRedeem: true
+        publicRedeem: true,
       };
 
       const redemption = await prisma.redemption.create({
@@ -292,21 +292,23 @@ router.post(
           campaignId: msg.campaignId,
           contactId: msg.contactId,
           ownerId: msg.ownerId,
-          evidenceJson: evidence
-        }
+          evidenceJson: evidence,
+        },
       });
 
       // Update aggregates (non-blocking)
       try {
         const { updateCampaignAggregates } = require('../services/campaignAggregates.service');
         updateCampaignAggregates(msg.campaignId, msg.ownerId);
-      } catch (_) {}
+      } catch (_error) {
+        // Best-effort update; ignore aggregate errors.
+      }
 
       return res.json({ status: 'redeemed', redeemedAt: redemption.redeemedAt });
     } catch (e) {
       next(e);
     }
-  }
+  },
 );
 
 /**
@@ -323,15 +325,15 @@ router.post(
     try {
       const { trackingId } = req.body || {};
       if (!trackingId) {
-        return res.status(400).json({ 
-          message: 'Tracking ID is required', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'Tracking ID is required',
+          code: 'VALIDATION_ERROR',
         });
       }
       if (!isPlausibleTrackingId(trackingId)) {
-        return res.status(400).json({ 
-          message: 'Invalid tracking ID format', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'Invalid tracking ID format',
+          code: 'VALIDATION_ERROR',
         });
       }
 
@@ -371,7 +373,7 @@ router.post(
             messageId: autoMsg.id,
             automationId: autoMsg.automationId,
             contactId: autoMsg.contactId,
-            redeemedAt: existing.redeemedAt
+            redeemedAt: existing.redeemedAt,
           });
         }
 
@@ -383,15 +385,15 @@ router.post(
             automationId: autoMsg.automationId,
             contactId: autoMsg.contactId,
             redeemedByUserId: req.user.id,
-            evidenceJson: { ip: req.ip }
-          }
+            evidenceJson: { ip: req.ip },
+          },
         });
 
-        logger.info({ 
-          trackingId, 
-          automationId: autoMsg.automationId, 
+        logger.info({
+          trackingId,
+          automationId: autoMsg.automationId,
           contactId: autoMsg.contactId,
-          redemptionId: rdm.messageId
+          redemptionId: rdm.messageId,
         }, 'Automation redemption created');
 
         return res.json({
@@ -400,7 +402,7 @@ router.post(
           messageId: autoMsg.id,
           automationId: autoMsg.automationId,
           contactId: autoMsg.contactId,
-          redeemedAt: rdm.redeemedAt
+          redeemedAt: rdm.redeemedAt,
         });
       } else {
         // Campaign message redemption (existing logic)
@@ -416,7 +418,7 @@ router.post(
             messageId: msg.id,
             campaignId: msg.campaignId,
             contactId: msg.contactId,
-            redeemedAt: existing.redeemedAt
+            redeemedAt: existing.redeemedAt,
           });
         }
 
@@ -428,16 +430,16 @@ router.post(
             campaignId: msg.campaignId,
             contactId: msg.contactId,
             redeemedByUserId: req.user.id,
-            evidenceJson: { ip: req.ip }
-          }
+            evidenceJson: { ip: req.ip },
+          },
         });
 
-        logger.info({ 
-          trackingId, 
-          campaignId: msg.campaignId, 
-          contactId: msg.contactId, 
+        logger.info({
+          trackingId,
+          campaignId: msg.campaignId,
+          contactId: msg.contactId,
           ownerId: req.user.id,
-          redeemedAt: rdm.redeemedAt 
+          redeemedAt: rdm.redeemedAt,
         }, 'Redemption created successfully');
 
         res.json({
@@ -446,13 +448,13 @@ router.post(
           messageId: msg.id,
           campaignId: msg.campaignId,
           contactId: msg.contactId,
-          redeemedAt: rdm.redeemedAt
+          redeemedAt: rdm.redeemedAt,
         });
       }
     } catch (err) {
       next(err);
     }
-  }
+  },
 );
 
 module.exports = router;

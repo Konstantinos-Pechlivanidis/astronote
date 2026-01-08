@@ -1,6 +1,6 @@
 // apps/api/src/lib/ratelimit.js
 // Rate limiting using rate-limiter-flexible
-// 
+//
 // Key naming convention: `rl:{scope}:{key}`
 //   - IP-based: `rl:{scope}:ip:{ipAddress}`
 //   - Custom: `rl:{scope}:{customKey}`
@@ -14,7 +14,7 @@ const redis = getRedisClient();
 
 /**
  * Create a rate limiter with Redis if available, else in-memory (per-process).
- * 
+ *
  * @param {Object} options
  * @param {string} options.keyPrefix - Prefix for Redis keys (e.g., 'rl:login:ip')
  * @param {number} options.points - Maximum number of points (requests) allowed
@@ -35,20 +35,20 @@ function createLimiter({ keyPrefix, points, duration, blockDuration = 0, insuran
       blockDuration, // seconds to block when consumed more than points
       execEvenly: false, // Don't spread requests evenly - allow bursts
       insuranceLimiter: insuranceLimiter
-        ? new RateLimiterMemory({ 
-            keyPrefix: `${keyPrefix}:mem`, 
-            points, 
-            duration 
-          })
-        : undefined
+        ? new RateLimiterMemory({
+          keyPrefix: `${keyPrefix}:mem`,
+          points,
+          duration,
+        })
+        : undefined,
     });
     return redisLimiter;
   }
   // Fallback for dev (not suitable for multi-instance prod by itself)
-  return new RateLimiterMemory({ 
-    keyPrefix: `${keyPrefix}:mem`, 
-    points, 
-    duration 
+  return new RateLimiterMemory({
+    keyPrefix: `${keyPrefix}:mem`,
+    points,
+    duration,
   });
 }
 
@@ -58,13 +58,15 @@ function createLimiter({ keyPrefix, points, duration, blockDuration = 0, insuran
 function rateLimitByIp(limiter) {
   return async function (req, res, next) {
     try {
-      const key = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+      const xfwd = req.headers['x-forwarded-for'];
+      const headerIp = Array.isArray(xfwd) ? xfwd[0] : (typeof xfwd === 'string' ? xfwd.split(',')[0]?.trim() : null);
+      const key = headerIp || req.ip || 'unknown';
       await limiter.consume(key);
       return next();
     } catch (rl) {
       const ms = rl?.msBeforeNext ?? 60_000;
       res.set('Retry-After', Math.ceil(ms / 1000));
-      return res.status(429).json({ message: 'Too many requests' });
+      return res.status(429).json({ message: 'Too many requests', code: 'RATE_LIMITED' });
     }
   };
 }

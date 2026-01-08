@@ -29,7 +29,7 @@ exports.listCampaigns = async ({
   dateTo,
   orderBy = 'createdAt',
   order = 'desc',
-  withStats = true
+  withStats = true,
 }) => {
   if (!ownerId) {throw new Error('ownerId is required');}
 
@@ -65,9 +65,9 @@ exports.listCampaigns = async ({
         total: true,
         sent: true,
         failed: true,
-        processed: true
-      }
-    })
+        processed: true,
+      },
+    }),
   ]);
 
   if (!withStats || campaigns.length === 0) {
@@ -77,26 +77,13 @@ exports.listCampaigns = async ({
   const ids = campaigns.map(c => c.id);
 
   // Aggregations scoped by ownerId - wrap in try-catch for resilience
-  let msgs = [];
   let reds = [];
-  
-  try {
-    msgs = await prisma.campaignMessage.groupBy({
-      by: ['campaignId', 'status'],
-      where: { ownerId, campaignId: { in: ids } },   // << SCOPE
-      _count: { _all: true }
-    });
-  } catch (error) {
-    const logger = require('pino')({ name: 'campaignsList.service' });
-    logger.warn({ err: error, ownerId, campaignIds: ids }, 'Error fetching campaign message stats, using defaults');
-    // Continue with empty array - stats will default to 0
-  }
 
   try {
     reds = await prisma.redemption.groupBy({
       by: ['campaignId'],
       where: { ownerId, campaignId: { in: ids } },   // << SCOPE
-      _count: { _all: true }
+      _count: { _all: true },
     });
   } catch (error) {
     const logger = require('pino')({ name: 'campaignsList.service' });
@@ -111,7 +98,7 @@ exports.listCampaigns = async ({
 
   // Compute metrics per campaign (canonical)
   const metricsList = await Promise.all(
-    ids.map((id) => computeCampaignMetrics({ campaignId: id, ownerId }))
+    ids.map((id) => computeCampaignMetrics({ campaignId: id, ownerId })),
   );
   metricsList.forEach((m, idx) => {
     const id = ids[idx];
@@ -134,8 +121,8 @@ exports.listCampaigns = async ({
         delivered: s.delivered,
         failed: s.deliveryFailed,
         deliveredRate: rate(s.delivered, s.delivered || 1),
-        conversionRate: rate(s.redemptions, s.delivered || 1)
-      }
+        conversionRate: rate(s.redemptions, s.delivered || 1),
+      },
     };
   });
 

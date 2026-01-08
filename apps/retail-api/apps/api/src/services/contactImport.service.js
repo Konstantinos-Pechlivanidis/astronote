@@ -30,13 +30,13 @@ function parseExcelFile(fileBuffer) {
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
-    
+
     // Convert to JSON with header row
     const rows = XLSX.utils.sheet_to_json(worksheet, {
       raw: false, // Convert all values to strings
       defval: '', // Default value for empty cells
     });
-    
+
     return rows;
   } catch (error) {
     logger.error({ error: error.message, stack: error.stack }, 'Failed to parse Excel file');
@@ -66,7 +66,7 @@ function mapRowToContact(row) {
     const normalized = normalizeColumnName(key);
     columnMap[normalized] = value;
   }
-  
+
   // Extract values (case-insensitive column matching)
   const firstName = columnMap['firstname'] || columnMap['first_name'] || '';
   const lastName = columnMap['lastname'] || columnMap['last_name'] || '';
@@ -75,7 +75,7 @@ function mapRowToContact(row) {
   const gender = columnMap['gender'] || '';
   const birthday = columnMap['birthday'] || columnMap['birthdate'] || columnMap['dateofbirth'] || '';
   const subscribed = columnMap['subscribed'] || columnMap['issubscribed'] || '';
-  
+
   return {
     firstName: firstName ? String(firstName).trim() : null,
     lastName: lastName ? String(lastName).trim() : null,
@@ -94,7 +94,7 @@ function mapRowToContact(row) {
  */
 function normalizeSubscribed(value) {
   if (!value) {return true;} // Default to subscribed
-  
+
   const normalized = String(value).trim().toLowerCase();
   if (normalized === 'yes' || normalized === 'true' || normalized === '1' || normalized === 'y') {
     return true;
@@ -102,7 +102,7 @@ function normalizeSubscribed(value) {
   if (normalized === 'no' || normalized === 'false' || normalized === '0' || normalized === 'n') {
     return false;
   }
-  
+
   // Default to subscribed if unclear
   return true;
 }
@@ -116,7 +116,7 @@ function normalizeSubscribed(value) {
 function validateContactRow(row, rowIndex) {
   const errors = [];
   const mapped = mapRowToContact(row);
-  
+
   // Required: phone
   if (!mapped.phone) {
     errors.push('Phone number is required');
@@ -124,12 +124,12 @@ function validateContactRow(row, rowIndex) {
     // Validate and normalize phone
     const normalizedPhone = normalizePhoneToE164(mapped.phone);
     if (!normalizedPhone) {
-      errors.push(`Invalid phone number format (must be valid international format, e.g., +306984303406)`);
+      errors.push('Invalid phone number format (must be valid international format, e.g., +306984303406)');
     } else {
       mapped.phone = normalizedPhone;
     }
   }
-  
+
   // Optional: email validation
   if (mapped.email) {
     const sanitizedEmail = sanitizeEmail(mapped.email);
@@ -139,17 +139,17 @@ function validateContactRow(row, rowIndex) {
       mapped.email = sanitizedEmail;
     }
   }
-  
+
   // Optional: gender validation
   if (mapped.gender) {
     const normalizedGender = normalizeGender(mapped.gender);
     if (!normalizedGender) {
-      errors.push(`Invalid gender (must be: male, female, other, prefer_not_to_say)`);
+      errors.push('Invalid gender (must be: male, female, other, prefer_not_to_say)');
     } else {
       mapped.gender = normalizedGender;
     }
   }
-  
+
   // Optional: birthday validation
   if (mapped.birthday) {
     // Try to parse date (accept YYYY-MM-DD format)
@@ -163,7 +163,7 @@ function validateContactRow(row, rowIndex) {
         // Try parsing as general date
         birthdayDate = new Date(mapped.birthday);
       }
-      
+
       if (!isValidBirthday(birthdayDate)) {
         errors.push('Invalid birthday (must be a valid date in the past, format: YYYY-MM-DD)');
       } else {
@@ -174,10 +174,10 @@ function validateContactRow(row, rowIndex) {
       errors.push('Invalid birthday format (must be YYYY-MM-DD)');
     }
   }
-  
+
   // Normalize subscribed
   mapped.isSubscribed = normalizeSubscribed(mapped.subscribed);
-  
+
   // Sanitize string fields
   if (mapped.firstName) {
     mapped.firstName = sanitizeString(mapped.firstName, { maxLength: 120 });
@@ -185,7 +185,7 @@ function validateContactRow(row, rowIndex) {
   if (mapped.lastName) {
     mapped.lastName = sanitizeString(mapped.lastName, { maxLength: 120 });
   }
-  
+
   return {
     valid: errors.length === 0,
     data: mapped,
@@ -203,31 +203,31 @@ function validateContactRow(row, rowIndex) {
 async function processImportJob(jobData, progressCallback) {
   const { userId, fileBuffer, options = {} } = jobData;
   const skipDuplicates = options.skipDuplicates !== false; // Default to true
-  
+
   const results = {
     created: 0,
     skipped: 0,
     errors: [],
   };
-  
+
   try {
     // Parse Excel file
     const rows = parseExcelFile(fileBuffer);
     const total = rows.length;
-    
+
     logger.info({ userId, total }, 'Starting contact import');
-    
+
     if (total === 0) {
       throw new Error('Excel file is empty or has no data rows');
     }
-    
+
     // Process each row
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      
+
       // Validate row
       const validation = validateContactRow(row, i);
-      
+
       if (!validation.valid) {
         // Add validation errors
         validation.errors.forEach(error => {
@@ -241,9 +241,9 @@ async function processImportJob(jobData, progressCallback) {
         progressCallback(i + 1, total);
         continue;
       }
-      
+
       const contactData = validation.data;
-      
+
       // Check for duplicate (by phone)
       if (skipDuplicates) {
         const existing = await prisma.contact.findUnique({
@@ -254,7 +254,7 @@ async function processImportJob(jobData, progressCallback) {
             },
           },
         });
-        
+
         if (existing) {
           results.skipped++;
           results.errors.push({
@@ -266,11 +266,11 @@ async function processImportJob(jobData, progressCallback) {
           continue;
         }
       }
-      
+
       // Create contact
       try {
         const { hash } = newUnsubTokenHash();
-        
+
         await prisma.contact.create({
           data: {
             ownerId: userId,
@@ -284,16 +284,16 @@ async function processImportJob(jobData, progressCallback) {
             unsubscribeTokenHash: hash,
           },
         });
-        
+
         results.created++;
       } catch (dbError) {
         // Database error (e.g., constraint violation)
-        logger.error({ 
-          row: validation.rowIndex, 
+        logger.error({
+          row: validation.rowIndex,
           error: dbError.message,
-          phone: contactData.phone 
+          phone: contactData.phone,
         }, 'Failed to create contact');
-        
+
         results.errors.push({
           row: validation.rowIndex,
           field: 'database',
@@ -301,18 +301,18 @@ async function processImportJob(jobData, progressCallback) {
         });
         results.skipped++;
       }
-      
+
       // Report progress
       progressCallback(i + 1, total);
     }
-    
-    logger.info({ 
-      userId, 
-      created: results.created, 
-      skipped: results.skipped, 
-      errors: results.errors.length 
+
+    logger.info({
+      userId,
+      created: results.created,
+      skipped: results.skipped,
+      errors: results.errors.length,
     }, 'Contact import completed');
-    
+
     return results;
   } catch (error) {
     logger.error({ userId, error: error.message, stack: error.stack }, 'Import job failed');
@@ -354,17 +354,17 @@ function generateTemplateFile() {
       subscribed: 'No',
     },
   ];
-  
+
   // Create workbook
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.json_to_sheet(sampleData);
-  
+
   // Add worksheet to workbook
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Contacts');
-  
+
   // Generate buffer
   const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-  
+
   return buffer;
 }
 

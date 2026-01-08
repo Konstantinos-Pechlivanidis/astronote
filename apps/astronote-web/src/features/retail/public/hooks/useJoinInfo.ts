@@ -5,6 +5,10 @@ export function useJoinInfo(token: string | null) {
   return useQuery({
     queryKey: ['retail', 'public', 'join-info', token],
     enabled: !!token,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 60_000,
     queryFn: async () => {
       if (!token) throw new Error('token required');
       const res = await publicApi.getJoinInfo(token);

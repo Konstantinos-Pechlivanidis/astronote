@@ -12,6 +12,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
+    "prisma:check": "prisma validate && prisma migrate status",
     "seed:templates": "cd apps/api && node scripts/seed-templates-final-idempotent.js",
     "start": "cd apps/api && node src/server.js",
     "start:all": "cd apps/api && node src/server.js",

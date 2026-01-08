@@ -18,9 +18,9 @@ async function resolveSender(userId, overrideSender) {
   const s = sanitizeSender(overrideSender);
   if (s) {return s;}
 
-  const user = await prisma.user.findUnique({ 
-    where: { id: userId }, 
-    select: { senderName: true } 
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { senderName: true },
   });
   const fromUser = sanitizeSender(user?.senderName);
   if (fromUser) {return fromUser;}
@@ -44,8 +44,8 @@ async function mittoRequest(method, path, body = null) {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'X-Mitto-API-Key': API_KEY
-    }
+      'X-Mitto-API-Key': API_KEY,
+    },
   };
 
   if (body) {
@@ -62,11 +62,11 @@ async function mittoRequest(method, path, body = null) {
       const error = new Error(`Mitto API error (${res.status}): ${msg}`);
       error.status = res.status;
       error.payload = data;
-      logger.error({ 
-        status: res.status, 
-        url, 
-        error: msg, 
-        payload: data 
+      logger.error({
+        status: res.status,
+        url,
+        error: msg,
+        payload: data,
       }, 'Mitto API request failed');
       throw error;
     }
@@ -82,7 +82,7 @@ async function mittoRequest(method, path, body = null) {
 
 /**
  * Send a single SMS message via Mitto
- * 
+ *
  * @param {Object} params
  * @param {number} params.userId - User ID for sender resolution
  * @param {string} params.destination - Recipient phone number (international format)
@@ -99,11 +99,11 @@ async function sendSingle({ userId, destination, text, sender, trafficAccountId 
   const finalSender = await resolveSender(userId, sender);
   const trafficId = trafficAccountId || TRAFFIC_ACCOUNT_ID;
 
-  logger.info({ 
-    userId, 
-    destination, 
+  logger.info({
+    userId,
+    destination,
     sender: finalSender,
-    trafficAccountId: trafficId 
+    trafficAccountId: trafficId,
   }, 'Sending SMS via Mitto');
 
   const response = await mittoRequest('POST', '/api/v1.1/Messages/send', {
@@ -111,8 +111,8 @@ async function sendSingle({ userId, destination, text, sender, trafficAccountId 
     destination,
     sms: {
       text,
-      sender: finalSender
-    }
+      sender: finalSender,
+    },
   });
 
   // Handle response format: { messages: [{ messageId, trafficAccountId }] }
@@ -122,21 +122,21 @@ async function sendSingle({ userId, destination, text, sender, trafficAccountId 
     throw new Error('Invalid response from Mitto API: missing messageId');
   }
 
-  logger.info({ 
-    messageId: message.messageId, 
-    trafficAccountId: message.trafficAccountId 
+  logger.info({
+    messageId: message.messageId,
+    trafficAccountId: message.trafficAccountId,
   }, 'SMS sent successfully via Mitto');
 
   return {
     messageId: message.messageId,
     trafficAccountId: message.trafficAccountId,
-    rawResponse: response
+    rawResponse: response,
   };
 }
 
 /**
  * Send bulk SMS messages via Mitto (new bulk endpoint)
- * 
+ *
  * @param {Array<Object>} messages - Array of message objects
  * @param {string} messages[].trafficAccountId - Traffic account ID
  * @param {string} messages[].destination - Recipient phone number
@@ -156,12 +156,12 @@ async function sendBulkMessages(messages) {
     }
   }
 
-  logger.info({ 
-    messageCount: messages.length 
+  logger.info({
+    messageCount: messages.length,
   }, 'Sending bulk SMS via Mitto (new endpoint)');
 
   const response = await mittoRequest('POST', '/api/v1.1/Messages/sendmessagesbulk', {
-    messages
+    messages,
   });
 
   // Validate response format
@@ -175,21 +175,21 @@ async function sendBulkMessages(messages) {
     throw new Error('Invalid response from Mitto API: missing messages array');
   }
 
-  logger.info({ 
+  logger.info({
     bulkId: response.bulkId,
-    messageCount: response.messages.length 
+    messageCount: response.messages.length,
   }, 'Bulk SMS sent successfully via Mitto');
 
   return {
     bulkId: response.bulkId,
     messages: response.messages,
-    rawResponse: response
+    rawResponse: response,
   };
 }
 
 /**
  * Send bulk SMS messages via Mitto (legacy endpoint - kept for backward compatibility)
- * 
+ *
  * @param {Object} params
  * @param {number} params.userId - User ID for sender resolution
  * @param {string[]} params.destinations - Array of recipient phone numbers
@@ -206,11 +206,11 @@ async function sendBulkStatic({ userId, destinations, text, sender, trafficAccou
   const finalSender = await resolveSender(userId, sender);
   const trafficId = trafficAccountId || TRAFFIC_ACCOUNT_ID;
 
-  logger.info({ 
-    userId, 
-    destinationCount: destinations.length, 
+  logger.info({
+    userId,
+    destinationCount: destinations.length,
     sender: finalSender,
-    trafficAccountId: trafficId 
+    trafficAccountId: trafficId,
   }, 'Sending bulk SMS via Mitto');
 
   const response = await mittoRequest('POST', '/api/v1.1/Messages/sendbulk', {
@@ -218,12 +218,12 @@ async function sendBulkStatic({ userId, destinations, text, sender, trafficAccou
     destinations,
     sms: {
       text,
-      sender: finalSender
-    }
+      sender: finalSender,
+    },
   });
 
-  logger.info({ 
-    messageCount: response?.messages?.length || 0 
+  logger.info({
+    messageCount: response?.messages?.length || 0,
   }, 'Bulk SMS sent via Mitto');
 
   return response;
@@ -231,7 +231,7 @@ async function sendBulkStatic({ userId, destinations, text, sender, trafficAccou
 
 /**
  * Get message status and details from Mitto by messageId
- * 
+ *
  * @param {string} messageId - Mitto message ID
  * @returns {Promise<Object>} Message details including deliveryStatus
  */
@@ -250,9 +250,9 @@ async function getMessageStatus(messageId) {
       throw new Error('Invalid response from Mitto API: missing messageId');
     }
 
-    logger.info({ 
-      messageId: response.messageId, 
-      deliveryStatus: response.deliveryStatus 
+    logger.info({
+      messageId: response.messageId,
+      deliveryStatus: response.deliveryStatus,
     }, 'Message status retrieved from Mitto');
 
     return {
@@ -266,7 +266,7 @@ async function getMessageStatus(messageId) {
       deliveryStatus: response.deliveryStatus,
       messageParts: response.messageParts,
       requestInfo: response.requestInfo,
-      rawResponse: response
+      rawResponse: response,
     };
   } catch (err) {
     if (err.status === 404) {
@@ -280,7 +280,7 @@ async function getMessageStatus(messageId) {
 
 /**
  * Update internal message record with status from Mitto
- * 
+ *
  * @param {string} providerMessageId - Mitto message ID
  * @param {number} [ownerId] - Optional owner ID for scoping
  * @returns {Promise<Object>} Updated message record
@@ -318,7 +318,7 @@ async function refreshMessageStatus(providerMessageId, ownerId = null) {
 
     const messages = await prisma.campaignMessage.findMany({
       where,
-      select: { id: true, ownerId: true, campaignId: true }
+      select: { id: true, ownerId: true, campaignId: true },
     });
 
     if (messages.length === 0) {
@@ -329,7 +329,7 @@ async function refreshMessageStatus(providerMessageId, ownerId = null) {
     // Update all matching messages
     const updateData = {
       status: internalStatus,
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     // Note: deliveredAt removed - "Delivered" status is mapped to "sent"
@@ -343,19 +343,19 @@ async function refreshMessageStatus(providerMessageId, ownerId = null) {
     // Use same where clause for updateMany to ensure consistency and security
     const result = await prisma.campaignMessage.updateMany({
       where,
-      data: updateData
+      data: updateData,
     });
 
-    logger.info({ 
-      providerMessageId, 
+    logger.info({
+      providerMessageId,
       updated: result.count,
-      status: internalStatus 
+      status: internalStatus,
     }, 'Message status updated from Mitto');
 
     // Update campaign aggregates for affected campaigns
     const affectedCampaignIds = [...new Set(messages.map(m => m.campaignId))];
     const { updateCampaignAggregates } = require('./campaignAggregates.service');
-    
+
     for (const campaignId of affectedCampaignIds) {
       try {
         await updateCampaignAggregates(campaignId, messages[0].ownerId);
@@ -369,7 +369,7 @@ async function refreshMessageStatus(providerMessageId, ownerId = null) {
       updated: result.count,
       status,
       internalStatus,
-      affectedCampaignIds
+      affectedCampaignIds,
     };
   } catch (err) {
     logger.error({ providerMessageId, err: err.message }, 'Failed to refresh message status');
@@ -383,5 +383,5 @@ module.exports = {
   sendBulkStatic,
   getMessageStatus,
   refreshMessageStatus,
-  resolveSender
+  resolveSender,
 };

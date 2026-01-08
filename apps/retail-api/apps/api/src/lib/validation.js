@@ -39,27 +39,27 @@ function isValidBirthday(birthday) {
   if (!birthday) {
     return false;
   }
-  
+
   try {
     const date = birthday instanceof Date ? birthday : new Date(birthday);
-    
+
     // Check if valid date
     if (isNaN(date.getTime())) {
       return false;
     }
-    
+
     // Must be in the past
     if (date >= new Date()) {
       return false;
     }
-    
+
     // Must be reasonable (not more than 150 years ago, not in the future)
     const minDate = new Date();
     minDate.setFullYear(minDate.getFullYear() - 150);
     if (date < minDate) {
       return false;
     }
-    
+
     return true;
   } catch {
     return false;
@@ -75,21 +75,21 @@ function calculateAge(birthday) {
   if (!birthday) {
     return null;
   }
-  
+
   try {
     const birthDate = birthday instanceof Date ? birthday : new Date(birthday);
     if (isNaN(birthDate.getTime())) {
       return null;
     }
-    
+
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
-    
+
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
       age--;
     }
-    
+
     return age >= 0 ? age : null;
   } catch {
     return null;
@@ -109,7 +109,7 @@ function isValidEmail(email) {
   if (!trimmed) {
     return false;
   }
-  
+
   // Basic email validation regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(trimmed) && trimmed.length <= 320;
@@ -121,7 +121,7 @@ function isValidEmail(email) {
 const AGE_GROUPS = {
   '18_24': { min: 18, max: 24 },
   '25_39': { min: 25, max: 39 },
-  '40_plus': { min: 40, max: null } // 40+ means no upper limit
+  '40_plus': { min: 40, max: null }, // 40+ means no upper limit
 };
 
 /**
@@ -166,32 +166,32 @@ function matchesAgeGroup(birthday, ageGroup) {
   if (!birthday || !ageGroup) {
     return false;
   }
-  
+
   const age = calculateAge(birthday);
   if (age === null) {
     return false;
   }
-  
+
   const group = AGE_GROUPS[ageGroup];
   if (!group) {
     return false;
   }
-  
+
   // Must be at least 18 (adults only)
   if (age < 18) {
     return false;
   }
-  
+
   // Check lower bound
   if (age < group.min) {
     return false;
   }
-  
+
   // Check upper bound (if exists)
   if (group.max !== null && age > group.max) {
     return false;
   }
-  
+
   return true;
 }
 
@@ -204,6 +204,6 @@ module.exports = {
   isValidAgeGroup,
   normalizeAgeGroup,
   matchesAgeGroup,
-  AGE_GROUPS
+  AGE_GROUPS,
 };
 

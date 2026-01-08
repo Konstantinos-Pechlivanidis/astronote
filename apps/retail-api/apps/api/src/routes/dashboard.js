@@ -12,7 +12,7 @@ const r = Router();
  * Returns aggregated KPI data for the authenticated user's store
  * Returns safe defaults (0) if queries fail, but logs errors for debugging
  */
-r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
+r.get('/dashboard/kpis', requireAuth, async (req, res, _next) => {
   const ownerId = req.user.id;
 
   // Safe defaults - return these if any query fails
@@ -25,7 +25,7 @@ r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
     sentRate: 0,
     deliveredRate: 0,
     conversion: 0,
-    conversionRate: 0
+    conversionRate: 0,
   };
 
   try {
@@ -33,7 +33,7 @@ r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
     let totalCampaigns = 0;
     try {
       totalCampaigns = await prisma.campaign.count({
-        where: { ownerId }
+        where: { ownerId },
       });
     } catch (err) {
       logger.error({ err, ownerId }, 'Failed to count campaigns');
@@ -46,8 +46,8 @@ r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
       const campaignAggregates = await prisma.campaign.aggregate({
         where: { ownerId },
         _sum: {
-          total: true  // Total includes queued + sent + failed
-        }
+          total: true,  // Total includes queued + sent + failed
+        },
       });
       totalMessages = Number(campaignAggregates._sum.total ?? 0);
     } catch (err) {
@@ -62,11 +62,11 @@ r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
       const messageStats = await prisma.campaignMessage.groupBy({
         by: ['status'],
         where: {
-          ownerId
+          ownerId,
         },
         _count: {
-          id: true
-        }
+          id: true,
+        },
       });
 
       messageStats.forEach(stat => {
@@ -92,8 +92,8 @@ r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
     try {
       conversion = await prisma.redemption.count({
         where: {
-          ownerId
-        }
+          ownerId,
+        },
       });
     } catch (err) {
       logger.error({ err, ownerId }, 'Failed to count redemptions');
@@ -112,7 +112,7 @@ r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
       sentRate: Number(sentRate),
       deliveredRate: Number(deliveredRate),
       conversion: Number(conversion),
-      conversionRate: Number(conversionRate)
+      conversionRate: Number(conversionRate),
     };
 
     res.json(kpis);
@@ -120,7 +120,7 @@ r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
     // If we get here, it's an unexpected error (not a query failure)
     // Log it and return safe defaults instead of 500
     logger.error({ err: e, ownerId }, 'Unexpected error in /dashboard/kpis');
-    
+
     // Return safe defaults rather than 500 - this ensures the frontend can still render
     // The frontend will show zeros, which is better than a broken page
     return res.status(200).json(safeDefaults);
@@ -128,4 +128,3 @@ r.get('/dashboard/kpis', requireAuth, async (req, res, next) => {
 });
 
 module.exports = r;
-

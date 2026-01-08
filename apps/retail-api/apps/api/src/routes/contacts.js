@@ -63,9 +63,9 @@ router.post(
     try {
       const { phone, email, firstName, lastName, gender, birthday } = req.body || {};
       if (!phone) {
-        return res.status(400).json({ 
-          message: 'Phone number is required', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'Phone number is required',
+          code: 'VALIDATION_ERROR',
         });
       }
 
@@ -78,17 +78,17 @@ router.post(
       // Validate and normalize phone to E.164 format
       const normalizedPhone = normalizePhoneToE164(sanitizedPhone);
       if (!normalizedPhone) {
-        return res.status(400).json({ 
-          message: 'Invalid phone number format. Please enter a valid international phone number (e.g., +306912345678).', 
-          code: 'INVALID_PHONE' 
+        return res.status(400).json({
+          message: 'Invalid phone number format. Please enter a valid international phone number (e.g., +306912345678).',
+          code: 'INVALID_PHONE',
         });
       }
 
       // Validate email if provided
       if (sanitizedEmail && !isValidEmail(sanitizedEmail)) {
-        return res.status(400).json({ 
-          message: 'Invalid email address format. Please enter a valid email address.', 
-          code: 'INVALID_EMAIL' 
+        return res.status(400).json({
+          message: 'Invalid email address format. Please enter a valid email address.',
+          code: 'INVALID_EMAIL',
         });
       }
 
@@ -97,9 +97,9 @@ router.post(
       if (gender) {
         normalizedGender = normalizeGender(gender);
         if (!normalizedGender) {
-          return res.status(400).json({ 
-            message: 'Invalid gender value. Please select: Male, Female, Other, or Prefer not to say.', 
-            code: 'INVALID_GENDER' 
+          return res.status(400).json({
+            message: 'Invalid gender value. Please select: Male, Female, Other, or Prefer not to say.',
+            code: 'INVALID_GENDER',
           });
         }
       }
@@ -108,9 +108,9 @@ router.post(
       let birthdayDate = null;
       if (birthday) {
         if (!isValidBirthday(birthday)) {
-          return res.status(400).json({ 
-            message: 'Invalid birthday. Please enter a valid date in the past.', 
-            code: 'INVALID_BIRTHDAY' 
+          return res.status(400).json({
+            message: 'Invalid birthday. Please enter a valid date in the past.',
+            code: 'INVALID_BIRTHDAY',
           });
         }
         birthdayDate = birthday instanceof Date ? birthday : new Date(birthday);
@@ -129,20 +129,20 @@ router.post(
           gender: normalizedGender,
           birthday: birthdayDate,
           isSubscribed: true,                  // New contacts are subscribed by default
-          unsubscribeTokenHash: hash            // store only the hash (raw can be rotated later)
-        }
+          unsubscribeTokenHash: hash,            // store only the hash (raw can be rotated later)
+        },
       });
 
       // Trigger welcome automation (non-blocking, fire and forget)
       const { triggerWelcomeAutomation } = require('../services/automation.service');
       triggerWelcomeAutomation(req.user.id, contact).catch(err => {
         // Log but don't fail contact creation
-        logger.error({ 
-          contactId: contact.id, 
+        logger.error({
+          contactId: contact.id,
           isSubscribed: contact.isSubscribed,
           ownerId: req.user.id,
           err: err.message,
-          stack: err.stack 
+          stack: err.stack,
         }, 'Welcome automation failed');
       });
 
@@ -150,7 +150,7 @@ router.post(
     } catch (e) {
       next(e);
     }
-  }
+  },
 );
 
 /* ---------------------------------------------------------
@@ -159,122 +159,122 @@ router.post(
  * --------------------------------------------------------- */
 router.get('/contacts', requireAuth, async (req, res, next) => {
   try {
-  const page = Math.max(1, parseInt(req.query.page || '1', 10));
-  const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize || '20', 10)));
-  const q = (req.query.q || '').toString().trim();
-  const sub = (req.query.isSubscribed || '').toString().toLowerCase();
-  const listIdRaw = req.query.listId ? String(req.query.listId) : null;
+    const page = Math.max(1, parseInt(req.query.page || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize || '20', 10)));
+    const q = (req.query.q || '').toString().trim();
+    const sub = (req.query.isSubscribed || '').toString().toLowerCase();
+    const listIdRaw = req.query.listId ? String(req.query.listId) : null;
 
-  const where = { ...scoped(req.user.id) };
+    const where = { ...scoped(req.user.id) };
 
-  // If listId is provided, filter by list membership
-  if (listIdRaw) {
+    // If listId is provided, filter by list membership
+    if (listIdRaw) {
     // Check if it's a predefined (virtual) list (string IDs like "gender_male", "age_18_24", "all")
-    if (listIdRaw.startsWith('gender_') || listIdRaw.startsWith('age_') || listIdRaw === 'all') {
+      if (listIdRaw.startsWith('gender_') || listIdRaw.startsWith('age_') || listIdRaw === 'all') {
       // Predefined list - get ALL contacts first (we'll filter and paginate in memory)
-      const { getPredefinedListContacts } = require('../services/predefinedLists.service');
-      // Get all contacts (use a large pageSize to get all, then filter)
-      const result = await getPredefinedListContacts(listIdRaw, req.user.id, 1, 10000);
-      
-      // Apply search filter if provided (BEFORE pagination)
-      let filteredItems = result.items;
-      if (q) {
-        filteredItems = filteredItems.filter(contact => {
-          const searchLower = q.toLowerCase();
-          return (
-            (contact.phone && contact.phone.toLowerCase().includes(searchLower)) ||
+        const { getPredefinedListContacts } = require('../services/predefinedLists.service');
+        // Get all contacts (use a large pageSize to get all, then filter)
+        const result = await getPredefinedListContacts(listIdRaw, req.user.id, 1, 10000);
+
+        // Apply search filter if provided (BEFORE pagination)
+        let filteredItems = result.items;
+        if (q) {
+          filteredItems = filteredItems.filter(contact => {
+            const searchLower = q.toLowerCase();
+            return (
+              (contact.phone && contact.phone.toLowerCase().includes(searchLower)) ||
             (contact.email && contact.email.toLowerCase().includes(searchLower)) ||
             (contact.firstName && contact.firstName.toLowerCase().includes(searchLower)) ||
             (contact.lastName && contact.lastName.toLowerCase().includes(searchLower))
-          );
-        });
-      }
-      
-      // Apply subscribed filter if provided (BEFORE pagination)
-      if (sub === 'true') {
-        filteredItems = filteredItems.filter(c => c.isSubscribed);
-      } else if (sub === 'false') {
-        filteredItems = filteredItems.filter(c => !c.isSubscribed);
-      }
-      
-      // Now paginate the filtered results
-      const total = filteredItems.length;
-      const start = (page - 1) * pageSize;
-      const end = start + pageSize;
-      const paginatedItems = filteredItems.slice(start, end);
-      
-      return res.json({
-        items: paginatedItems,
-        total,
-        page,
-        pageSize
-      });
-    } else {
-      // Database list - validate list ownership
-      const listIdNum = Number(listIdRaw);
-      if (isNaN(listIdNum)) {
-        return res.status(400).json({ 
-          message: 'Invalid list ID', 
-          code: 'VALIDATION_ERROR' 
-        });
-      }
-      
-      const list = await prisma.list.findFirst({
-        where: { id: listIdNum, ownerId: req.user.id }
-      });
-      if (!list) {
-        return res.status(404).json({ 
-          message: 'List not found', 
-          code: 'RESOURCE_NOT_FOUND' 
-        });
-      }
+            );
+          });
+        }
 
-      // If list has filters, use dynamic segmentation
-      if (list.filterGender || list.filterAgeMin !== null || list.filterAgeMax !== null) {
-        const { getContactsMatchingFilters } = require('../services/listSegmentation.service');
-        const matchingContactIds = await getContactsMatchingFilters(listIdNum, req.user.id);
-        if (matchingContactIds.length === 0) {
-          return res.json({ items: [], total: 0, page, pageSize });
+        // Apply subscribed filter if provided (BEFORE pagination)
+        if (sub === 'true') {
+          filteredItems = filteredItems.filter(c => c.isSubscribed);
+        } else if (sub === 'false') {
+          filteredItems = filteredItems.filter(c => !c.isSubscribed);
         }
-        where.id = { in: matchingContactIds };
-      } else {
-        // If no filters, use list memberships
-        const memberships = await prisma.listMembership.findMany({
-          where: { listId: listIdNum },
-          select: { contactId: true }
+
+        // Now paginate the filtered results
+        const total = filteredItems.length;
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        const paginatedItems = filteredItems.slice(start, end);
+
+        return res.json({
+          items: paginatedItems,
+          total,
+          page,
+          pageSize,
         });
-        const contactIds = memberships.map(m => m.contactId);
-        if (contactIds.length === 0) {
-          return res.json({ items: [], total: 0, page, pageSize });
+      } else {
+      // Database list - validate list ownership
+        const listIdNum = Number(listIdRaw);
+        if (isNaN(listIdNum)) {
+          return res.status(400).json({
+            message: 'Invalid list ID',
+            code: 'VALIDATION_ERROR',
+          });
         }
-        where.id = { in: contactIds };
+
+        const list = await prisma.list.findFirst({
+          where: { id: listIdNum, ownerId: req.user.id },
+        });
+        if (!list) {
+          return res.status(404).json({
+            message: 'List not found',
+            code: 'RESOURCE_NOT_FOUND',
+          });
+        }
+
+        // If list has filters, use dynamic segmentation
+        if (list.filterGender || list.filterAgeMin !== null || list.filterAgeMax !== null) {
+          const { getContactsMatchingFilters } = require('../services/listSegmentation.service');
+          const matchingContactIds = await getContactsMatchingFilters(listIdNum, req.user.id);
+          if (matchingContactIds.length === 0) {
+            return res.json({ items: [], total: 0, page, pageSize });
+          }
+          where.id = { in: matchingContactIds };
+        } else {
+        // If no filters, use list memberships
+          const memberships = await prisma.listMembership.findMany({
+            where: { listId: listIdNum },
+            select: { contactId: true },
+          });
+          const contactIds = memberships.map(m => m.contactId);
+          if (contactIds.length === 0) {
+            return res.json({ items: [], total: 0, page, pageSize });
+          }
+          where.id = { in: contactIds };
+        }
       }
     }
-  }
 
-  if (q) {
-    where.OR = [
-      { phone: { contains: q, mode: 'insensitive' } },
-      { email: { contains: q, mode: 'insensitive' } },
-      { firstName: { contains: q, mode: 'insensitive' } },
-      { lastName: { contains: q, mode: 'insensitive' } },
-    ];
-  }
+    if (q) {
+      where.OR = [
+        { phone: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { firstName: { contains: q, mode: 'insensitive' } },
+        { lastName: { contains: q, mode: 'insensitive' } },
+      ];
+    }
 
-  if (sub === 'true') {where.isSubscribed = true;}
-  if (sub === 'false') {where.isSubscribed = false;}
+    if (sub === 'true') {where.isSubscribed = true;}
+    if (sub === 'false') {where.isSubscribed = false;}
 
-  const [items, total] = await Promise.all([
-    prisma.contact.findMany({
-      where,
-      orderBy: { id: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize
-    }),
-    prisma.contact.count({ where })
-  ]);
+    const [items, total] = await Promise.all([
+      prisma.contact.findMany({
+        where,
+        orderBy: { id: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.contact.count({ where }),
+    ]);
 
-  res.json({ items, total, page, pageSize });
+    res.json({ items, total, page, pageSize });
   } catch (e) {
     next(e);
   }
@@ -286,25 +286,25 @@ router.get('/contacts', requireAuth, async (req, res, next) => {
  * --------------------------------------------------------- */
 router.get('/contacts/:id', requireAuth, async (req, res, next) => {
   try {
-  const id = Number(req.params.id);
-  if (!id || isNaN(id)) {
-    return res.status(400).json({ 
-      message: 'Invalid contact ID', 
-      code: 'VALIDATION_ERROR' 
-    });
-  }
+    const id = Number(req.params.id);
+    if (!id || isNaN(id)) {
+      return res.status(400).json({
+        message: 'Invalid contact ID',
+        code: 'VALIDATION_ERROR',
+      });
+    }
 
-  const contact = await prisma.contact.findFirst({
-    where: { id, ownerId: req.user.id } // SCOPE
-  });
-
-  if (!contact) {
-    return res.status(404).json({ 
-      message: 'Contact not found', 
-      code: 'RESOURCE_NOT_FOUND' 
+    const contact = await prisma.contact.findFirst({
+      where: { id, ownerId: req.user.id }, // SCOPE
     });
-  }
-  res.json(contact);
+
+    if (!contact) {
+      return res.status(404).json({
+        message: 'Contact not found',
+        code: 'RESOURCE_NOT_FOUND',
+      });
+    }
+    res.json(contact);
   } catch (e) {
     next(e);
   }
@@ -322,11 +322,11 @@ router.put(
     try {
       const id = Number(req.params.id);
       if (!id || isNaN(id)) {
-    return res.status(400).json({ 
-      message: 'Invalid contact ID', 
-      code: 'VALIDATION_ERROR' 
-    });
-  }
+        return res.status(400).json({
+          message: 'Invalid contact ID',
+          code: 'VALIDATION_ERROR',
+        });
+      }
 
       const { phone, email, firstName, lastName, gender, birthday, isSubscribed } = req.body || {};
       const data = {};
@@ -335,9 +335,9 @@ router.put(
         const sanitizedPhone = sanitizeString(phone, { maxLength: 20 });
         const normalizedPhone = normalizePhoneToE164(sanitizedPhone);
         if (!normalizedPhone) {
-          return res.status(400).json({ 
-            message: 'Invalid phone number format. Please enter a valid international phone number (e.g., +306912345678).', 
-            code: 'INVALID_PHONE' 
+          return res.status(400).json({
+            message: 'Invalid phone number format. Please enter a valid international phone number (e.g., +306912345678).',
+            code: 'INVALID_PHONE',
           });
         }
         data.phone = normalizedPhone;
@@ -346,9 +346,9 @@ router.put(
       if (email !== undefined) {
         const sanitizedEmail = email ? sanitizeEmail(email) : null;
         if (email && !sanitizedEmail) {
-          return res.status(400).json({ 
-            message: 'Invalid email address format. Please enter a valid email address.', 
-            code: 'INVALID_EMAIL' 
+          return res.status(400).json({
+            message: 'Invalid email address format. Please enter a valid email address.',
+            code: 'INVALID_EMAIL',
           });
         }
         data.email = sanitizedEmail;
@@ -367,9 +367,9 @@ router.put(
         } else {
           const normalizedGender = normalizeGender(gender);
           if (!normalizedGender) {
-            return res.status(400).json({ 
-              message: 'Invalid gender value. Please select: Male, Female, Other, or Prefer not to say.', 
-              code: 'INVALID_GENDER' 
+            return res.status(400).json({
+              message: 'Invalid gender value. Please select: Male, Female, Other, or Prefer not to say.',
+              code: 'INVALID_GENDER',
             });
           }
           data.gender = normalizedGender;
@@ -381,9 +381,9 @@ router.put(
           data.birthday = null;
         } else {
           if (!isValidBirthday(birthday)) {
-            return res.status(400).json({ 
-              message: 'Invalid birthday. Please enter a valid date in the past.', 
-              code: 'VALIDATION_ERROR' 
+            return res.status(400).json({
+              message: 'Invalid birthday. Please enter a valid date in the past.',
+              code: 'VALIDATION_ERROR',
             });
           }
           data.birthday = birthday instanceof Date ? birthday : new Date(birthday);
@@ -402,25 +402,25 @@ router.put(
 
       const r = await prisma.contact.updateMany({
         where: { id, ownerId: req.user.id },  // SCOPE
-        data
+        data,
       });
 
       if (r.count === 0) {
-        return res.status(404).json({ 
-          message: 'Contact not found', 
-          code: 'RESOURCE_NOT_FOUND' 
+        return res.status(404).json({
+          message: 'Contact not found',
+          code: 'RESOURCE_NOT_FOUND',
         });
       }
 
       const updated = await prisma.contact.findFirst({
-        where: { id, ownerId: req.user.id }
+        where: { id, ownerId: req.user.id },
       });
 
       res.json(updated);
     } catch (e) {
       next(e);
     }
-  }
+  },
 );
 
 /* ---------------------------------------------------------
@@ -435,27 +435,27 @@ router.delete(
     try {
       const id = Number(req.params.id);
       if (!id || isNaN(id)) {
-    return res.status(400).json({ 
-      message: 'Invalid contact ID', 
-      code: 'VALIDATION_ERROR' 
-    });
-  }
+        return res.status(400).json({
+          message: 'Invalid contact ID',
+          code: 'VALIDATION_ERROR',
+        });
+      }
 
       const r = await prisma.contact.deleteMany({
-        where: { id, ownerId: req.user.id } // SCOPE
+        where: { id, ownerId: req.user.id }, // SCOPE
       });
 
       if (r.count === 0) {
-        return res.status(404).json({ 
-          message: 'Contact not found', 
-          code: 'RESOURCE_NOT_FOUND' 
+        return res.status(404).json({
+          message: 'Contact not found',
+          code: 'RESOURCE_NOT_FOUND',
         });
       }
       res.json({ ok: true });
     } catch (e) {
       next(e);
     }
-  }
+  },
 );
 
 /* ---------------------------------------------------------
@@ -468,9 +468,9 @@ async function handleUnsubscribe(req, res, next) {
   try {
     const token = req.body?.token || req.params?.token || req.query?.token || '';
     if (!token) {
-      return res.status(400).json({ 
-        message: 'Token is required', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'Token is required',
+        code: 'VALIDATION_ERROR',
       });
     }
 
@@ -480,9 +480,9 @@ async function handleUnsubscribe(req, res, next) {
 
     if (!decoded) {
       // Invalid or expired token - return generic error
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: 'This unsubscribe link is no longer valid. Please contact the store or try again from a more recent message.',
-        code: 'INVALID_TOKEN'
+        code: 'INVALID_TOKEN',
       });
     }
 
@@ -490,47 +490,47 @@ async function handleUnsubscribe(req, res, next) {
 
     // Find contact and verify it belongs to the store
     const contact = await prisma.contact.findFirst({
-      where: { 
+      where: {
         id: contactId,
         ownerId: storeId,
-        isSubscribed: true 
+        isSubscribed: true,
       },
       include: {
         owner: {
           select: {
             id: true,
             company: true,
-            senderName: true
-          }
-        }
-      }
+            senderName: true,
+          },
+        },
+      },
     });
 
     if (!contact) {
       // Contact not found or already unsubscribed - return success (idempotent)
-      return res.json({ 
+      return res.json({
         ok: true,
         status: 'already_unsubscribed',
-        message: 'You are already unsubscribed or this link is no longer valid.'
+        message: 'You are already unsubscribed or this link is no longer valid.',
       });
     }
 
     // Unsubscribe contact (scoped to this store only)
     await prisma.contact.update({
       where: { id: contact.id },
-      data: { 
-        isSubscribed: false, 
-        unsubscribedAt: new Date() 
-      }
+      data: {
+        isSubscribed: false,
+        unsubscribedAt: new Date(),
+      },
     });
 
     const storeName = contact.owner.company || contact.owner.senderName || 'this store';
 
-    res.json({ 
+    res.json({
       ok: true,
       status: 'unsubscribed',
       message: `You are now unsubscribed from SMS messages for ${storeName}.`,
-      storeName
+      storeName,
     });
   } catch (e) {
     // Ensure error has proper status for public endpoint
@@ -546,7 +546,7 @@ router.post(
     const token = req.body?.token || req.params?.token || '';
     return token.slice(0, 64);
   }),
-  handleUnsubscribe
+  handleUnsubscribe,
 );
 
 router.post(
@@ -556,7 +556,7 @@ router.post(
     const token = req.body?.token || req.params?.token || '';
     return token.slice(0, 64);
   }),
-  handleUnsubscribe
+  handleUnsubscribe,
 );
 
 /* ---------------------------------------------------------
@@ -575,9 +575,9 @@ router.get(
     try {
       const { token } = req.params;
       if (!token) {
-        return res.status(400).json({ 
-          message: 'Token is required', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'Token is required',
+          code: 'VALIDATION_ERROR',
         });
       }
 
@@ -586,9 +586,9 @@ router.get(
       const decoded = verifyUnsubscribeToken(token);
 
       if (!decoded) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           message: 'This unsubscribe link is no longer valid. Please contact the store or try again from a more recent message.',
-          code: 'INVALID_TOKEN'
+          code: 'INVALID_TOKEN',
         });
       }
 
@@ -596,25 +596,25 @@ router.get(
 
       // Get contact and store info
       const contact = await prisma.contact.findFirst({
-        where: { 
+        where: {
           id: contactId,
-          ownerId: storeId
+          ownerId: storeId,
         },
         include: {
           owner: {
             select: {
               id: true,
               company: true,
-              senderName: true
-            }
-          }
-        }
+              senderName: true,
+            },
+          },
+        },
       });
 
       if (!contact) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           message: 'Contact not found',
-          code: 'NOT_FOUND'
+          code: 'NOT_FOUND',
         });
       }
 
@@ -628,16 +628,16 @@ router.get(
         storeId,
         storeName,
         isSubscribed: contact.isSubscribed,
-        message: contact.isSubscribed 
+        message: contact.isSubscribed
           ? `You are subscribed to SMS messages from ${storeName}.`
-          : `You are already unsubscribed from ${storeName}.`
+          : `You are already unsubscribed from ${storeName}.`,
       });
     } catch (e) {
       // Ensure error has proper status for public endpoint
       if (!e.status) {e.status = 400;}
       next(e);
     }
-  }
+  },
 );
 
 /* ---------------------------------------------------------
@@ -668,16 +668,16 @@ router.post(
   async (req, res, next) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ 
-          message: 'No file uploaded', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'No file uploaded',
+          code: 'VALIDATION_ERROR',
         });
       }
 
       if (!contactImportQueue) {
-        return res.status(503).json({ 
-          message: 'Import service is currently unavailable', 
-          code: 'SERVICE_UNAVAILABLE' 
+        return res.status(503).json({
+          message: 'Import service is currently unavailable',
+          code: 'SERVICE_UNAVAILABLE',
         });
       }
 
@@ -693,7 +693,7 @@ router.post(
         },
         {
           attempts: 1, // Don't retry on failure (user can re-upload)
-        }
+        },
       );
 
       logger.info({ userId: req.user.id, jobId: job.id }, 'Contact import job created');
@@ -706,7 +706,7 @@ router.post(
     } catch (e) {
       next(e);
     }
-  }
+  },
 );
 
 /* ---------------------------------------------------------
@@ -719,26 +719,26 @@ router.get('/contacts/import/:jobId', requireAuth, async (req, res, next) => {
     const userId = req.user.id;
 
     if (!contactImportQueue) {
-      return res.status(503).json({ 
-        message: 'Import service is currently unavailable', 
-        code: 'SERVICE_UNAVAILABLE' 
+      return res.status(503).json({
+        message: 'Import service is currently unavailable',
+        code: 'SERVICE_UNAVAILABLE',
       });
     }
 
     const job = await contactImportQueue.getJob(jobId);
 
     if (!job) {
-      return res.status(404).json({ 
-        message: 'Import job not found', 
-        code: 'RESOURCE_NOT_FOUND' 
+      return res.status(404).json({
+        message: 'Import job not found',
+        code: 'RESOURCE_NOT_FOUND',
       });
     }
 
     // Verify job belongs to user
     if (job.data.userId !== userId) {
-      return res.status(403).json({ 
-        message: 'Access denied', 
-        code: 'AUTHORIZATION_ERROR' 
+      return res.status(403).json({
+        message: 'Access denied',
+        code: 'AUTHORIZATION_ERROR',
       });
     }
 
@@ -789,5 +789,209 @@ router.get('/contacts/import/template', requireAuth, async (req, res, next) => {
     next(e);
   }
 });
+
+/* ---------------------------------------------------------
+ * PUBLIC ENDPOINTS: Unsubscribe/Preferences
+ * --------------------------------------------------------- */
+const { verifyUnsubscribeToken } = require('../services/token.service');
+
+// GET /contacts/preferences/:pageToken - Get contact preferences
+router.get('/contacts/preferences/:pageToken',
+  rateLimitByIp(unsubIpLimiter),
+  async (req, res, next) => {
+    try {
+      const { pageToken } = req.params;
+
+      const decoded = verifyUnsubscribeToken(pageToken);
+      if (!decoded) {
+        return res.status(400).json({
+          message: 'Invalid or expired token',
+          code: 'INVALID_TOKEN',
+        });
+      }
+
+      const contact = await prisma.contact.findUnique({
+        where: { id: decoded.contactId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          isSubscribed: true,
+          unsubscribedAt: true,
+          owner: {
+            select: {
+              company: true,
+              senderName: true,
+            },
+          },
+        },
+      });
+
+      if (!contact || contact.owner.id !== decoded.storeId) {
+        return res.status(404).json({
+          message: 'Contact not found',
+          code: 'NOT_FOUND',
+        });
+      }
+
+      res.json({
+        storeName: contact.owner.company || contact.owner.senderName || 'Store',
+        isSubscribed: contact.isSubscribed,
+        contact: {
+          firstName: contact.firstName || undefined,
+          lastNameInitial: contact.lastName ? `${contact.lastName.charAt(0)}.` : undefined,
+        },
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// POST /contacts/unsubscribe - Unsubscribe contact
+router.post('/contacts/unsubscribe',
+  rateLimitByIp(unsubIpLimiter),
+  async (req, res, next) => {
+    try {
+      const { pageToken, token } = req.body;
+      const tokenToUse = pageToken || token;
+
+      if (!tokenToUse) {
+        return res.status(400).json({
+          message: 'Token required',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      const decoded = verifyUnsubscribeToken(tokenToUse);
+      if (!decoded) {
+        return res.status(400).json({
+          message: 'Invalid or expired token',
+          code: 'INVALID_TOKEN',
+        });
+      }
+
+      // Rate limit by token
+      try {
+        await unsubTokenLimiter.consume(`token:${tokenToUse}`);
+      } catch (rl) {
+        const ms = rl?.msBeforeNext ?? 86400_000;
+        res.set('Retry-After', Math.ceil(ms / 1000));
+        return res.status(429).json({
+          message: 'Too many attempts. Please try again later.',
+          code: 'RATE_LIMITED',
+        });
+      }
+
+      const contact = await prisma.contact.findUnique({
+        where: { id: decoded.contactId },
+      });
+
+      if (!contact) {
+        return res.status(404).json({
+          message: 'Contact not found',
+          code: 'NOT_FOUND',
+        });
+      }
+
+      // Verify ownership
+      if (contact.ownerId !== decoded.storeId) {
+        return res.status(403).json({
+          message: 'Invalid token',
+          code: 'AUTHORIZATION_ERROR',
+        });
+      }
+
+      // Update contact to unsubscribed
+      await prisma.contact.update({
+        where: { id: decoded.contactId },
+        data: {
+          isSubscribed: false,
+          unsubscribedAt: new Date(),
+          smsConsentStatus: 'opted_out',
+        },
+      });
+
+      logger.info({
+        contactId: decoded.contactId,
+        ownerId: decoded.storeId,
+      }, 'Contact unsubscribed');
+
+      res.json({
+        message: 'You have been unsubscribed successfully',
+        status: 'unsubscribed',
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// POST /contacts/resubscribe - Resubscribe contact
+router.post('/contacts/resubscribe',
+  rateLimitByIp(unsubIpLimiter),
+  async (req, res, next) => {
+    try {
+      const { pageToken } = req.body;
+
+      if (!pageToken) {
+        return res.status(400).json({
+          message: 'Token required',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      const decoded = verifyUnsubscribeToken(pageToken);
+      if (!decoded) {
+        return res.status(400).json({
+          message: 'Invalid or expired token',
+          code: 'INVALID_TOKEN',
+        });
+      }
+
+      const contact = await prisma.contact.findUnique({
+        where: { id: decoded.contactId },
+      });
+
+      if (!contact) {
+        return res.status(404).json({
+          message: 'Contact not found',
+          code: 'NOT_FOUND',
+        });
+      }
+
+      // Verify ownership
+      if (contact.ownerId !== decoded.storeId) {
+        return res.status(403).json({
+          message: 'Invalid token',
+          code: 'AUTHORIZATION_ERROR',
+        });
+      }
+
+      // Update contact to subscribed
+      await prisma.contact.update({
+        where: { id: decoded.contactId },
+        data: {
+          isSubscribed: true,
+          unsubscribedAt: null,
+          smsConsentStatus: 'opted_in',
+          smsConsentAt: new Date(),
+        },
+      });
+
+      logger.info({
+        contactId: decoded.contactId,
+        ownerId: decoded.storeId,
+      }, 'Contact resubscribed');
+
+      res.json({
+        message: 'You have been resubscribed successfully',
+        status: 'subscribed',
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 module.exports = router;

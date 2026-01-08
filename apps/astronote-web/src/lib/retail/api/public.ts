@@ -66,15 +66,36 @@ export interface NfcSubmitResponse {
 
 export interface JoinInfoResponse {
   ok: boolean
+  active?: boolean
+  storeName?: string
   branding: {
     storeName: string
+    storeDisplayName?: string
     logoUrl?: string | null
+    ogImageUrl?: string | null
     primaryColor?: string | null
+    secondaryColor?: string | null
+    backgroundColor?: string | null
+    textColor?: string | null
     accentColor?: string | null
     headline?: string | null
+    headlineOverride?: string | null
+    subheadline?: string | null
     benefits?: string[] | null
+    benefitsOverride?: string[] | null
+    incentiveText?: string | null
+    legalText?: string | null
     privacyUrl?: string | null
     termsUrl?: string | null
+    merchantBlurb?: string | null
+    extraTextBox?: string | null
+    pageTitle?: string | null
+    pageDescription?: string | null
+    websiteUrl?: string | null
+    facebookUrl?: string | null
+    instagramUrl?: string | null
+    rotateEnabled?: boolean | null
+    showPoweredBy?: boolean | null
   }
   defaults: { phoneCountryCode: string }
   publicBase: string

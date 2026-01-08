@@ -62,24 +62,24 @@ router.post(
       const email = normEmail(req.body?.email);
       const { password, senderName, company } = req.body || {};
       if (!email || !password) {
-        return res.status(400).json({ 
-          message: 'Email and password are required', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'Email and password are required',
+          code: 'VALIDATION_ERROR',
         });
       }
 
       const { user, accessToken, refreshToken, expiresAt } = await register({ email, password, senderName, company });
       setRefreshCookie(res, refreshToken, expiresAt);
-      
+
       res.status(201).json({
         accessToken,
-        user: { id: user.id, email: user.email, senderName: user.senderName, company: user.company }
+        user: { id: user.id, email: user.email, senderName: user.senderName, company: user.company },
       });
     } catch (e) {
       // Pass to centralized error handler for proper Prisma error handling
       next(e);
     }
-  }
+  },
 );
 
 // Login
@@ -92,9 +92,9 @@ router.post(
       const email = normEmail(req.body?.email);
       const { password } = req.body || {};
       if (!email || !password) {
-        return res.status(400).json({ 
-          message: 'Email and password are required', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'Email and password are required',
+          code: 'VALIDATION_ERROR',
         });
       }
 
@@ -103,7 +103,7 @@ router.post(
 
       res.json({
         accessToken,
-        user: { id: user.id, email: user.email, senderName: user.senderName, company: user.company }
+        user: { id: user.id, email: user.email, senderName: user.senderName, company: user.company },
       });
     } catch (e) {
       // Ensure error has 401 status for auth failures (don't leak whether email exists)
@@ -115,7 +115,7 @@ router.post(
       }
       next(e);
     }
-  }
+  },
 );
 
 // Refresh
@@ -134,7 +134,7 @@ router.post(
       const { accessToken, user } = await refresh(token);
       res.json({
         accessToken,
-        user: { id: user.id, email: user.email, senderName: user.senderName, company: user.company }
+        user: { id: user.id, email: user.email, senderName: user.senderName, company: user.company },
       });
     } catch (e) {
       // Ensure error has 401 status for auth failures
@@ -143,7 +143,7 @@ router.post(
       }
       next(e);
     }
-  }
+  },
 );
 
 // Logout
@@ -165,7 +165,7 @@ router.post(
       }
       next(e);
     }
-  }
+  },
 );
 
 /**
@@ -182,7 +182,7 @@ router.put('/user', requireAuth, async (req, res, next) => {
     const { sanitizeString } = require('../lib/sanitize');
     const { name, company, senderName, timezone } = req.body || {};
     const updates = {};
-    
+
     // Note: User model doesn't have a 'name' field - ignore it if provided
     // The User model supports: senderName, company, and timezone
     if (name !== undefined) {
@@ -195,9 +195,9 @@ router.put('/user', requireAuth, async (req, res, next) => {
     if (senderName !== undefined) {
       const sanitized = senderName ? sanitizeString(senderName, { maxLength: 11 }) : null;
       if (sanitized && sanitized.length > 11) {
-        return res.status(400).json({ 
-          message: 'Sender ID must be 11 characters or less', 
-          code: 'VALIDATION_ERROR' 
+        return res.status(400).json({
+          message: 'Sender ID must be 11 characters or less',
+          code: 'VALIDATION_ERROR',
         });
       }
       updates.senderName = sanitized;
@@ -207,31 +207,31 @@ router.put('/user', requireAuth, async (req, res, next) => {
       if (timezone !== null && timezone !== '') {
         const tzPattern = /^[A-Za-z_]+\/[A-Za-z_]+$/;
         if (!tzPattern.test(timezone)) {
-          return res.status(400).json({ 
-            message: 'Invalid timezone format. Use IANA timezone (e.g. "Europe/Athens")', 
-            code: 'VALIDATION_ERROR' 
+          return res.status(400).json({
+            message: 'Invalid timezone format. Use IANA timezone (e.g. "Europe/Athens")',
+            code: 'VALIDATION_ERROR',
           });
         }
         // Additional validation: try to use it with Intl.DateTimeFormat to ensure it's valid
         try {
           new Intl.DateTimeFormat('en-US', { timeZone: timezone });
         } catch (tzError) {
-          return res.status(400).json({ 
-            message: 'Invalid timezone. Please select a valid IANA timezone.', 
-            code: 'VALIDATION_ERROR' 
+          return res.status(400).json({
+            message: 'Invalid timezone. Please select a valid IANA timezone.',
+            code: 'VALIDATION_ERROR',
           });
         }
       }
       updates.timezone = timezone || null;
     }
-    
+
     if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ 
-        message: 'No updates provided', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'No updates provided',
+        code: 'VALIDATION_ERROR',
       });
     }
-    
+
     const user = await prisma.user.update({
       where: { id: req.user.id },
       data: updates,
@@ -240,10 +240,10 @@ router.put('/user', requireAuth, async (req, res, next) => {
         email: true,
         senderName: true,
         company: true,
-        timezone: true
-      }
+        timezone: true,
+      },
     });
-    
+
     res.json(user);
   } catch (e) {
     next(e);
@@ -261,28 +261,28 @@ router.put('/user/password', requireAuth, async (req, res, next) => {
   try {
     const { oldPassword, newPassword } = req.body || {};
     if (!oldPassword || !newPassword) {
-      return res.status(400).json({ 
-        message: 'Current password and new password are required', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'Current password and new password are required',
+        code: 'VALIDATION_ERROR',
       });
     }
-    
+
     const { verifyPassword, hashPassword } = require('../lib/passwords');
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    
+
     if (!user || !(await verifyPassword(oldPassword, user.passwordHash))) {
-      return res.status(401).json({ 
-        message: 'Invalid current password', 
-        code: 'AUTHENTICATION_ERROR' 
+      return res.status(401).json({
+        message: 'Invalid current password',
+        code: 'AUTHENTICATION_ERROR',
       });
     }
-    
+
     const passwordHash = await hashPassword(newPassword);
     await prisma.user.update({
       where: { id: req.user.id },
-      data: { passwordHash }
+      data: { passwordHash },
     });
-    
+
     res.json({ ok: true });
   } catch (e) {
     next(e);

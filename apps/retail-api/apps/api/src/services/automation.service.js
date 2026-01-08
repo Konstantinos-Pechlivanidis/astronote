@@ -33,7 +33,7 @@ function newTrackingId() {
 
 const AUTOMATION_TYPES = {
   WELCOME: 'welcome_message',
-  BIRTHDAY: 'birthday_message'
+  BIRTHDAY: 'birthday_message',
 };
 
 /**
@@ -45,16 +45,16 @@ async function getOrCreateAutomation(ownerId, type) {
     where: {
       ownerId_type: {
         ownerId,
-        type
-      }
-    }
+        type,
+      },
+    },
   });
 
   if (!automation) {
     // Create with default inactive state and default message
     const defaultMessages = {
       [AUTOMATION_TYPES.WELCOME]: 'Hi {{first_name}}, welcome to our community! 🎉',
-      [AUTOMATION_TYPES.BIRTHDAY]: 'Happy Birthday {{first_name}}! 🎂 We hope you have a wonderful day!'
+      [AUTOMATION_TYPES.BIRTHDAY]: 'Happy Birthday {{first_name}}! 🎂 We hope you have a wonderful day!',
     };
 
     automation = await prisma.automation.create({
@@ -62,8 +62,8 @@ async function getOrCreateAutomation(ownerId, type) {
         ownerId,
         type,
         isActive: false, // Default to inactive
-        messageBody: defaultMessages[type] || 'Hello {{first_name}}!'
-      }
+        messageBody: defaultMessages[type] || 'Hello {{first_name}}!',
+      },
     });
   }
 
@@ -77,7 +77,7 @@ async function getOrCreateAutomation(ownerId, type) {
 async function getAutomations(ownerId) {
   const [welcome, birthday] = await Promise.all([
     getOrCreateAutomation(ownerId, AUTOMATION_TYPES.WELCOME),
-    getOrCreateAutomation(ownerId, AUTOMATION_TYPES.BIRTHDAY)
+    getOrCreateAutomation(ownerId, AUTOMATION_TYPES.BIRTHDAY),
   ]);
 
   return {
@@ -87,7 +87,7 @@ async function getAutomations(ownerId) {
       isActive: welcome.isActive,
       messageBody: welcome.messageBody,
       createdAt: welcome.createdAt,
-      updatedAt: welcome.updatedAt
+      updatedAt: welcome.updatedAt,
     },
     birthday: {
       id: birthday.id,
@@ -95,8 +95,8 @@ async function getAutomations(ownerId) {
       isActive: birthday.isActive,
       messageBody: birthday.messageBody,
       createdAt: birthday.createdAt,
-      updatedAt: birthday.updatedAt
-    }
+      updatedAt: birthday.updatedAt,
+    },
   };
 }
 
@@ -110,13 +110,13 @@ async function updateAutomation(ownerId, type, updates) {
   const automation = await prisma.automation.updateMany({
     where: {
       ownerId,
-      type
+      type,
     },
     data: {
       ...(updates.isActive !== undefined && { isActive: updates.isActive }),
       ...(updates.messageBody !== undefined && { messageBody: updates.messageBody }),
-      updatedAt: new Date()
-    }
+      updatedAt: new Date(),
+    },
   });
 
   if (automation.count === 0) {
@@ -127,9 +127,9 @@ async function updateAutomation(ownerId, type, updates) {
     where: {
       ownerId_type: {
         ownerId,
-        type
-      }
-    }
+        type,
+      },
+    },
   });
 }
 
@@ -139,14 +139,14 @@ async function updateAutomation(ownerId, type, updates) {
  */
 async function triggerWelcomeAutomation(ownerId, contact) {
   // Log for debugging
-  logger.debug({ 
-    ownerId, 
-    contactId: contact.id, 
+  logger.debug({
+    ownerId,
+    contactId: contact.id,
     isSubscribed: contact.isSubscribed,
     hasFirstName: !!contact.firstName,
-    hasLastName: !!contact.lastName
+    hasLastName: !!contact.lastName,
   }, 'Triggering welcome automation');
-  
+
   // Only send to subscribed contacts
   if (!contact.isSubscribed) {
     logger.info({ ownerId, contactId: contact.id }, 'Welcome automation skipped: contact not subscribed');
@@ -158,25 +158,25 @@ async function triggerWelcomeAutomation(ownerId, contact) {
     where: {
       ownerId_type: {
         ownerId,
-        type: AUTOMATION_TYPES.WELCOME
-      }
-    }
+        type: AUTOMATION_TYPES.WELCOME,
+      },
+    },
   });
 
   // Check if active
   if (!automation || !automation.isActive) {
-    logger.info({ 
-      ownerId, 
+    logger.info({
+      ownerId,
       contactId: contact.id,
       automationExists: !!automation,
-      isActive: automation?.isActive 
+      isActive: automation?.isActive,
     }, 'Welcome automation skipped: automation inactive or missing');
     return { sent: false, reason: 'automation_inactive' };
   }
 
   // Render message with contact placeholders
   let messageText = render(automation.messageBody, contact);
-  
+
   if (!messageText || !messageText.trim()) {
     logger.error({ ownerId, contactId: contact.id, messageBody: automation.messageBody }, 'Welcome automation message is empty after rendering');
     return { sent: false, reason: 'empty_message', error: 'Message body is empty after rendering' };
@@ -186,7 +186,7 @@ async function triggerWelcomeAutomation(ownerId, contact) {
   const trackingId = newTrackingId();
   const offerUrl = `${OFFER_BASE_URL}/o/${trackingId}`;
   const shortenedOfferUrl = await shortenUrl(offerUrl);
-  
+
   // Append offer link to message (with shortened URL)
   messageText += `\n\nView offer: ${shortenedOfferUrl}`;
 
@@ -203,7 +203,7 @@ async function triggerWelcomeAutomation(ownerId, contact) {
     logger.error({ ownerId, err: err.message }, 'Failed to resolve sender for welcome automation');
     return { sent: false, reason: 'no_sender_configured', error: err.message };
   }
-  
+
   // Validate phone number
   if (!contact.phone || !contact.phone.trim()) {
     logger.error({ ownerId, contactId: contact.id }, 'Contact phone number is missing');
@@ -215,13 +215,13 @@ async function triggerWelcomeAutomation(ownerId, contact) {
     ownerId,
     destination: contact.phone,
     text: messageText,
-    sender: sender,
+    sender,
     contactId: contact.id, // Pass contactId for unsubscribe link generation
     meta: {
       reason: 'automation:welcome',
       automationType: AUTOMATION_TYPES.WELCOME,
-      automationId: automation.id
-    }
+      automationId: automation.id,
+    },
   });
 
   // Create AutomationMessage record
@@ -238,8 +238,8 @@ async function triggerWelcomeAutomation(ownerId, contact) {
           trackingId,
           status: 'sent',
           providerMessageId: result.messageId,
-          sentAt: new Date()
-        }
+          sentAt: new Date(),
+        },
       });
       logger.debug({ ownerId, automationId: automation.id, contactId: contact.id, trackingId }, 'AutomationMessage created (sent)');
     } else {
@@ -254,8 +254,8 @@ async function triggerWelcomeAutomation(ownerId, contact) {
           trackingId,
           status: 'failed',
           error: result.error || result.reason || 'Send failed',
-          failedAt: new Date()
-        }
+          failedAt: new Date(),
+        },
       });
       logger.debug({ ownerId, automationId: automation.id, contactId: contact.id, trackingId }, 'AutomationMessage created (failed)');
     }
@@ -266,30 +266,30 @@ async function triggerWelcomeAutomation(ownerId, contact) {
 
   // Log result
   if (result.sent) {
-    logger.info({ 
-      ownerId, 
+    logger.info({
+      ownerId,
       contactId: contact.id,
       messageId: result.messageId,
       destination: contact.phone,
-      trackingId
+      trackingId,
     }, 'Welcome automation message sent successfully');
   } else if (result.reason === 'inactive_subscription') {
-    logger.warn({ 
-      ownerId, 
-      contactId: contact.id
+    logger.warn({
+      ownerId,
+      contactId: contact.id,
     }, 'Welcome automation blocked: inactive subscription');
   } else if (result.reason === 'insufficient_credits') {
-    logger.warn({ 
-      ownerId, 
+    logger.warn({
+      ownerId,
       contactId: contact.id,
-      balance: result.balanceAfter
+      balance: result.balanceAfter,
     }, 'Welcome automation blocked: insufficient credits');
   } else {
-    logger.error({ 
-      ownerId, 
-      contactId: contact.id, 
+    logger.error({
+      ownerId,
+      contactId: contact.id,
       reason: result.reason,
-      error: result.error 
+      error: result.error,
     }, 'Welcome automation send failed');
   }
 
@@ -311,13 +311,13 @@ async function processBirthdayAutomations() {
   const activeBirthdayAutomations = await prisma.automation.findMany({
     where: {
       type: AUTOMATION_TYPES.BIRTHDAY,
-      isActive: true
+      isActive: true,
     },
     include: {
       owner: {
-        select: { id: true, senderName: true }
-      }
-    }
+        select: { id: true, senderName: true },
+      },
+    },
   });
 
   if (activeBirthdayAutomations.length === 0) {
@@ -340,9 +340,9 @@ async function processBirthdayAutomations() {
         ownerId: automation.ownerId,
         isSubscribed: true,
         birthday: {
-          not: null
-        }
-      }
+          not: null,
+        },
+      },
     });
 
     // Filter contacts whose birthday is today
@@ -357,9 +357,9 @@ async function processBirthdayAutomations() {
       continue;
     }
 
-    logger.debug({ 
-      ownerId: automation.ownerId, 
-      contactCount: birthdayContacts.length 
+    logger.debug({
+      ownerId: automation.ownerId,
+      contactCount: birthdayContacts.length,
     }, 'Found contacts with birthday today');
 
     // Get sender name
@@ -382,20 +382,20 @@ async function processBirthdayAutomations() {
     for (const contact of birthdayContacts) {
       totalProcessed++;
 
-      logger.debug({ 
+      logger.debug({
         ownerId: automation.ownerId,
         contactId: contact.id,
         hasFirstName: !!contact.firstName,
         hasLastName: !!contact.lastName,
-        phone: contact.phone
+        phone: contact.phone,
       }, 'Processing birthday message for contact');
 
       try {
         // Validate phone number
         if (!contact.phone || !contact.phone.trim()) {
-          logger.error({ 
-            ownerId: automation.ownerId, 
-            contactId: contact.id 
+          logger.error({
+            ownerId: automation.ownerId,
+            contactId: contact.id,
           }, 'Contact phone number is missing for birthday automation');
           totalFailed++;
           continue;
@@ -403,12 +403,12 @@ async function processBirthdayAutomations() {
 
         // Render message with contact placeholders
         let messageText = render(automation.messageBody, contact);
-        
+
         if (!messageText || !messageText.trim()) {
-          logger.error({ 
-            ownerId: automation.ownerId, 
-            contactId: contact.id, 
-            messageBody: automation.messageBody 
+          logger.error({
+            ownerId: automation.ownerId,
+            contactId: contact.id,
+            messageBody: automation.messageBody,
           }, 'Birthday automation message is empty after rendering');
           totalFailed++;
           continue;
@@ -418,7 +418,7 @@ async function processBirthdayAutomations() {
         const trackingId = newTrackingId();
         const offerUrl = `${OFFER_BASE_URL}/o/${trackingId}`;
         const shortenedOfferUrl = await shortenUrl(offerUrl);
-        
+
         // Append offer link to message (with shortened URL)
         messageText += `\n\nView offer: ${shortenedOfferUrl}`;
 
@@ -427,13 +427,13 @@ async function processBirthdayAutomations() {
           ownerId: automation.ownerId,
           destination: contact.phone,
           text: messageText,
-          sender: sender,
+          sender,
           contactId: contact.id, // Pass contactId for unsubscribe link generation
           meta: {
             reason: 'automation:birthday',
             automationType: AUTOMATION_TYPES.BIRTHDAY,
-            automationId: automation.id
-          }
+            automationId: automation.id,
+          },
         });
 
         // Create AutomationMessage record
@@ -450,8 +450,8 @@ async function processBirthdayAutomations() {
                 trackingId,
                 status: 'sent',
                 providerMessageId: result.messageId,
-                sentAt: new Date()
-              }
+                sentAt: new Date(),
+              },
             });
             logger.debug({ ownerId: automation.ownerId, automationId: automation.id, contactId: contact.id, trackingId }, 'AutomationMessage created (sent)');
           } else {
@@ -466,8 +466,8 @@ async function processBirthdayAutomations() {
                 trackingId,
                 status: 'failed',
                 error: result.error || result.reason || 'Send failed',
-                failedAt: new Date()
-              }
+                failedAt: new Date(),
+              },
             });
             logger.debug({ ownerId: automation.ownerId, automationId: automation.id, contactId: contact.id, trackingId }, 'AutomationMessage created (failed)');
           }
@@ -479,40 +479,40 @@ async function processBirthdayAutomations() {
         // Log result
         if (result.sent) {
           totalSent++;
-          logger.info({ 
-            ownerId: automation.ownerId, 
+          logger.info({
+            ownerId: automation.ownerId,
             contactId: contact.id,
             messageId: result.messageId,
             destination: contact.phone,
-            trackingId
+            trackingId,
           }, 'Birthday automation message sent successfully');
         } else if (result.reason === 'inactive_subscription') {
-          logger.warn({ 
-            ownerId: automation.ownerId, 
-            contactId: contact.id
+          logger.warn({
+            ownerId: automation.ownerId,
+            contactId: contact.id,
           }, 'Birthday automation blocked: inactive subscription');
         } else if (result.reason === 'insufficient_credits') {
-          logger.warn({ 
-            ownerId: automation.ownerId, 
+          logger.warn({
+            ownerId: automation.ownerId,
             contactId: contact.id,
-            balance: result.balanceAfter
+            balance: result.balanceAfter,
           }, 'Birthday automation blocked: insufficient credits');
           totalFailed++;
         } else {
-          logger.error({ 
-            ownerId: automation.ownerId, 
+          logger.error({
+            ownerId: automation.ownerId,
             contactId: contact.id,
             reason: result.reason,
-            error: result.error 
+            error: result.error,
           }, 'Birthday automation send failed');
           totalFailed++;
         }
       } catch (err) {
-        logger.error({ 
-          ownerId: automation.ownerId, 
-          contactId: contact.id, 
+        logger.error({
+          ownerId: automation.ownerId,
+          contactId: contact.id,
           err: err.message,
-          stack: err.stack
+          stack: err.stack,
         }, 'Birthday automation error');
         totalFailed++;
       }
@@ -523,14 +523,14 @@ async function processBirthdayAutomations() {
     processed: totalProcessed,
     sent: totalSent,
     failed: totalFailed,
-    storesProcessed: activeBirthdayAutomations.length
+    storesProcessed: activeBirthdayAutomations.length,
   }, 'Birthday automations processing completed');
 
   return {
     processed: totalProcessed,
     sent: totalSent,
     failed: totalFailed,
-    storesProcessed: activeBirthdayAutomations.length
+    storesProcessed: activeBirthdayAutomations.length,
   };
 }
 
@@ -539,6 +539,6 @@ module.exports = {
   updateAutomation,
   triggerWelcomeAutomation,
   processBirthdayAutomations,
-  AUTOMATION_TYPES
+  AUTOMATION_TYPES,
 };
 

@@ -20,10 +20,10 @@ async function getSystemUserId() {
   if (user) {
     // Check if this user has system templates
     const templateCount = await prisma.messageTemplate.count({
-      where: { 
+      where: {
         ownerId: configuredId,
-        name: { contains: ' (EN)' }
-      }
+        name: { contains: ' (EN)' },
+      },
     });
     if (templateCount > 0) {
       return configuredId;
@@ -35,7 +35,7 @@ async function getSystemUserId() {
     by: ['ownerId'],
     _count: { id: true },
     orderBy: { _count: { id: 'desc' } },
-    take: 1
+    take: 1,
   });
 
   if (templateOwner.length > 0 && templateOwner[0]._count.id > 10) {
@@ -65,16 +65,16 @@ router.get('/templates', requireAuth, async (req, res, next) => {
 
     // Validate language parameter (required: "en" or "gr")
     if (!language || !['en', 'gr'].includes(language)) {
-      return res.status(400).json({ 
-        message: 'Language parameter is required and must be "en" or "gr"', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'Language parameter is required and must be "en" or "gr"',
+        code: 'VALIDATION_ERROR',
       });
     }
 
     // Get the actual system user ID dynamically
     const actualSystemUserId = await getSystemUserId();
     const where = { ownerId: actualSystemUserId, language };
-    
+
     if (q) {where.name = { contains: q, mode: 'insensitive' };}
     if (category && ['cafe', 'restaurant', 'gym', 'sports_club', 'generic', 'hotels'].includes(category)) {
       where.category = category;
@@ -86,10 +86,10 @@ router.get('/templates', requireAuth, async (req, res, next) => {
         orderBy: { id: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        select: { 
-          id: true, 
-          name: true, 
-          text: true, 
+        select: {
+          id: true,
+          name: true,
+          text: true,
           category: true,
           goal: true,
           suggestedMetrics: true,
@@ -100,15 +100,15 @@ router.get('/templates', requireAuth, async (req, res, next) => {
           clickThroughRate: true,
           averageOrderValue: true,
           customerRetention: true,
-          createdAt: true, 
-          updatedAt: true 
-        }
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
-      prisma.messageTemplate.count({ where })
+      prisma.messageTemplate.count({ where }),
     ]);
 
     const response = { items, total, page, pageSize };
-    
+
     res.json(response);
   } catch (e) {
     next(e);
@@ -120,9 +120,9 @@ router.get('/templates/:id', requireAuth, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!id || isNaN(id)) {
-      return res.status(400).json({ 
-        message: 'Invalid template ID', 
-        code: 'VALIDATION_ERROR' 
+      return res.status(400).json({
+        message: 'Invalid template ID',
+        code: 'VALIDATION_ERROR',
       });
     }
 
@@ -130,10 +130,10 @@ router.get('/templates/:id', requireAuth, async (req, res, next) => {
     const actualSystemUserId = await getSystemUserId();
     const t = await prisma.messageTemplate.findFirst({
       where: { id, ownerId: actualSystemUserId },
-      select: { 
-        id: true, 
-        name: true, 
-        text: true, 
+      select: {
+        id: true,
+        name: true,
+        text: true,
         category: true,
         goal: true,
         suggestedMetrics: true,
@@ -144,14 +144,14 @@ router.get('/templates/:id', requireAuth, async (req, res, next) => {
         clickThroughRate: true,
         averageOrderValue: true,
         customerRetention: true,
-        createdAt: true, 
-        updatedAt: true 
-      }
+        createdAt: true,
+        updatedAt: true,
+      },
     });
     if (!t) {
-      return res.status(404).json({ 
-        message: 'Template not found', 
-        code: 'RESOURCE_NOT_FOUND' 
+      return res.status(404).json({
+        message: 'Template not found',
+        code: 'RESOURCE_NOT_FOUND',
       });
     }
 
@@ -163,21 +163,21 @@ router.get('/templates/:id', requireAuth, async (req, res, next) => {
 
 // Explicitly block write operations for non-admin users
 router.post('/templates', requireAuth, (_req, res) => {
-  return res.status(403).json({ 
-    message: 'Templates are managed by the platform.', 
-    code: 'FORBIDDEN' 
+  return res.status(403).json({
+    message: 'Templates are managed by the platform.',
+    code: 'FORBIDDEN',
   });
 });
 router.put('/templates/:id', requireAuth, (_req, res) => {
-  return res.status(403).json({ 
-    message: 'Templates are managed by the platform.', 
-    code: 'FORBIDDEN' 
+  return res.status(403).json({
+    message: 'Templates are managed by the platform.',
+    code: 'FORBIDDEN',
   });
 });
 router.delete('/templates/:id', requireAuth, (_req, res) => {
-  return res.status(403).json({ 
-    message: 'Templates are managed by the platform.', 
-    code: 'FORBIDDEN' 
+  return res.status(403).json({
+    message: 'Templates are managed by the platform.',
+    code: 'FORBIDDEN',
   });
 });
 

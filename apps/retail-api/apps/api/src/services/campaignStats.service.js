@@ -9,7 +9,7 @@ async function getFirstSentAt(campaignId, ownerId) {
   const first = await prisma.campaignMessage.findFirst({
     where: { ownerId, campaignId, sentAt: { not: null } },
     orderBy: { sentAt: 'asc' },
-    select: { sentAt: true }
+    select: { sentAt: true },
   });
   return first?.sentAt || null;
 }
@@ -27,8 +27,8 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
     select: {
       id: true,
       total: true,
-      updatedAt: true
-    }
+      updatedAt: true,
+    },
   });
   if (!campaign) {
     const err = new Error('campaign not found');
@@ -41,13 +41,13 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
 
   // Get conversions count from Redemption table (this is our conversion tracking)
   const conversions = await prisma.redemption.count({
-    where: { ownerId, campaignId }
+    where: { ownerId, campaignId },
   });
 
   // recipients (distinct contacts) — scoped via campaignMessage.ownerId
   const recipients = await prisma.campaignMessage.groupBy({
     by: ['contactId'],
-    where: { ownerId, campaignId }
+    where: { ownerId, campaignId },
   });
   const recipientIds = recipients.map(r => r.contactId);
 
@@ -61,8 +61,8 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
       where: {
         ownerId,                          // << scope
         id: { in: recipientIds },
-        unsubscribedAt: { gte: firstSentAt }
-      }
+        unsubscribedAt: { gte: firstSentAt },
+      },
     });
   }
 
@@ -76,7 +76,7 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
     failureRate: rate(metrics.deliveryFailed, metrics.delivered || 1),
     conversionRate: rate(conversions, metrics.delivered || 1), // Conversion rate = conversions / delivered
     firstSentAt,
-    updatedAt: campaign.updatedAt
+    updatedAt: campaign.updatedAt,
   };
 };
 
@@ -93,15 +93,15 @@ exports.getManyCampaignsStats = async (campaignIds, ownerId) => {
     where: { id: { in: campaignIds }, ownerId },
     select: {
       id: true,
-      total: true
-    }
+      total: true,
+    },
   });
 
   // Get conversions count per campaign (from Redemption table)
   const conversions = await prisma.redemption.groupBy({
     by: ['campaignId'],
     where: { ownerId, campaignId: { in: campaignIds } },
-    _count: { _all: true }
+    _count: { _all: true },
   });
 
   // Create a map for quick lookup
@@ -109,7 +109,7 @@ exports.getManyCampaignsStats = async (campaignIds, ownerId) => {
 
   const { computeCampaignMetrics } = require('./campaignMetrics.service');
   const metricsList = await Promise.all(
-    campaigns.map(c => computeCampaignMetrics({ campaignId: c.id, ownerId }))
+    campaigns.map(c => computeCampaignMetrics({ campaignId: c.id, ownerId })),
   );
 
   // Shape into per-campaign summary with rates (delivered as "sent" for backward compatibility)
@@ -123,7 +123,7 @@ exports.getManyCampaignsStats = async (campaignIds, ownerId) => {
       failed: m.deliveryFailed,
       conversions: conversionsCount,
       failureRate: rate(m.deliveryFailed, m.delivered || 1),
-      conversionRate: rate(conversionsCount, m.delivered || 1)
+      conversionRate: rate(conversionsCount, m.delivered || 1),
     };
   });
 

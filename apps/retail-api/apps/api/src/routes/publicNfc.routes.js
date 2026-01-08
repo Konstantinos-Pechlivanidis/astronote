@@ -1,13 +1,12 @@
 const express = require('express');
-const crypto = require('node:crypto');
 const prisma = require('../lib/prisma');
-const { rateLimitByIp } = require('../services/rateLimiter.service');
+const { createLimiter, rateLimitByKey } = require('../lib/ratelimit');
 const { normalizePhoneToE164 } = require('../lib/phone');
 
 const router = express.Router();
 
-const infoLimiter = { points: 30, duration: 60 };
-const submitLimiter = { points: 20, duration: 60 };
+const infoLimiter = createLimiter({ keyPrefix: 'rl:public:nfc:info', points: 300, duration: 60 });
+const submitLimiter = createLimiter({ keyPrefix: 'rl:public:nfc:submit', points: 60, duration: 60 });
 
 function isValidToken(token) {
   return /^[A-Za-z0-9_-]{8,64}$/.test(token || '');
@@ -23,7 +22,7 @@ function publicBase() {
 }
 
 // GET /public/nfc/:token -> resolve store info
-router.get('/public/nfc/:token', rateLimitByIp(infoLimiter), async (req, res, next) => {
+router.get('/public/nfc/:token', rateLimitByKey(infoLimiter, (req) => `${req.ip || 'unknown'}:${req.params.token || ''}`), async (req, res, next) => {
   try {
     const { token } = req.params;
     if (!isValidToken(token)) {
@@ -36,8 +35,8 @@ router.get('/public/nfc/:token', rateLimitByIp(infoLimiter), async (req, res, ne
         id: true,
         storeId: true,
         label: true,
-        store: { select: { company: true, senderName: true } }
-      }
+        store: { select: { company: true, senderName: true } },
+      },
     });
     if (!tag) {
       return res.status(404).json({ message: 'Not found', code: 'NOT_FOUND' });
@@ -58,7 +57,7 @@ router.get('/public/nfc/:token', rateLimitByIp(infoLimiter), async (req, res, ne
 });
 
 // POST /public/nfc/:token/submit -> create/update contact with consent
-router.post('/public/nfc/:token/submit', rateLimitByIp(submitLimiter), async (req, res, next) => {
+router.post('/public/nfc/:token/submit', rateLimitByKey(submitLimiter, (req) => `${req.ip || 'unknown'}:${req.params.token || ''}`), async (req, res, next) => {
   try {
     const { token } = req.params;
     if (!isValidToken(token)) {
@@ -83,7 +82,7 @@ router.post('/public/nfc/:token/submit', rateLimitByIp(submitLimiter), async (re
 
     const tag = await prisma.nfcTag.findFirst({
       where: { publicId: token, status: 'active', type: 'opt_in' },
-      select: { id: true, storeId: true }
+      select: { id: true, storeId: true },
     });
     if (!tag) {
       return res.status(404).json({ message: 'Not found', code: 'NOT_FOUND' });
@@ -92,7 +91,7 @@ router.post('/public/nfc/:token/submit', rateLimitByIp(submitLimiter), async (re
     const now = new Date();
     const contact = await prisma.contact.upsert({
       where: {
-        ownerId_phone: { ownerId: tag.storeId, phone }
+        ownerId_phone: { ownerId: tag.storeId, phone },
       },
       create: {
         ownerId: tag.storeId,
@@ -103,7 +102,7 @@ router.post('/public/nfc/:token/submit', rateLimitByIp(submitLimiter), async (re
         isSubscribed: true,
         gdprConsentAt: now,
         gdprConsentSource: 'nfc',
-        gdprConsentVersion: 'nfc-v1'
+        gdprConsentVersion: 'nfc-v1',
       },
       update: {
         firstName,
@@ -112,8 +111,8 @@ router.post('/public/nfc/:token/submit', rateLimitByIp(submitLimiter), async (re
         isSubscribed: true,
         gdprConsentAt: { set: now },
         gdprConsentSource: 'nfc',
-        gdprConsentVersion: 'nfc-v1'
-      }
+        gdprConsentVersion: 'nfc-v1',
+      },
     });
 
     await prisma.nfcScan.create({
@@ -124,15 +123,15 @@ router.post('/public/nfc/:token/submit', rateLimitByIp(submitLimiter), async (re
         status: 'submitted',
         ipAddress: req.ip || null,
         userAgent: req.headers['user-agent'] || null,
-        deviceType: null
-      }
+        deviceType: null,
+      },
     });
 
     res.json({
       ok: true,
       contactId: contact.id,
       phone,
-      status: 'ok'
+      status: 'ok',
     });
   } catch (e) {
     next(e);

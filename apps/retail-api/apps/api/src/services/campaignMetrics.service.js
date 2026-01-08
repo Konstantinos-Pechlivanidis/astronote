@@ -22,14 +22,14 @@ async function computeCampaignMetrics({ campaignId, ownerId }) {
         campaignId,
         ownerId,
         deliveryStatus: { in: deliveredStatuses },
-      }
+      },
     }),
     prisma.campaignMessage.count({
       where: {
         campaignId,
         ownerId,
         deliveryStatus: { in: failedDeliveryStatuses },
-      }
+      },
     }),
   ]);
 

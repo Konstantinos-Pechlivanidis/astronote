@@ -16,7 +16,7 @@ const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY, {
 /**
  * Get Stripe price ID for a package and currency
  * Priority: Package DB field -> Environment variable -> null
- * 
+ *
  * @param {string} packageName - Package name
  * @param {string} currency - Currency code (EUR, USD, etc.)
  * @param {Object} packageDb - Optional package object from DB with stripePriceIdEur/stripePriceIdUsd
@@ -24,7 +24,7 @@ const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY, {
  */
 function getStripePriceId(packageName, currency = 'EUR', packageDb = null) {
   const upperCurrency = currency.toUpperCase();
-  
+
   // First priority: Check package DB fields if provided
   if (packageDb) {
     if (upperCurrency === 'USD' && packageDb.stripePriceIdUsd) {
@@ -34,7 +34,7 @@ function getStripePriceId(packageName, currency = 'EUR', packageDb = null) {
       return packageDb.stripePriceIdEur;
     }
   }
-  
+
   // Second priority: Environment variable (format: STRIPE_PRICE_ID_{PACKAGE_NAME}_{CURRENCY})
   const envKey = `STRIPE_PRICE_ID_${packageName.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${upperCurrency}`;
   const envPriceId = process.env[envKey];
@@ -85,7 +85,7 @@ async function createCheckoutSession({
   package: pkg,
   currency = 'EUR',
   successUrl,
-  cancelUrl
+  cancelUrl,
 }) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
@@ -103,8 +103,8 @@ async function createCheckoutSession({
     line_items: [
       {
         price: priceId,
-        quantity: 1
-      }
+        quantity: 1,
+      },
     ],
     success_url: successUrl,
     cancel_url: cancelUrl,
@@ -113,14 +113,14 @@ async function createCheckoutSession({
       packageId: String(pkg.id),
       packageName: pkg.name,
       units: String(pkg.units),
-      currency: currency.toUpperCase()
+      currency: currency.toUpperCase(),
     },
     // Allow customer to enter email if not provided
     customer_email: userEmail || undefined,
     // Store ownerId in client_reference_id for easy lookup
     client_reference_id: `owner_${ownerId}`,
     // Expand line items to get price details in response
-    expand: ['line_items']
+    expand: ['line_items'],
   });
 
   return session;
@@ -163,7 +163,7 @@ async function createSubscriptionCheckoutSession({
   planType,
   currency = 'EUR',
   successUrl,
-  cancelUrl
+  cancelUrl,
 }) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
@@ -206,25 +206,25 @@ async function createSubscriptionCheckoutSession({
       line_items: [
         {
           price: priceId,
-          quantity: 1
-        }
+          quantity: 1,
+        },
       ],
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: {
         ownerId: String(ownerId),
         planType,
-        type: 'subscription'
+        type: 'subscription',
       },
       customer_email: userEmail || undefined,
       client_reference_id: `owner_${ownerId}`,
       subscription_data: {
         metadata: {
           ownerId: String(ownerId),
-          planType
-        }
+          planType,
+        },
       },
-      expand: ['line_items', 'subscription']
+      expand: ['line_items', 'subscription'],
     });
 
     return session;
@@ -259,7 +259,7 @@ async function createCreditTopupCheckoutSession({
   priceEur,
   currency = 'EUR',
   successUrl,
-  cancelUrl
+  cancelUrl,
 }) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
@@ -267,7 +267,7 @@ async function createCreditTopupCheckoutSession({
 
   // Try to use configured price ID first
   const priceId = getStripeCreditTopupPriceId(currency);
-  
+
   // If no price ID configured, create a one-time payment with custom amount
   if (!priceId) {
     // Create checkout session with custom amount
@@ -280,12 +280,12 @@ async function createCreditTopupCheckoutSession({
             currency: currency.toLowerCase(),
             product_data: {
               name: `${credits} SMS Credits`,
-              description: `Top-up of ${credits} SMS credits`
+              description: `Top-up of ${credits} SMS credits`,
             },
-            unit_amount: Math.round(priceEur * 100) // Convert EUR to cents (ensure integer)
+            unit_amount: Math.round(priceEur * 100), // Convert EUR to cents (ensure integer)
           },
-          quantity: 1
-        }
+          quantity: 1,
+        },
       ],
       success_url: successUrl,
       cancel_url: cancelUrl,
@@ -293,11 +293,11 @@ async function createCreditTopupCheckoutSession({
         ownerId: String(ownerId),
         credits: String(credits),
         priceEur: String(priceEur),
-        type: 'credit_topup'
+        type: 'credit_topup',
       },
       customer_email: userEmail || undefined,
       client_reference_id: `owner_${ownerId}_topup_${credits}`,
-      expand: ['line_items']
+      expand: ['line_items'],
     });
 
     return session;
@@ -332,12 +332,12 @@ async function createCreditTopupCheckoutSession({
             currency: currency.toLowerCase(),
             product_data: {
               name: `${credits} SMS Credits`,
-              description: `Top-up of ${credits} SMS credits`
+              description: `Top-up of ${credits} SMS credits`,
             },
-            unit_amount: Math.round(priceEur * 100) // Convert EUR to cents (ensure integer)
+            unit_amount: Math.round(priceEur * 100), // Convert EUR to cents (ensure integer)
           },
-          quantity: 1
-        }
+          quantity: 1,
+        },
       ],
       success_url: successUrl,
       cancel_url: cancelUrl,
@@ -345,11 +345,11 @@ async function createCreditTopupCheckoutSession({
         ownerId: String(ownerId),
         credits: String(credits),
         priceEur: String(priceEur),
-        type: 'credit_topup'
+        type: 'credit_topup',
       },
       customer_email: userEmail || undefined,
       client_reference_id: `owner_${ownerId}_topup_${credits}`,
-      expand: ['line_items']
+      expand: ['line_items'],
     });
     return session;
   }
@@ -363,8 +363,8 @@ async function createCreditTopupCheckoutSession({
     line_items: [
       {
         price: validatedPriceId,
-        quantity: credits // Price is per-credit, so quantity = number of credits
-      }
+        quantity: credits, // Price is per-credit, so quantity = number of credits
+      },
     ],
     success_url: successUrl,
     cancel_url: cancelUrl,
@@ -372,11 +372,11 @@ async function createCreditTopupCheckoutSession({
       ownerId: String(ownerId),
       credits: String(credits),
       priceEur: String(priceEur),
-      type: 'credit_topup'
+      type: 'credit_topup',
     },
     customer_email: userEmail || undefined,
     client_reference_id: `owner_${ownerId}_topup_${credits}`,
-    expand: ['line_items']
+    expand: ['line_items'],
   });
 
   return session;
@@ -395,7 +395,7 @@ async function getCustomerPortalUrl(customerId, returnUrl) {
 
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
-    return_url: returnUrl
+    return_url: returnUrl,
   });
 
   return session.url;
@@ -429,7 +429,7 @@ async function updateSubscription(subscriptionId, newPlanType) {
 
   // Retrieve current subscription
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  
+
   // Update subscription with new price
   const updated = await stripe.subscriptions.update(subscriptionId, {
     items: [{
@@ -439,8 +439,8 @@ async function updateSubscription(subscriptionId, newPlanType) {
     proration_behavior: 'always_invoice', // Prorate the change
     metadata: {
       planType: newPlanType,
-      updatedAt: new Date().toISOString()
-    }
+      updatedAt: new Date().toISOString(),
+    },
   });
 
   logger.info({ subscriptionId, newPlanType, newPriceId }, 'Subscription updated');
@@ -482,6 +482,6 @@ module.exports = {
   verifyWebhookSignature,
   getStripePriceId,
   getStripeSubscriptionPriceId,
-  getStripeCreditTopupPriceId
+  getStripeCreditTopupPriceId,
 };
 

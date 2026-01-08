@@ -15,7 +15,7 @@ function sanitizeString(input, options = {}) {
   const {
     maxLength = 10000,
     allowHtml = false,
-    trim = true
+    trim = true,
   } = options;
 
   let sanitized = input;
@@ -83,7 +83,7 @@ function sanitizeEmail(email) {
   }
 
   const sanitized = email.trim().toLowerCase();
-  
+
   // Basic email validation
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(sanitized) || sanitized.length > 320) {
@@ -115,13 +115,13 @@ function sanitizePhone(phone) {
  */
 function sanitizeNumber(input, options = {}) {
   const { min, max, allowFloat = false } = options;
-  
+
   if (input === null || input === undefined || input === '') {
     return null;
   }
 
   const num = allowFloat ? parseFloat(input) : parseInt(input, 10);
-  
+
   if (isNaN(num)) {
     return null;
   }
@@ -142,6 +142,6 @@ module.exports = {
   sanitizeObject,
   sanitizeEmail,
   sanitizePhone,
-  sanitizeNumber
+  sanitizeNumber,
 };
 

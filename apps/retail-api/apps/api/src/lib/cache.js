@@ -1,17 +1,17 @@
 // apps/api/src/lib/cache.js
 // Redis cache wrapper with safe no-op fallbacks
-// 
+//
 // ⚠️⚠️⚠️ CACHE DISABLED - DO NOT USE ⚠️⚠️⚠️
-// 
+//
 // All caching has been removed for development and testing.
 // This file remains for future re-enabling but is currently UNUSED.
-// 
+//
 // NO cache calls should be made in routes or services.
 // If you need caching, re-enable it properly with proper invalidation logic.
-// 
+//
 // This file is kept only for reference and should NOT be imported anywhere.
 //
-// Key naming convention (for future reference): 
+// Key naming convention (for future reference):
 //   - Cache: `cache:{resource}:{id}` or `cache:{resource}:v{version}:{ownerId}:{id}`
 //   - Stats: `stats:{resource}:v{version}:{ownerId}:{id}`
 //   - Lists: `campaigns:list:v{version}:{ownerId}:{params}`
@@ -53,7 +53,7 @@ async function cacheSet(key, value, ttlSec = 30) {
   }
   try {
     // Use SET with EX option for atomic set+expire
-    await redis.set(key, value, "EX", ttlSec);
+    await redis.set(key, value, 'EX', ttlSec);
     return true;
   } catch (err) {
     // Silently fail - cache write failure is acceptable
@@ -82,7 +82,7 @@ async function cacheDel(key) {
  * Delete all keys matching a prefix (uses SCAN to avoid blocking)
  * @param {string} prefix - Key prefix to match (e.g., "cache:stats:")
  * @returns {Promise<number>} Number of keys deleted
- * 
+ *
  * Note: Uses SCAN instead of KEYS to avoid blocking Redis server
  */
 async function cacheDelPrefix(prefix) {
@@ -91,15 +91,15 @@ async function cacheDelPrefix(prefix) {
   }
   let deleted = 0;
   try {
-    let cursor = "0";
+    let cursor = '0';
     do {
       // SCAN is non-blocking, unlike KEYS
       const [next, keys] = await redis.scan(
         cursor,
-        "MATCH",
+        'MATCH',
         `${prefix}*`,
-        "COUNT",
-        200 // Process 200 keys per iteration
+        'COUNT',
+        200, // Process 200 keys per iteration
       );
       cursor = next;
       if (keys && keys.length > 0) {
@@ -107,7 +107,7 @@ async function cacheDelPrefix(prefix) {
         const n = await redis.del(...keys);
         deleted += n;
       }
-    } while (cursor !== "0");
+    } while (cursor !== '0');
   } catch (err) {
     // Silently fail - cache cleanup failure is acceptable
   }

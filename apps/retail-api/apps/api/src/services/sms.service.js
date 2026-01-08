@@ -30,7 +30,7 @@ const UNSUBSCRIBE_BASE_URL = ensureRetailPath(baseFrontendUrl);
 /**
  * Send SMS with credit enforcement
  * Checks balance before sending, debits ONLY after successful send (when messageId is received)
- * 
+ *
  * @param {Object} params
  * @param {number} params.ownerId - Store owner ID
  * @param {string} params.destination - Recipient phone number
@@ -47,7 +47,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
     return {
       sent: false,
       reason: 'inactive_subscription',
-      error: 'Active subscription required to send SMS. Please subscribe to a plan.'
+      error: 'Active subscription required to send SMS. Please subscribe to a plan.',
     };
   }
 
@@ -59,7 +59,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
       sent: false,
       reason: 'insufficient_credits',
       balance,
-      error: 'Not enough credits to send SMS. Please purchase credits.'
+      error: 'Not enough credits to send SMS. Please purchase credits.',
     };
   }
 
@@ -85,7 +85,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
       userId: ownerId,
       destination,
       text: finalText,
-      sender
+      sender,
     });
 
     // 5. Only debit credits AFTER successful send (when we have messageId)
@@ -95,14 +95,14 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
           reason: meta.reason || 'sms:send',
           campaignId: meta.campaignId || null,
           messageId: meta.messageId || null,
-          meta: meta
+          meta,
         });
         logger.debug({ ownerId, balanceAfter: debitResult.balance }, 'Credits debited after successful send');
-        
-        logger.info({ 
-          ownerId, 
-          destination, 
-          messageId: result.messageId 
+
+        logger.info({
+          ownerId,
+          destination,
+          messageId: result.messageId,
         }, 'SMS sent successfully');
 
         return {
@@ -110,7 +110,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
           messageId: result.messageId,
           providerMessageId: result.messageId, // Mitto messageId is the provider messageId
           trafficAccountId: result.trafficAccountId,
-          balanceAfter: debitResult.balance
+          balanceAfter: debitResult.balance,
         };
       } catch (debitErr) {
         // Log error but don't fail - message was already sent
@@ -120,7 +120,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
           messageId: result.messageId,
           providerMessageId: result.messageId, // Mitto messageId is the provider messageId
           trafficAccountId: result.trafficAccountId,
-          balanceAfter: balance // Return original balance if debit failed
+          balanceAfter: balance, // Return original balance if debit failed
         };
       }
     } else {
@@ -129,7 +129,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
       return {
         sent: false,
         reason: 'send_failed',
-        error: 'Mitto send succeeded but no messageId returned'
+        error: 'Mitto send succeeded but no messageId returned',
       };
     }
   } catch (err) {
@@ -140,7 +140,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
       sent: false,
       reason: 'send_failed',
       error: err.message,
-      balanceAfter: balance
+      balanceAfter: balance,
     };
   }
 }
@@ -158,6 +158,6 @@ function isRetryableError(err) {
 
 module.exports = {
   sendSMSWithCredits,
-  isRetryableError
+  isRetryableError,
 };
 

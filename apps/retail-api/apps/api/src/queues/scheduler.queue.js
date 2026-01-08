@@ -3,7 +3,7 @@ const { Queue } = require('bullmq');
 const { getRedisClient } = require('../lib/redis');
 
 function formatRedisInfo(connection) {
-  if (!connection) return {};
+  if (!connection) {return {};}
   const opts = connection.options || connection.opts || connection.connector?.options || {};
   const host =
     opts.host ||
@@ -28,27 +28,27 @@ if (process.env.QUEUE_DISABLED === '1') {
     module.exports = null;
   } else {
 
-// BullMQ can work with a Redis client that connects asynchronously
-// The queue will wait for Redis to be ready before processing jobs
-const schedulerQueue = new Queue('schedulerQueue', {
-  connection,
-  defaultJobOptions: {
-    removeOnComplete: true,
-    removeOnFail: false
-  }
-});
+    // BullMQ can work with a Redis client that connects asynchronously
+    // The queue will wait for Redis to be ready before processing jobs
+    const schedulerQueue = new Queue('schedulerQueue', {
+      connection,
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: false,
+      },
+    });
 
-// Log when queue is ready (after Redis connects)
-if (connection.status === 'ready') {
-  console.log('[Scheduler Queue] Ready');
-} else {
-  connection.once('ready', () => {
-    console.log('[Scheduler Queue] Ready');
-  });
-}
+    // Log when queue is ready (after Redis connects)
+    if (connection.status === 'ready') {
+      console.log('[Scheduler Queue] Ready');
+    } else {
+      connection.once('ready', () => {
+        console.log('[Scheduler Queue] Ready');
+      });
+    }
 
-console.log('[Scheduler Queue] Using Redis connection', { queue: 'schedulerQueue', redis: formatRedisInfo(connection) });
+    console.log('[Scheduler Queue] Using Redis connection', { queue: 'schedulerQueue', redis: formatRedisInfo(connection) });
 
-module.exports = schedulerQueue;
+    module.exports = schedulerQueue;
   }
 }

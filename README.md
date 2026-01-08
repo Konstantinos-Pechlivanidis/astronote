@@ -6,7 +6,7 @@
 
 **Enterprise-grade SMS Marketing Platform for Shopify and Retail Businesses**
 
-[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18+-61dafb.svg)](https://reactjs.org/)
 [![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
@@ -144,7 +144,7 @@ astronote/
 
 ### Backend (`apps/shopify-api`, `apps/retail-api`)
 
-- **Node.js 18+** - Runtime
+- **Node.js 20.x** - Runtime
 - **Express.js** - Web framework
 - **Prisma** - ORM and database toolkit
 - **PostgreSQL** (Neon) - Primary database
@@ -205,10 +205,12 @@ The monorepo uses **npm workspaces** for dependency management:
 
 ### Prerequisites
 
-- **Node.js** >= 18.0.0
+- **Node.js** 20.x (the repo engines require >=20 <21)
 - **npm** >= 8.0.0
 - **PostgreSQL** database (Neon recommended)
 - **Redis** instance (Redis Cloud recommended)
+
+If you have a newer Node (e.g., v24), use `nvm install 20` + `nvm use 20` to match the workspace engines.
 
 ### Installation
 
@@ -437,4 +439,3 @@ For support and questions:
 [⬆ Back to Top](#astronote---sms-marketing-platform)
 
 </div>
-

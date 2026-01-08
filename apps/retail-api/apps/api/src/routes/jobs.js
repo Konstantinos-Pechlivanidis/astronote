@@ -14,13 +14,13 @@ router.get('/jobs/health', requireAuth, async (_req, res, next) => {
     if (schedulerQueue) {
       const counts = await schedulerQueue.getJobCounts();
       out.scheduler = counts;
-      
+
       // Also get waiting/delayed jobs for debugging
       const waiting = await schedulerQueue.getWaiting();
       const delayed = await schedulerQueue.getDelayed();
       const active = await schedulerQueue.getActive();
       const failed = await schedulerQueue.getFailed();
-      
+
       out.schedulerDetails = {
         waiting: waiting.length,
         delayed: delayed.length,
@@ -30,15 +30,15 @@ router.get('/jobs/health', requireAuth, async (_req, res, next) => {
           id: j.id,
           name: j.name,
           data: j.data,
-          opts: j.opts
+          opts: j.opts,
         })),
         delayedJobs: delayed.slice(0, 5).map(j => ({
           id: j.id,
           name: j.name,
           data: j.data,
           delay: j.opts?.delay,
-          timestamp: j.timestamp
-        }))
+          timestamp: j.timestamp,
+        })),
       };
     } else {
       out.scheduler = 'disabled';

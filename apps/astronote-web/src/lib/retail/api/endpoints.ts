@@ -100,8 +100,10 @@ export const endpoints = {
   publicLinks: {
     me: '/api/me/public-links',
     rotate: '/api/me/public-links/rotate',
-    branding: '/api/me/retail-branding',
+    joinToken: '/api/retail/join-token',
   },
+  branding: '/api/branding',
+  joinBranding: '/api/retail/branding',
 
   // Public (no auth)
   public: {
@@ -111,7 +113,7 @@ export const endpoints = {
     nfcInfo: (token: string) => `/public/nfc/${token}`,
     nfcSubmit: (token: string) => `/public/nfc/${token}/submit`,
     joinInfo: (token: string) => `/public/join/${token}`,
-    joinSubmit: (token: string) => `/public/join/${token}/submit`,
+    joinSubmit: (token: string) => `/public/join/${token}`,
     // Unsubscribe/Resubscribe
     unsubscribeRedirect: (token: string) => `/api/contacts/unsubscribe/${token}`,
     preferences: (pageToken: string) => `/api/contacts/preferences/${pageToken}`,

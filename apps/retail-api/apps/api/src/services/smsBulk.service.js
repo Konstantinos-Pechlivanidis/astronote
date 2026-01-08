@@ -11,7 +11,7 @@ const logger = pino({ name: 'sms-bulk-service' });
 /**
  * Send bulk SMS with credit enforcement
  * Checks balance before sending, debits ONLY after successful send (when messageId is received)
- * 
+ *
  * @param {Array<Object>} messages - Array of message data objects
  * @param {number} messages[].ownerId - Store owner ID
  * @param {string} messages[].destination - Recipient phone number
@@ -51,20 +51,20 @@ async function sendBulkSMSWithCredits(messages) {
         internalMessageId: msg.internalMessageId,
         sent: false,
         reason: 'inactive_subscription',
-        error: 'Active subscription required to send SMS. Please subscribe to a plan.'
+        error: 'Active subscription required to send SMS. Please subscribe to a plan.',
       })),
       summary: {
         total: messages.length,
         sent: 0,
-        failed: messages.length
-      }
+        failed: messages.length,
+      },
     };
   }
 
   // 2. Check balance before sending (need credits for all messages)
   const balance = await getBalance(ownerId);
   const requiredCredits = messages.length;
-  
+
   if (balance < requiredCredits) {
     logger.warn({ ownerId, balance, requiredCredits, messageCount: messages.length }, 'Insufficient credits for bulk SMS send');
     return {
@@ -74,13 +74,13 @@ async function sendBulkSMSWithCredits(messages) {
         sent: false,
         reason: 'insufficient_credits',
         balance,
-        error: 'Not enough credits to send SMS. Please purchase credits.'
+        error: 'Not enough credits to send SMS. Please purchase credits.',
       })),
       summary: {
         total: messages.length,
         sent: 0,
-        failed: messages.length
-      }
+        failed: messages.length,
+      },
     };
   }
 
@@ -88,13 +88,13 @@ async function sendBulkSMSWithCredits(messages) {
   // Resolve sender for all messages (assuming same sender for batch, or resolve per message)
   const { resolveSender } = require('./mitto.service');
   const TRAFFIC_ACCOUNT_ID = process.env.SMS_TRAFFIC_ACCOUNT_ID || process.env.MITTO_TRAFFIC_ACCOUNT_ID;
-  
+
   const mittoMessages = [];
   const messageMapping = []; // Maps index in mittoMessages to internal message data
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    
+
     // Resolve sender (use createdById for sender resolution, or ownerId as fallback)
     let finalSender;
     try {
@@ -115,8 +115,8 @@ async function sendBulkSMSWithCredits(messages) {
       destination: msg.destination,
       sms: {
         text: msg.text,
-        sender: finalSender
-      }
+        sender: finalSender,
+      },
     });
 
     messageMapping.push({
@@ -125,7 +125,7 @@ async function sendBulkSMSWithCredits(messages) {
       ownerId: msg.ownerId,
       destination: msg.destination,
       text: msg.text,
-      meta: msg.meta || {}
+      meta: msg.meta || {},
     });
   }
 
@@ -137,29 +137,29 @@ async function sendBulkSMSWithCredits(messages) {
         internalMessageId: msg.internalMessageId,
         sent: false,
         reason: 'preparation_failed',
-        error: 'Message preparation failed'
+        error: 'Message preparation failed',
       })),
       summary: {
         total: messages.length,
         sent: 0,
-        failed: messages.length
-      }
+        failed: messages.length,
+      },
     };
   }
 
   // 4. Check rate limits before sending
   const { checkAllLimits } = require('./rateLimiter.service');
   const trafficAccountId = mittoMessages[0]?.trafficAccountId || TRAFFIC_ACCOUNT_ID;
-  
+
   const rateLimitCheck = await checkAllLimits(trafficAccountId, ownerId);
   if (!rateLimitCheck.allowed) {
-    logger.warn({ 
-      ownerId, 
+    logger.warn({
+      ownerId,
       trafficAccountId,
       trafficAccountRemaining: rateLimitCheck.trafficAccountLimit.remaining,
-      tenantRemaining: rateLimitCheck.tenantLimit.remaining
+      tenantRemaining: rateLimitCheck.tenantLimit.remaining,
     }, 'Rate limit exceeded, will retry with backoff (Phase 2.1)');
-    
+
     // Throw error instead of returning - allows worker to retry with exponential backoff
     // Worker's isRetryable() will recognize this as retryable
     const error = new Error('Rate limit exceeded. Will retry after backoff.');
@@ -200,7 +200,7 @@ async function sendBulkSMSWithCredits(messages) {
     // Process each message in our mapping
     for (const mapping of messageMapping) {
       const respMsg = responseMap.get(mapping.index);
-      
+
       if (respMsg && respMsg.messageId) {
         if (process.env.DEBUG_SEND_LOGS === '1') {
           logger.info({
@@ -210,7 +210,7 @@ async function sendBulkSMSWithCredits(messages) {
             internalMessageId: mapping.internalMessageId,
             providerMessageId: respMsg.messageId,
             mapIndex: mapping.index,
-            bulkId: result.bulkId
+            bulkId: result.bulkId,
           }, '[DEBUG] Mapping accepted messageId');
         }
         // Message sent successfully - debit credits (idempotent) but never fail the send
@@ -219,15 +219,15 @@ async function sendBulkSMSWithCredits(messages) {
             reason: mapping.meta.reason || 'sms:send:bulk',
             campaignId: mapping.meta.campaignId || null,
             messageId: mapping.internalMessageId || null,
-            meta: { ...mapping.meta, bulkId: result.bulkId }
+            meta: { ...mapping.meta, bulkId: result.bulkId },
           });
-          
-          logger.debug({ 
-            ownerId: mapping.ownerId, 
+
+          logger.debug({
+            ownerId: mapping.ownerId,
             internalMessageId: mapping.internalMessageId,
             messageId: respMsg.messageId,
             balanceAfter: debitResult.balance,
-            reusedDebit: Boolean(debitResult.reused)
+            reusedDebit: Boolean(debitResult.reused),
           }, 'Credits debited after successful bulk send');
 
           results.push({
@@ -238,17 +238,17 @@ async function sendBulkSMSWithCredits(messages) {
             trafficAccountId: respMsg.trafficAccountId,
             balanceAfter: debitResult.balance,
             billingStatus: 'paid',
-            billedAt: new Date()
+            billedAt: new Date(),
           });
           successCount++;
         } catch (debitErr) {
           // Log error but don't fail - message was already sent; mark billing pending/failure
-          logger.error({ 
-            ownerId: mapping.ownerId, 
+          logger.error({
+            ownerId: mapping.ownerId,
             internalMessageId: mapping.internalMessageId,
-            err: debitErr.message 
+            err: debitErr.message,
           }, 'Failed to debit credits after successful bulk send');
-          
+
           results.push({
             internalMessageId: mapping.internalMessageId,
             sent: true,
@@ -257,23 +257,23 @@ async function sendBulkSMSWithCredits(messages) {
             trafficAccountId: respMsg.trafficAccountId,
             balanceAfter: balance, // Return original balance if debit failed
             billingStatus: 'failed',
-            billingError: debitErr.message
+            billingError: debitErr.message,
           });
           successCount++;
         }
       } else {
         // No messageId in response - treat as failure
-        logger.error({ 
-          ownerId: mapping.ownerId, 
+        logger.error({
+          ownerId: mapping.ownerId,
           internalMessageId: mapping.internalMessageId,
-          destination: mapping.destination 
+          destination: mapping.destination,
         }, 'Mitto bulk send succeeded but no messageId returned for message');
-        
+
         results.push({
           internalMessageId: mapping.internalMessageId,
           sent: false,
           reason: 'send_failed',
-          error: 'Mitto send succeeded but no messageId returned'
+          error: 'Mitto send succeeded but no messageId returned',
         });
         failureCount++;
       }
@@ -285,7 +285,7 @@ async function sendBulkSMSWithCredits(messages) {
         ownerId,
         campaignId: messages[0]?.meta?.campaignId,
         bulkId: result.bulkId,
-        resultsSample: results.slice(0, 10)
+        resultsSample: results.slice(0, 10),
       }, '[DEBUG] Bulk results before return');
     }
 
@@ -303,18 +303,18 @@ async function sendBulkSMSWithCredits(messages) {
           internalMessageId: msg.internalMessageId,
           sent: false,
           reason: 'preparation_failed',
-          error: 'Message was skipped during preparation'
+          error: 'Message was skipped during preparation',
         });
         failureCount++;
       }
     }
 
-    logger.info({ 
-      ownerId, 
+    logger.info({
+      ownerId,
       bulkId: result.bulkId,
       total: messages.length,
       sent: successCount,
-      failed: failureCount
+      failed: failureCount,
     }, 'Bulk SMS send completed');
 
     return {
@@ -323,9 +323,9 @@ async function sendBulkSMSWithCredits(messages) {
       summary: {
         total: messages.length,
         sent: successCount,
-        failed: failureCount
+        failed: failureCount,
       },
-      rawResponse: result.rawResponse
+      rawResponse: result.rawResponse,
     };
   } catch (err) {
     // 7. On send failure, do NOT debit credits (no messageId = no debit)
@@ -338,17 +338,17 @@ async function sendBulkSMSWithCredits(messages) {
         sent: false,
         reason: 'send_failed',
         error: err.message,
-        balanceAfter: balance
+        balanceAfter: balance,
       })),
       summary: {
         total: messages.length,
         sent: 0,
-        failed: messages.length
-      }
+        failed: messages.length,
+      },
     };
   }
 }
 
 module.exports = {
-  sendBulkSMSWithCredits
+  sendBulkSMSWithCredits,
 };

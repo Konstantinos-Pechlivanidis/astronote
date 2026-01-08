@@ -8,7 +8,7 @@ const r = Router();
 r.get('/campaigns', requireAuth, async (req, res, next) => {
   try {
     const {
-      page, pageSize, q, status, dateFrom, dateTo, orderBy, order, withStats
+      page, pageSize, q, status, dateFrom, dateTo, orderBy, order, withStats,
     } = req.query;
 
     const ownerId = req.user.id; // << SCOPE (1 user = 1 store)
@@ -28,14 +28,14 @@ r.get('/campaigns', requireAuth, async (req, res, next) => {
       dateTo,
       orderBy: safeOrderBy,
       order: safeOrder,
-      withStats: wantStats
+      withStats: wantStats,
     });
 
     const payload = {
       page: Number(page || 1),
       pageSize: Number(pageSize || 10),
       total: out.total,
-      items: out.items
+      items: out.items,
     };
 
     res.json(payload);

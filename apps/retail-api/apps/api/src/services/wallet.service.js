@@ -12,7 +12,7 @@ exports.ensureWallet = async (ownerId) => {
   return prisma.wallet.upsert({
     where: { ownerId },
     update: {},
-    create: { ownerId, balance: 0 }
+    create: { ownerId, balance: 0 },
   });
 };
 
@@ -34,7 +34,7 @@ async function appendTxnAndUpdate(ownerId, delta, type, { reason, campaignId, me
       where: { ownerId },
       update: {},
       create: { ownerId, balance: 0 },
-      select: { id: true, balance: true }
+      select: { id: true, balance: true },
     });
 
     const newBalance = wallet.balance + delta;
@@ -46,7 +46,7 @@ async function appendTxnAndUpdate(ownerId, delta, type, { reason, campaignId, me
     // Update wallet
     await client.wallet.update({
       where: { ownerId },
-      data: { balance: newBalance }
+      data: { balance: newBalance },
     });
 
     // Insert transaction
@@ -60,8 +60,8 @@ async function appendTxnAndUpdate(ownerId, delta, type, { reason, campaignId, me
         campaignId: campaignId || null,
         messageId: messageId || null,
         meta: meta || undefined,
-        walletId: wallet.id              // Link to wallet for referential integrity
-      }
+        walletId: wallet.id,              // Link to wallet for referential integrity
+      },
     });
 
     logger.info({ ownerId, type, amount: Math.abs(delta), balanceAfter: newBalance, reason }, 'Wallet transaction completed');
@@ -107,7 +107,7 @@ exports.debitOnce = async (ownerId, amount, opts = {}) => {
   return prisma.$transaction(async (tx) => {
     if (reasonKey) {
       const existing = await tx.creditTransaction.findFirst({
-        where: { ownerId, type: 'debit', messageId: messageId || undefined }
+        where: { ownerId, type: 'debit', messageId: messageId || undefined },
       });
       if (existing) {
         logger.info({ ownerId, messageId, txnId: existing.id }, 'Skipped duplicate debit (idempotent)');

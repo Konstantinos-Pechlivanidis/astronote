@@ -1,6 +1,6 @@
 // apps/api/src/lib/redis.js
 // Centralized Redis client configuration following official ioredis best practices
-// 
+//
 // Note: This uses ioredis (not the 'redis' package). ioredis is required by BullMQ.
 // With lazyConnect: true, the client connects automatically on first command.
 const IORedis = require('ioredis');
@@ -8,7 +8,7 @@ const IORedis = require('ioredis');
 /**
  * Build Redis connection options from environment variables.
  * Supports both individual env vars and REDIS_URL fallback.
- * 
+ *
  * Environment variables:
  * - REDIS_HOST (default: localhost)
  * - REDIS_PORT (default: 6379)
@@ -42,7 +42,7 @@ function buildRedisConfig() {
       // Connection timeout (10 seconds)
       connectTimeout: 10000,
       // Enable keep-alive
-      keepAlive: 30000
+      keepAlive: 30000,
     };
   }
 
@@ -77,7 +77,7 @@ function buildRedisConfig() {
     // Connection timeout (10 seconds)
     connectTimeout: 10000,
     // Enable keep-alive
-    keepAlive: 30000
+    keepAlive: 30000,
   };
 
   if (username) {
@@ -106,7 +106,7 @@ function getRedisClient() {
   }
 
   const config = buildRedisConfig();
-  
+
   // Check if Redis is explicitly disabled
   if (process.env.REDIS_URL === 'disabled' || !config) {
     return null;
@@ -120,7 +120,7 @@ function getRedisClient() {
         retryStrategy: config.retryStrategy,
         reconnectOnError: config.reconnectOnError,
         connectTimeout: config.connectTimeout,
-        keepAlive: config.keepAlive
+        keepAlive: config.keepAlive,
       });
     } else {
       redisClient = new IORedis(config);
@@ -185,6 +185,6 @@ async function closeRedis() {
 module.exports = {
   getRedisClient,
   isRedisEnabled,
-  closeRedis
+  closeRedis,
 };
 

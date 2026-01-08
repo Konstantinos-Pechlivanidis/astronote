@@ -12,7 +12,7 @@ function normalizePhoneToE164(phone, defaultCountry = 'GR') {
   if (!phone || typeof phone !== 'string') {
     return null;
   }
-  
+
   const trimmed = phone.trim();
   if (!trimmed) {
     return null;
@@ -21,11 +21,11 @@ function normalizePhoneToE164(phone, defaultCountry = 'GR') {
   try {
     // Try to parse the phone number
     const phoneNumber = parsePhoneNumber(trimmed, defaultCountry);
-    
+
     if (phoneNumber && phoneNumber.isValid()) {
       return phoneNumber.number; // Returns E.164 format (e.g., +306984303406)
     }
-    
+
     return null;
   } catch (err) {
     // If parsing fails, try with AsYouType formatter
@@ -33,14 +33,14 @@ function normalizePhoneToE164(phone, defaultCountry = 'GR') {
       const formatter = new AsYouType(defaultCountry);
       formatter.input(trimmed);
       const phoneNumber = formatter.getNumber();
-      
+
       if (phoneNumber && phoneNumber.isValid()) {
         return phoneNumber.number;
       }
     } catch (e) {
       // Ignore
     }
-    
+
     return null;
   }
 }
@@ -78,6 +78,6 @@ function formatPhoneForDisplay(phone) {
 module.exports = {
   normalizePhoneToE164,
   isValidPhone,
-  formatPhoneForDisplay
+  formatPhoneForDisplay,
 };
 
