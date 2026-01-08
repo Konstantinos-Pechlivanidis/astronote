@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { RetailPublicOnlyGuard } from '@/src/components/retail/RetailPublicOnlyGuard';
 import { Button } from '@/components/ui/button';
 import { RetailCard } from '@/src/components/retail/RetailCard';
+import { AuthHeader } from '@/src/components/retail/AuthHeader';
 import { toast } from 'sonner';
 
 export default function RetailLoginPage() {
@@ -70,21 +71,19 @@ export default function RetailLoginPage() {
 
   return (
     <RetailPublicOnlyGuard>
-      <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 lg:px-8">
+      <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
         <div className="w-full max-w-md">
-          <RetailCard className="p-6 sm:p-8">
+          <RetailCard className="p-6 sm:p-8 lg:p-10">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div className="text-center">
-                <h2 className="mb-2 text-3xl font-bold text-text-primary">
-                  Welcome back
-                </h2>
-                <p className="text-sm text-text-secondary">Sign in to your account</p>
-              </div>
+              <AuthHeader
+                title="Welcome back"
+                subtitle="Sign in to your account"
+              />
 
               {error && (
-                <RetailCard variant="danger" className="p-4">
-                  <p className="text-sm text-red-800">{error}</p>
-                </RetailCard>
+                <div className="rounded-xl border border-red-200 bg-red-50/80 p-4 backdrop-blur-sm">
+                  <p className="text-sm font-medium text-red-800">{error}</p>
+                </div>
               )}
 
               <div className="space-y-2">
@@ -93,7 +92,7 @@ export default function RetailLoginPage() {
                   className="block text-sm font-medium text-text-secondary"
                 >
                   Email
-                  <span className="ml-1 text-red-400">*</span>
+                  <span className="ml-1 text-red-500">*</span>
                 </label>
                 <input
                   {...emailRegister}
@@ -113,14 +112,14 @@ export default function RetailLoginPage() {
                       cancelable: true,
                     } as React.ChangeEvent<HTMLInputElement>);
                   }}
-                  className={`h-11 w-full rounded-xl border bg-surface px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0 ${
+                  className={`h-12 w-full rounded-xl border bg-surface px-4 py-3 text-base text-text-primary transition-all placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background ${
                     shouldShowErrors && errors.email
-                      ? 'border-red-300 focus:border-red-400'
+                      ? 'border-red-400 focus:border-red-500 focus:ring-red-400'
                       : 'border-border focus:border-accent'
                   }`}
                 />
                 {shouldShowErrors && errors.email && (
-                  <p className="text-sm text-red-400">{errors.email.message}</p>
+                  <p className="text-sm font-medium text-red-600">{errors.email.message}</p>
                 )}
               </div>
 
@@ -150,39 +149,55 @@ export default function RetailLoginPage() {
                         cancelable: true,
                       } as React.ChangeEvent<HTMLInputElement>);
                     }}
-                    className={`h-11 w-full rounded-xl border bg-surface px-4 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-0 ${
+                    className={`h-12 w-full rounded-xl border bg-surface px-4 py-3 pr-12 text-base text-text-primary transition-all placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background ${
                       shouldShowErrors && errors.password
-                        ? 'border-red-300 focus:border-red-400'
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-400'
                         : 'border-border focus:border-accent'
                     }`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary transition-colors hover:text-text-primary"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary transition-colors hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 rounded-md p-1"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
                 {shouldShowErrors && errors.password && (
-                  <p className="text-sm text-red-400">{errors.password.message}</p>
+                  <p className="text-sm font-medium text-red-600">{errors.password.message}</p>
                 )}
               </div>
 
-              <Button type="submit" disabled={isLoading} className="w-full" size="lg">
-                {isLoading ? 'Signing in...' : 'Log In'}
-              </Button>
-
-              <p className="text-center text-sm text-text-secondary">
-                Don&apos;t have an account?{' '}
-                <Link
-                  href="/auth/retail/register"
-                  className="font-medium text-accent underline underline-offset-4 transition-colors hover:text-accent-hover"
+              <div className="pt-2">
+                <Button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full h-12 text-base font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                  size="lg"
                 >
-                  Sign up
-                </Link>
-              </p>
+                  {isLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Signing in...
+                    </span>
+                  ) : (
+                    'Log In'
+                  )}
+                </Button>
+              </div>
+
+              <div className="pt-2">
+                <p className="text-center text-sm text-text-secondary">
+                  Don&apos;t have an account?{' '}
+                  <Link
+                    href="/auth/retail/register"
+                    className="font-semibold text-accent underline underline-offset-4 transition-colors hover:text-accent-hover focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 rounded-sm"
+                  >
+                    Sign up
+                  </Link>
+                </p>
+              </div>
             </form>
           </RetailCard>
         </div>
