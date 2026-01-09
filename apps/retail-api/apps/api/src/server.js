@@ -66,8 +66,8 @@ const allowlist = (process.env.CORS_ALLOWLIST || '')
   .filter(Boolean);
 
 // Add default retail frontend URL if not in allowlist
-// const defaultRetailFrontend = 'https://astronote.onrender.com';
-const defaultRetailFrontend = 'http://localhost:3000';
+const defaultRetailFrontend = 'https://astronote.onrender.com';
+// const defaultRetailFrontend = 'http://localhost:3000';
 if (!allowlist.includes(defaultRetailFrontend) && !allowlist.some(a => defaultRetailFrontend.startsWith(a))) {
   allowlist.push(defaultRetailFrontend);
 }
