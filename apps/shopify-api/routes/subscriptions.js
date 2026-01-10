@@ -4,6 +4,7 @@ import { validateBody } from '../middlewares/validation.js';
 import {
   subscriptionSubscribeSchema,
   subscriptionUpdateSchema,
+  subscriptionSwitchSchema,
 } from '../schemas/subscription.schema.js';
 
 const r = express.Router();
@@ -16,6 +17,9 @@ r.post('/subscribe', validateBody(subscriptionSubscribeSchema), ctrl.subscribe);
 
 // POST /subscriptions/update - Update subscription plan
 r.post('/update', validateBody(subscriptionUpdateSchema), ctrl.update);
+
+// POST /subscriptions/switch - Switch subscription interval (monthly/yearly) or plan
+r.post('/switch', validateBody(subscriptionSwitchSchema), ctrl.switchInterval);
 
 // POST /subscriptions/cancel - Cancel subscription
 r.post('/cancel', ctrl.cancel);

@@ -4,9 +4,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   subscriptionsApi,
+  type BillingApiError,
   type SubscribeRequest,
   type UpdateSubscriptionRequest,
-} from '@/src/lib/shopify/api/billing';
+  type SwitchIntervalRequest,
+} from '@/src/lib/shopifyBillingApi';
 
 /**
  * React Query hook for subscribing to a plan
@@ -27,14 +29,16 @@ export function useSubscribe() {
       }
     },
     onError: (error: any) => {
-      if (error.response?.data?.code === 'ALREADY_SUBSCRIBED' || error.code === 'ALREADY_SUBSCRIBED') {
+      const apiError = error as BillingApiError;
+      const code = apiError?.code || error.response?.data?.code || error.code;
+      if (code === 'ALREADY_SUBSCRIBED') {
         toast.error('You already have an active subscription. Please cancel your current subscription first.');
-      } else if (error.response?.data?.code === 'MISSING_PRICE_ID' || error.code === 'MISSING_PRICE_ID') {
+      } else if (code === 'MISSING_PRICE_ID') {
         toast.error('Payment configuration error. Please contact support.');
-      } else if (error.response?.data?.code === 'INVALID_PLAN_TYPE' || error.code === 'INVALID_PLAN_TYPE') {
+      } else if (code === 'INVALID_PLAN_TYPE') {
         toast.error('Invalid subscription plan selected.');
       } else {
-        const message = error.response?.data?.message || 'Failed to initiate subscription';
+        const message = apiError?.message || error.response?.data?.message || 'Failed to initiate subscription';
         toast.error(message);
       }
     },
@@ -53,13 +57,15 @@ export function useUpdateSubscription() {
       return response;
     },
     onSuccess: () => {
-      // Invalidate subscription status
+      // Invalidate subscription status and billing summary
       queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
       toast.success('Subscription updated successfully');
     },
     onError: (error: any) => {
-      const message = error.response?.data?.message || 'Failed to update subscription';
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to update subscription';
       toast.error(message);
     },
   });
@@ -76,13 +82,15 @@ export function useCancelSubscription() {
       await subscriptionsApi.cancel();
     },
     onSuccess: () => {
-      // Invalidate subscription status
+      // Invalidate subscription status and billing summary
       queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
       toast.success('Subscription cancelled successfully');
     },
     onError: (error: any) => {
-      const message = error.response?.data?.message || 'Failed to cancel subscription';
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to cancel subscription';
       toast.error(message);
     },
   });
@@ -106,13 +114,40 @@ export function useGetPortal() {
       }
     },
     onError: (error: any) => {
-      if (error.response?.data?.code === 'MISSING_CUSTOMER_ID' || error.code === 'MISSING_CUSTOMER_ID') {
+      const apiError = error as BillingApiError;
+      const code = apiError?.code || error.response?.data?.code || error.code;
+      if (code === 'MISSING_CUSTOMER_ID') {
         toast.error('No payment account found. Please subscribe to a plan first.');
       } else {
-        const message = error.response?.data?.message || 'Failed to open customer portal';
+        const message = apiError?.message || error.response?.data?.message || 'Failed to open customer portal';
         toast.error(message);
       }
     },
   });
 }
 
+/**
+ * React Query hook for switching subscription interval
+ */
+export function useSwitchInterval() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: SwitchIntervalRequest) => {
+      const response = await subscriptionsApi.switchInterval(data);
+      return response;
+    },
+    onSuccess: () => {
+      // Invalidate subscription status and billing summary
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      toast.success('Subscription interval updated successfully');
+    },
+    onError: (error: any) => {
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to switch subscription interval';
+      toast.error(message);
+    },
+  });
+}

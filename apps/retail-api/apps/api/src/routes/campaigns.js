@@ -571,14 +571,14 @@ router.post('/campaigns/:id/enqueue', requireAuth, async (req, res, next) => {
       }
       if (result.reason === 'insufficient_credits') {
         return res.status(402).json(withRequestId({
-          message: "You don't have enough SMS credits to send this campaign. Please purchase additional credits and try again.",
+          message: "You don't have enough free SMS allowance or credits to send this campaign. Please purchase additional credits or upgrade your subscription.",
           code: 'INSUFFICIENT_CREDITS',
         }));
       }
-      if (result.reason === 'inactive_subscription') {
-        return res.status(402).json(withRequestId({
+      if (result.reason === 'subscription_required' || result.reason === 'inactive_subscription') {
+        return res.status(403).json(withRequestId({
           message: 'Active subscription required to send campaigns',
-          code: 'INACTIVE_SUBSCRIPTION',
+          code: 'SUBSCRIPTION_REQUIRED',
         }));
       }
       if (result.reason === 'queue_unavailable') {

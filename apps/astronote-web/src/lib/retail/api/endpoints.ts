@@ -23,6 +23,7 @@ export const endpoints = {
   billing: {
     balance: '/api/billing/balance',
     wallet: '/api/billing/wallet',
+    summary: '/api/billing/summary',
     packages: '/api/billing/packages',
     transactions: '/api/billing/transactions',
     purchases: '/api/billing/purchases',
@@ -36,6 +37,7 @@ export const endpoints = {
     current: '/api/subscriptions/current',
     subscribe: '/api/subscriptions/subscribe',
     update: '/api/subscriptions/update',
+    switch: '/api/subscriptions/switch',
     cancel: '/api/subscriptions/cancel',
     portal: '/api/subscriptions/portal',
   },

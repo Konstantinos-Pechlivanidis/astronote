@@ -6,6 +6,7 @@ import { calculateTopupPrice } from '../services/subscription.js';
 import { createCreditTopupCheckoutSession } from '../services/stripe.js';
 import prisma from '../services/prisma.js';
 import { sendSuccess, sendPaginated, sendError } from '../utils/response.js';
+import crypto from 'crypto';
 
 /**
  * Billing Controller
@@ -69,14 +70,13 @@ export async function getPackages(req, res, next) {
   try {
     const storeId = getStoreId(req);
 
-    // Check subscription status - packages only available with active subscription
+    // Check subscription status - packages only available with active subscription (aligned with Retail)
     const subscription = await getSubscriptionStatus(storeId);
     if (!subscription.active) {
-      // Return empty array if no active subscription
+      // Return empty array if no active subscription (matches Retail behavior)
       return sendSuccess(res, {
         packages: [],
         currency: 'EUR',
-        subscriptionRequired: true,
       });
     }
 
@@ -117,6 +117,26 @@ export async function getPackages(req, res, next) {
     }
 
     const packages = await billingService.getPackages(currency);
+
+    // Generate ETag for caching (aligned with Retail)
+    if (packages.length > 0) {
+      const etagSource = JSON.stringify(
+        packages.map((pkg) => ({
+          id: pkg.id,
+          name: pkg.name,
+          credits: pkg.credits,
+          price: pkg.price,
+          currency: pkg.currency,
+          stripePriceId: pkg.stripePriceId,
+        })),
+      );
+      const etagValue = `W/"${crypto.createHash('sha256').update(etagSource).digest('hex')}"`;
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch && ifNoneMatch === etagValue) {
+        return res.status(304).end();
+      }
+      res.set('ETag', etagValue);
+    }
 
     return sendSuccess(res, { packages, currency });
   } catch (error) {
@@ -184,6 +204,14 @@ export async function createPurchase(req, res, next) {
 
     const { packageId, successUrl, cancelUrl, currency } = req.body;
 
+    // Get idempotency key from headers (aligned with Retail)
+    const idempotencyKeyHeader =
+      req.headers['idempotency-key'] ||
+      req.headers['x-idempotency-key'];
+    const idempotencyKey = idempotencyKeyHeader
+      ? String(idempotencyKeyHeader).trim().slice(0, 128)
+      : null;
+
     // Additional validation
     if (!packageId) {
       logger.warn('Missing packageId in request body', { body: req.body });
@@ -194,6 +222,15 @@ export async function createPurchase(req, res, next) {
         code: 'VALIDATION_ERROR',
         apiVersion: 'v1',
       });
+    }
+
+    if (!idempotencyKey) {
+      return sendError(
+        res,
+        400,
+        'MISSING_IDEMPOTENCY_KEY',
+        'Idempotency-Key header is required',
+      );
     }
 
     if (!successUrl || !cancelUrl) {
@@ -207,20 +244,58 @@ export async function createPurchase(req, res, next) {
       });
     }
 
+    // Check for existing purchase with same idempotency key (idempotency check)
+    const existingPurchase = await prisma.purchase.findFirst({
+      where: {
+        shopId: storeId,
+        idempotencyKey,
+      },
+    });
+
+    if (existingPurchase?.stripeSessionId) {
+      // Return existing session if found (idempotent response)
+      const { getCheckoutSession } = await import('../services/stripe.js');
+      let checkoutUrl = null;
+      try {
+        const session = await getCheckoutSession(existingPurchase.stripeSessionId);
+        checkoutUrl = session.url || null;
+      } catch (err) {
+        logger.warn({
+          purchaseId: existingPurchase.id,
+          sessionId: existingPurchase.stripeSessionId,
+          err: err.message,
+        }, 'Failed to retrieve existing checkout session');
+      }
+
+      return sendSuccess(
+        res,
+        {
+          checkoutUrl,
+          sessionId: existingPurchase.stripeSessionId,
+          purchaseId: existingPurchase.id,
+          status: existingPurchase.status,
+          idempotent: true,
+        },
+        'Existing purchase session found',
+      );
+    }
+
     logger.info('Creating purchase session', {
       storeId,
       packageId,
       currency: currency || 'EUR',
+      idempotencyKey,
       successUrl,
       cancelUrl,
     });
 
-    // Create Stripe checkout session
+    // Create Stripe checkout session (with idempotency key)
     const session = await billingService.createPurchaseSession(
       storeId,
       packageId,
       { successUrl, cancelUrl },
       currency, // Pass currency if provided
+      idempotencyKey, // Pass idempotency key
     );
 
     logger.info('Purchase session created successfully', {
@@ -365,6 +440,19 @@ export async function getHistory(req, res, next) {
 export async function getBillingHistory(req, res, next) {
   try {
     const storeId = getStoreId(req);
+    
+    // Validate query params
+    const allowedStatuses = ['pending', 'completed', 'failed', 'refunded'];
+    if (req.query.status && !allowedStatuses.includes(req.query.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_FILTER',
+        message: `Invalid status filter. Allowed values: ${allowedStatuses.join(', ')}`,
+        code: 'INVALID_FILTER',
+        requestId: req.id,
+      });
+    }
+
     const filters = {
       page: req.query.page,
       pageSize: req.query.pageSize,
@@ -386,6 +474,28 @@ export async function getBillingHistory(req, res, next) {
   }
 }
 
+/**
+ * Get billing summary (subscription + allowance + credits)
+ * @route GET /billing/summary
+ */
+export async function getSummary(req, res, next) {
+  try {
+    const storeId = getStoreId(req);
+
+    const { getBillingSummary } = await import('../services/subscription.js');
+    const summary = await getBillingSummary(storeId);
+
+    return sendSuccess(res, summary, 'Billing summary retrieved');
+  } catch (error) {
+    logger.error('Get billing summary error', {
+      error: error.message,
+      stack: error.stack,
+      storeId: req.ctx?.store?.id,
+    });
+    next(error);
+  }
+}
+
 export default {
   getBalance,
   getPackages,
@@ -394,4 +504,5 @@ export default {
   createTopup,
   getHistory,
   getBillingHistory,
+  getSummary,
 };

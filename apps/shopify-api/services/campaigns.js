@@ -1,6 +1,6 @@
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
-import { ValidationError, NotFoundError } from '../utils/errors.js';
+import { ValidationError, NotFoundError, SubscriptionRequiredError } from '../utils/errors.js';
 import { InsufficientCreditsError } from './credit-validation.js';
 import { smsQueue } from '../queue/index.js';
 import { createHash } from 'crypto';
@@ -854,6 +854,28 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
     processId: process.pid,
   });
 
+  let creditReservation;
+
+  // Subscription gate (early) to avoid heavy work when inactive
+  const { isSubscriptionActive } = await import('./subscription.js');
+  const subscriptionActiveEarly = await isSubscriptionActive(storeId);
+  if (!subscriptionActiveEarly) {
+    logger.warn(
+      { storeId, campaignId },
+      'Inactive subscription - campaign enqueue blocked (early guard)',
+    );
+    return {
+      ok: false,
+      reason: 'subscription_required',
+      enqueuedJobs: 0,
+      message: 'Active subscription required to send SMS campaigns. Please subscribe to a plan to continue.',
+      details: {
+        actionable: true,
+        action: 'subscribe',
+      },
+    };
+  }
+
   // 0) CRITICAL: Atomically check and update status to prevent race conditions
   // This prevents multiple simultaneous requests from all passing the status check
   // Use a transaction with updateMany and WHERE condition for atomic operation
@@ -908,11 +930,13 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
         }
       }
 
-      // If campaign is sent or failed, reject
+      // If campaign is not in an enqueueable status, reject
+      // Aligned with Retail: draft, scheduled, paused can be enqueued
       if (
         ![
           CampaignStatus.draft,
           CampaignStatus.scheduled,
+          CampaignStatus.paused,
         ].includes(campaign.status)
       ) {
         return {
@@ -933,11 +957,12 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
           id: campaignId,
           shopId: storeId,
           status: {
-            in: [CampaignStatus.draft, CampaignStatus.scheduled],
+            in: [CampaignStatus.draft, CampaignStatus.scheduled, CampaignStatus.paused],
           },
         },
         data: {
           status: CampaignStatus.sending,
+          startedAt: new Date(), // Aligned with Retail: track when campaign started
           updatedAt: new Date(),
         },
       });
@@ -1084,8 +1109,7 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
     'Audience built, checking subscription and credits',
   );
 
-  // 1) Check subscription status BEFORE starting heavy work
-  const { isSubscriptionActive } = await import('./subscription.js');
+  // 1) Re-check subscription status before reserving credits
   const subscriptionActive = await isSubscriptionActive(storeId);
   if (!subscriptionActive) {
     logger.warn(
@@ -1107,7 +1131,7 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
     });
     return {
       ok: false,
-      reason: 'inactive_subscription',
+      reason: 'subscription_required',
       enqueuedJobs: 0,
       message: 'Active subscription required to send SMS campaigns. Please subscribe to a plan to continue.',
       details: {
@@ -1117,15 +1141,34 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
     };
   }
 
-  // 2) Check and reserve credits BEFORE starting heavy work
+  // 2) Check allowance and credits (allowance first, then credits)
   const { getAvailableBalance, reserveCredits } = await import('./wallet.js');
-  const availableBalance = await getAvailableBalance(storeId);
-  const requiredCredits = contacts.length;
+  const shop = await prisma.shop.findUnique({
+    where: { id: storeId },
+    select: {
+      includedSmsPerPeriod: true,
+      usedSmsThisPeriod: true,
+    },
+  });
 
-  if (availableBalance < requiredCredits) {
+  const requiredCredits = contacts.length;
+  const remainingAllowance = shop?.includedSmsPerPeriod
+    ? Math.max(0, shop.includedSmsPerPeriod - (shop.usedSmsThisPeriod || 0))
+    : 0;
+  const availableBalance = await getAvailableBalance(storeId);
+  const totalAvailable = remainingAllowance + availableBalance;
+
+  if (totalAvailable < requiredCredits) {
     logger.warn(
-      { storeId, campaignId, availableBalance, requiredCredits },
-      'Insufficient credits (including reservations)',
+      {
+        storeId,
+        campaignId,
+        remainingAllowance,
+        availableBalance,
+        totalAvailable,
+        requiredCredits,
+      },
+      'Insufficient allowance + credits',
     );
     // Revert campaign status back to scheduled/draft
     await prisma.campaign.updateMany({
@@ -1144,68 +1187,75 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
       ok: false,
       reason: 'insufficient_credits',
       enqueuedJobs: 0,
-      message: `Insufficient credits. You have ${availableBalance} credits but need ${requiredCredits} credits to send this campaign.`,
+      message: `Insufficient balance. You have ${remainingAllowance} free SMS remaining and ${availableBalance} paid credits (total: ${totalAvailable}), but need ${requiredCredits} to send this campaign.`,
       details: {
+        remainingAllowance,
         availableCredits: availableBalance,
+        totalAvailable,
         requiredCredits,
-        missingCredits: requiredCredits - availableBalance,
+        missingCredits: requiredCredits - totalAvailable,
         actionable: true,
         action: 'purchase_credits',
       },
     };
   }
 
+  // Calculate how many credits to reserve (after allowance is used)
+  const creditsToReserve = Math.max(0, requiredCredits - remainingAllowance);
+
   // Reserve credits for this campaign (prevents depletion mid-campaign)
   // P0: Use reservationKey for idempotency
   const idempotencyService = (await import('./idempotency.js')).default;
   const reservationKey = idempotencyService.generateReservationKey(storeId, campaignId);
-  let creditReservation;
-  try {
-    creditReservation = await reserveCredits(storeId, requiredCredits, {
-      campaignId,
-      reservationKey, // P0: Idempotency key
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h expiration
-      meta: {
-        campaignName: campaign.name,
-        recipientCount: contacts.length,
-      },
-    });
-    logger.info(
-      {
-        storeId,
+  if (creditsToReserve > 0) {
+    try {
+      creditReservation = await reserveCredits(storeId, creditsToReserve, {
         campaignId,
-        reservationId: creditReservation.id,
-        amount: requiredCredits,
-      },
-      'Credits reserved for campaign',
-    );
-  } catch (reservationError) {
-    logger.error(
-      {
-        storeId,
-        campaignId,
-        error: reservationError.message,
-      },
-      'Failed to reserve credits',
-    );
-    // Revert campaign status
-    await prisma.campaign.updateMany({
-      where: {
-        id: campaignId,
-        shopId: storeId,
-        status: CampaignStatus.sending,
-      },
-      data: {
-        status:
-          statusTransitionResult.previousStatus || CampaignStatus.draft,
-        updatedAt: new Date(),
-      },
-    });
-    return {
-      ok: false,
-      reason: 'credit_reservation_failed',
-      enqueuedJobs: 0,
-    };
+        reservationKey, // P0: Idempotency key
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h expiration
+        meta: {
+          campaignName: campaign.name,
+          recipientCount: contacts.length,
+          allowanceUsed: Math.min(requiredCredits, remainingAllowance),
+        },
+      });
+      logger.info(
+        {
+          storeId,
+          campaignId,
+          reservationId: creditReservation.id,
+          amount: creditsToReserve,
+        },
+        'Credits reserved for campaign',
+      );
+    } catch (reservationError) {
+      logger.error(
+        {
+          storeId,
+          campaignId,
+          error: reservationError.message,
+        },
+        'Failed to reserve credits',
+      );
+      // Revert campaign status
+      await prisma.campaign.updateMany({
+        where: {
+          id: campaignId,
+          shopId: storeId,
+          status: CampaignStatus.sending,
+        },
+        data: {
+          status:
+            statusTransitionResult.previousStatus || CampaignStatus.draft,
+          updatedAt: new Date(),
+        },
+      });
+      return {
+        ok: false,
+        reason: 'credit_reservation_failed',
+        enqueuedJobs: 0,
+      };
+    }
   }
 
   // If status was already 'sending', skip recipient creation and only enqueue existing pending recipients
@@ -1707,7 +1757,7 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
     {
       storeId,
       campaignId,
-      created: recipientsData.length,
+      queued: recipientsData.length,
       enqueuedJobs,
     },
     'Campaign enqueued successfully',
@@ -1715,7 +1765,7 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
 
   return {
     ok: true,
-    created: recipientsData.length,
+    queued: recipientsData.length,
     enqueuedJobs,
     campaignId: campaign.id,
   };
@@ -1738,8 +1788,11 @@ export async function sendCampaign(storeId, campaignId) {
     if (result.reason === 'not_found') {
       throw new NotFoundError('Campaign');
     }
-    if (result.reason === 'inactive_subscription') {
-      throw new ValidationError(
+    if (
+      result.reason === 'subscription_required' ||
+      result.reason === 'inactive_subscription'
+    ) {
+      throw new SubscriptionRequiredError(
         'Active subscription required to send SMS. Please subscribe to a plan.',
       );
     }
@@ -1753,7 +1806,7 @@ export async function sendCampaign(storeId, campaignId) {
 
   return {
     campaignId: result.campaignId,
-    recipientCount: result.created,
+    recipientCount: result.queued,
     status: CampaignStatus.sending,
     queuedAt: new Date(),
   };
@@ -1840,7 +1893,6 @@ export async function cancelCampaign(storeId, campaignId) {
     },
     data: {
       status: 'cancelled',
-      updatedAt: new Date(),
     },
   });
 
@@ -1933,7 +1985,7 @@ export async function getCampaignPreview(storeId, campaignId) {
   if (!subscriptionActive) {
     return {
       ok: false,
-      reason: 'inactive_subscription',
+      reason: 'subscription_required',
       message: 'Active subscription required to send SMS',
     };
   }
@@ -1954,10 +2006,23 @@ export async function getCampaignPreview(storeId, campaignId) {
     };
   }
 
-  // 4. Get available balance (including reservations)
+  // 4. Get available balance and allowance
   const { getAvailableBalance } = await import('./wallet.js');
-  const availableBalance = await getAvailableBalance(storeId);
+  const [availableBalance, shop] = await Promise.all([
+    getAvailableBalance(storeId),
+    prisma.shop.findUnique({
+      where: { id: storeId },
+      select: {
+        includedSmsPerPeriod: true,
+        usedSmsThisPeriod: true,
+      },
+    }),
+  ]);
   const requiredCredits = contacts.length;
+  const remainingAllowance = shop?.includedSmsPerPeriod
+    ? Math.max(0, shop.includedSmsPerPeriod - (shop.usedSmsThisPeriod || 0))
+    : 0;
+  const totalAvailable = remainingAllowance + availableBalance;
 
   // 5. Return preview data
   return {
@@ -1965,9 +2030,11 @@ export async function getCampaignPreview(storeId, campaignId) {
     recipientCount: contacts.length,
     estimatedCost: requiredCredits, // 1 credit per SMS
     availableCredits: availableBalance,
-    canSend: contacts.length > 0 && availableBalance >= requiredCredits,
-    insufficientCredits: availableBalance < requiredCredits,
-    missingCredits: Math.max(0, requiredCredits - availableBalance),
+    remainingAllowance,
+    totalAvailable,
+    canSend: contacts.length > 0 && totalAvailable >= requiredCredits,
+    insufficientCredits: totalAvailable < requiredCredits,
+    missingCredits: Math.max(0, requiredCredits - totalAvailable),
   };
 }
 
@@ -2055,8 +2122,12 @@ export async function retryFailedSms(storeId, campaignId) {
   const campaign = await prisma.campaign.findFirst({
     where: { id: campaignId, shopId: storeId },
     include: {
-      settings: {
-        select: { senderName: true, senderNumber: true },
+      shop: {
+        include: {
+          settings: {
+            select: { senderName: true, senderNumber: true },
+          },
+        },
       },
     },
   });

@@ -16,7 +16,10 @@ import {
   useDeleteCampaign,
   useEnqueueCampaign,
   useCancelCampaign,
+  useScheduleCampaign,
 } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
+import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
@@ -33,7 +36,9 @@ import {
   Clock,
   Eye,
   X,
+  Calendar,
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 /**
  * Campaign Detail Page
@@ -47,6 +52,8 @@ export default function CampaignDetailPage() {
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [scheduleDateTime, setScheduleDateTime] = useState('');
   const [showFailedRecipients] = useState(false);
 
   // Fetch campaign data
@@ -58,6 +65,7 @@ export default function CampaignDetailPage() {
 
   // Fetch metrics
   const { data: metrics } = useCampaignMetrics(id);
+  const { data: subscriptionData } = useSubscriptionStatus();
 
   // Fetch status (auto-refresh if sending/scheduled)
   const isActive = campaign?.status === 'sending' || campaign?.status === 'scheduled';
@@ -82,11 +90,14 @@ export default function CampaignDetailPage() {
       campaign?.status === 'failed' ||
       campaign?.status === 'sending');
   useCampaignFailedRecipients(id, showFailedSection);
+  const isSubscriptionActive = subscriptionData?.status === 'active' || subscriptionData?.active === true;
+  const previewBlocked = previewData?.reason === 'subscription_required';
 
   // Mutations
   const deleteCampaign = useDeleteCampaign();
   const enqueueCampaign = useEnqueueCampaign();
   const cancelCampaign = useCancelCampaign();
+  const scheduleCampaign = useScheduleCampaign();
 
   const handleDelete = async () => {
     try {
@@ -99,6 +110,9 @@ export default function CampaignDetailPage() {
 
   const handleSend = async () => {
     try {
+      if (!isSubscriptionActive) {
+        return;
+      }
       await enqueueCampaign.mutateAsync(id);
       setShowSendDialog(false);
     } catch (error) {
@@ -110,6 +124,25 @@ export default function CampaignDetailPage() {
     try {
       await cancelCampaign.mutateAsync(id);
       setShowCancelDialog(false);
+    } catch (error) {
+      // Error handled by mutation hook
+    }
+  };
+
+  const handleSchedule = async () => {
+    if (!scheduleDateTime) {
+      return;
+    }
+    try {
+      await scheduleCampaign.mutateAsync({
+        id,
+        data: {
+          scheduleType: 'scheduled',
+          scheduleAt: scheduleDateTime,
+        },
+      });
+      setShowScheduleDialog(false);
+      setScheduleDateTime('');
     } catch (error) {
       // Error handled by mutation hook
     }
@@ -165,9 +198,10 @@ export default function CampaignDetailPage() {
   const canEdit = campaign.status === 'draft' || campaign.status === 'scheduled';
 
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-6 flex items-center gap-4">
+    <RetailPageLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="mb-6 flex items-center gap-4">
         <Link href="/app/shopify/campaigns">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -191,9 +225,21 @@ export default function CampaignDetailPage() {
                 <Eye className="mr-2 h-4 w-4" />
                 Preview
               </Button>
-              <Button onClick={() => setShowSendDialog(true)} disabled={enqueueCampaign.isPending}>
+              <Button
+                variant="outline"
+                onClick={() => setShowScheduleDialog(true)}
+                disabled={scheduleCampaign.isPending}
+              >
+                <Calendar className="mr-2 h-4 w-4" />
+                Schedule
+              </Button>
+              <Button
+                onClick={() => setShowSendDialog(true)}
+                disabled={!isSubscriptionActive || enqueueCampaign.isPending}
+                title={!isSubscriptionActive ? 'Active subscription required to send campaigns' : 'Send campaign'}
+              >
                 <Send className="mr-2 h-4 w-4" />
-                Send
+                Send Now
               </Button>
             </>
           )}
@@ -383,6 +429,36 @@ export default function CampaignDetailPage() {
           </RetailCard>
         )}
 
+        {/* Delivery Breakdown Card */}
+        {metrics && (campaign.status === 'sent' || campaign.status === 'sending' || campaign.status === 'failed') && (
+          <RetailCard className="p-6">
+            <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Delivery Breakdown
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Total Recipients</div>
+                <div className="text-2xl font-bold text-text-primary">{metrics.total || 0}</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
+                <div className="text-2xl font-bold text-green-400">{metrics.sent || 0}</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
+                <div className="text-2xl font-bold text-red-400">{metrics.failed || 0}</div>
+              </div>
+              {metrics.delivered !== undefined && (
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Delivered</div>
+                  <div className="text-2xl font-bold text-blue-400">{metrics.delivered || 0}</div>
+                </div>
+              )}
+            </div>
+          </RetailCard>
+        )}
+
         {/* Quick Actions */}
         <RetailCard className="p-6">
           <h3 className="text-lg font-semibold text-text-primary mb-4">Quick Actions</h3>
@@ -438,6 +514,62 @@ export default function CampaignDetailPage() {
         variant="danger"
       />
 
+      {/* Schedule Dialog */}
+      {showScheduleDialog && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4">
+            <div className="fixed inset-0 bg-black/50" onClick={() => setShowScheduleDialog(false)} />
+            <RetailCard className="relative z-10 max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-text-primary">Schedule Campaign</h2>
+                <button
+                  onClick={() => setShowScheduleDialog(false)}
+                  className="text-text-tertiary hover:text-text-primary"
+                  aria-label="Close schedule dialog"
+                >
+                  <X className="w-5 h-5" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
+                    Date & Time
+                  </label>
+                  <Input
+                    type="datetime-local"
+                    value={scheduleDateTime}
+                    onChange={(e) => setScheduleDateTime(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="w-full"
+                  />
+                  <p className="mt-1 text-xs text-text-tertiary">
+                    Select a future date and time to schedule this campaign
+                  </p>
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowScheduleDialog(false)}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSchedule}
+                    disabled={!scheduleDateTime || scheduleCampaign.isPending}
+                    className="flex-1"
+                  >
+                    {scheduleCampaign.isPending ? 'Scheduling...' : 'Schedule'}
+                  </Button>
+                </div>
+              </div>
+            </RetailCard>
+          </div>
+        </div>
+      )}
+
       {/* Preview Modal */}
       {showPreviewModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -461,53 +593,65 @@ export default function CampaignDetailPage() {
                   <p className="text-sm text-text-secondary">Loading preview...</p>
                 </div>
               ) : previewData ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-sm font-medium text-text-secondary mb-1">Recipients</div>
-                      <div className="text-2xl font-bold text-text-primary">
-                        {previewData.recipientCount.toLocaleString()}
+                previewBlocked ? (
+                  <RetailCard variant="danger" className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="h-5 w-5 text-red-400" />
+                      <h3 className="font-semibold text-text-primary">Subscription Required</h3>
+                    </div>
+                    <p className="text-sm text-text-secondary">
+                      Active subscription required to send campaigns. Please subscribe to a plan to continue.
+                    </p>
+                  </RetailCard>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-sm font-medium text-text-secondary mb-1">Recipients</div>
+                        <div className="text-2xl font-bold text-text-primary">
+                          {(previewData.recipientCount ?? 0).toLocaleString()}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-text-secondary mb-1">Estimated Cost</div>
+                        <div className="text-2xl font-bold text-accent">
+                          {(previewData.estimatedCost ?? 0).toLocaleString()} credits
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-text-secondary mb-1">Estimated Cost</div>
-                      <div className="text-2xl font-bold text-accent">
-                        {previewData.estimatedCost.toLocaleString()} credits
+
+                    {previewData.insufficientCredits && (
+                      <RetailCard variant="danger" className="p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertCircle className="h-5 w-5 text-red-400" />
+                          <h3 className="font-semibold text-text-primary">Insufficient Credits</h3>
+                        </div>
+                        <p className="text-sm text-text-secondary">
+                          You need {(previewData.missingCredits ?? 0).toLocaleString()} more credits to send this campaign.
+                        </p>
+                      </RetailCard>
+                    )}
+
+                    {previewData.errors && previewData.errors.length > 0 && (
+                      <RetailCard variant="danger" className="p-4">
+                        <h3 className="font-semibold text-text-primary mb-2">Errors</h3>
+                        <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
+                          {previewData.errors.map((error, idx) => (
+                            <li key={idx}>{error}</li>
+                          ))}
+                        </ul>
+                      </RetailCard>
+                    )}
+
+                    {previewData.canSend && (
+                      <div className="pt-4 border-t border-border">
+                        <p className="text-sm text-text-secondary mb-4">
+                          This campaign is ready to send. Click &quot;Send&quot; to start sending messages.
+                        </p>
                       </div>
-                    </div>
+                    )}
                   </div>
-
-                  {previewData.insufficientCredits && (
-                    <RetailCard variant="danger" className="p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertCircle className="h-5 w-5 text-red-400" />
-                        <h3 className="font-semibold text-text-primary">Insufficient Credits</h3>
-                      </div>
-                      <p className="text-sm text-text-secondary">
-                        You need {previewData.missingCredits?.toLocaleString()} more credits to send this campaign.
-                      </p>
-                    </RetailCard>
-                  )}
-
-                  {previewData.errors && previewData.errors.length > 0 && (
-                    <RetailCard variant="danger" className="p-4">
-                      <h3 className="font-semibold text-text-primary mb-2">Errors</h3>
-                      <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
-                        {previewData.errors.map((error, idx) => (
-                          <li key={idx}>{error}</li>
-                        ))}
-                      </ul>
-                    </RetailCard>
-                  )}
-
-                  {previewData.canSend && (
-                    <div className="pt-4 border-t border-border">
-                      <p className="text-sm text-text-secondary mb-4">
-                        This campaign is ready to send. Click &quot;Send&quot; to start sending messages.
-                      </p>
-                    </div>
-                  )}
-                </div>
+                )
               ) : (
                 <div className="text-center py-8">
                   <p className="text-sm text-text-secondary">Failed to load preview</p>
@@ -517,7 +661,7 @@ export default function CampaignDetailPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </RetailPageLayout>
   );
 }
-

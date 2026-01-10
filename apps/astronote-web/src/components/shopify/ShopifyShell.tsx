@@ -1,100 +1,106 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { cn } from '@/lib/utils';
-import {
-  LayoutDashboard,
-  MessageSquare,
-  Users,
-  FileText,
-  CreditCard,
-  Settings,
-  Zap,
-  LogOut,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { ShopifyMobileNav } from '@/app/app/shopify/_components/ShopifyMobileNav';
+import { ShopifySidebar } from '@/app/app/shopify/_components/ShopifySidebar';
+import { ShopifyTopbar } from '@/app/app/shopify/_components/ShopifyTopbar';
 
-const navItems = [
-  { href: '/app/shopify/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/app/shopify/campaigns', label: 'Campaigns', icon: MessageSquare },
-  { href: '/app/shopify/contacts', label: 'Contacts', icon: Users },
-  { href: '/app/shopify/templates', label: 'Templates', icon: FileText },
-  { href: '/app/shopify/automations', label: 'Automations', icon: Zap },
-  { href: '/app/shopify/billing', label: 'Billing', icon: CreditCard },
-  // Reports page is DEFERRED - DO NOT IMPLEMENT (per requirements)
-  { href: '/app/shopify/settings', label: 'Settings', icon: Settings },
-];
+const SIDEBAR_STORAGE_KEY = 'shopify-sidebar-collapsed-v2';
+const SIDEBAR_EXPANDED_WIDTH = 280;
+const SIDEBAR_COLLAPSED_WIDTH = 80;
 
 export function ShopifyShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
+  const pathname = usePathname() || '';
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  const handleLogout = () => {
-    // Clear Shopify auth tokens
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('shopify_token');
-      localStorage.removeItem('shopify_store');
+  // Set retail-light theme on mount (same as Retail)
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'retail-light');
+    document.documentElement.classList.add('retail-light');
+
+    return () => {
+      document.documentElement.removeAttribute('data-theme');
+      document.documentElement.classList.remove('retail-light');
+    };
+  }, []);
+
+  // Load sidebar collapse state from localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (stored !== null) {
+      setCollapsed(stored === 'true');
+      return;
     }
-    // Redirect to login
-    router.push('/app/shopify/auth/login');
+
+    const media = window.matchMedia('(min-width: 1024px)');
+    const applyDefault = () => setCollapsed(!media.matches);
+    applyDefault();
+
+    const handleChange = () => {
+      const nextStored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
+      if (nextStored === null) applyDefault();
+    };
+
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
+  // Close mobile nav on route change
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
+
+  // Prevent body scroll when mobile nav is open
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.style.overflow = mobileNavOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileNavOpen]);
+
+  const toggleCollapse = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
+      }
+      return next;
+    });
   };
 
+  const sidebarWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH;
+  const shellStyle = useMemo(
+    () => ({ '--shopify-sidebar-width': `${sidebarWidth}px` }) as CSSProperties,
+    [sidebarWidth],
+  );
+
   return (
-    <div className="min-h-screen flex bg-background">
-      <aside className="w-64 glass border-r border-border flex flex-col">
-        {/* Logo */}
-        <div className="p-6 border-b border-border">
-          <Link href="/app/shopify/dashboard" className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-              <span className="text-white font-bold text-lg">A</span>
-            </div>
-            <span className="text-xl font-semibold text-text-primary">Astronote</span>
-          </Link>
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive =
-              pathname === item.href || pathname?.startsWith(`${item.href}/`);
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 px-4 py-3 rounded-xl transition-colors min-h-[44px]',
-                  isActive
-                    ? 'bg-accent-light text-accent'
-                    : 'text-text-secondary hover:text-text-primary hover:bg-surface',
-                )}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Logout */}
-        <div className="p-4 border-t border-border">
-          <Button
-            variant="ghost"
-            className="w-full justify-start min-h-[44px]"
-            onClick={handleLogout}
-          >
-            <LogOut className="w-5 h-5 mr-3" />
-            Sign Out
-          </Button>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col">
-        <main className="flex-1 p-6 lg:p-8">{children}</main>
+    <div className="min-h-dvh bg-background text-text-primary" style={shellStyle}>
+      <ShopifySidebar
+        pathname={pathname}
+        collapsed={collapsed}
+        className="hidden md:flex"
+      />
+      <div className="flex min-h-dvh flex-col transition-[padding] duration-300 md:pl-[var(--shopify-sidebar-width)]">
+        <ShopifyTopbar
+          pathname={pathname}
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapse}
+          onOpenMobileNav={() => setMobileNavOpen(true)}
+        />
+        <main className="px-4 py-6 lg:px-8">{children}</main>
       </div>
+      <ShopifyMobileNav
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+        pathname={pathname}
+      />
     </div>
   );
 }

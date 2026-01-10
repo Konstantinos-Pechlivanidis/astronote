@@ -51,7 +51,7 @@ async function updateAccessToken() {
           shopDomain,
           accessToken,
           credits: 100, // Initial credits for testing
-          isActive: true,
+          status: 'active',
         },
       });
       console.log('✅ Shop created successfully!');
@@ -61,7 +61,6 @@ async function updateAccessToken() {
         where: { shopDomain },
         data: {
           accessToken,
-          isActive: true,
         },
       });
       console.log('✅ Access token updated successfully!');

@@ -26,12 +26,21 @@ export async function list(req, res, next) {
       gender: req.query.gender,
       smsConsent: req.query.smsConsent,
       hasBirthDate: req.query.hasBirthDate,
+      isSubscribed: req.query.isSubscribed, // Add isSubscribed filter (aligned with Retail)
+      listId: req.query.listId, // Add listId filter (aligned with Retail)
     };
 
     const result = await contactsService.listContacts(storeId, filters);
 
-    return sendPaginated(res, result.contacts, result.pagination, {
-      contacts: result.contacts,
+    // Return Retail-aligned shape: { items, total, page, pageSize }
+    // Also include contacts and pagination for backward compatibility
+    return res.json({
+      items: result.items || result.contacts, // Retail uses "items"
+      contacts: result.contacts, // Keep for backward compatibility
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      pagination: result.pagination, // Keep for backward compatibility
       filters: {
         applied: filters,
         available: {
@@ -66,7 +75,27 @@ export async function getOne(req, res, next) {
 
     const contact = await contactsService.getContactById(storeId, id);
 
-    return sendSuccess(res, contact);
+    // Transform to Retail-aligned shape (map phoneE164 -> phone, birthDate -> birthday)
+    const transformed = {
+      id: contact.id,
+      phone: contact.phoneE164, // Map to Retail field name
+      phoneE164: contact.phoneE164, // Keep for backward compatibility
+      email: contact.email,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      gender: contact.gender,
+      birthday: contact.birthDate, // Map to Retail field name
+      birthDate: contact.birthDate, // Keep for backward compatibility
+      isSubscribed: contact.isSubscribed ?? true,
+      smsConsentStatus: contact.smsConsentStatus || (contact.smsConsent === 'opted_in' ? 'opted_in' : contact.smsConsent === 'opted_out' ? 'opted_out' : null),
+      smsConsent: contact.smsConsent, // Keep enum for backward compatibility
+      smsConsentAt: contact.smsConsentAt,
+      tags: contact.tags,
+      createdAt: contact.createdAt,
+      updatedAt: contact.updatedAt,
+    };
+
+    return sendSuccess(res, transformed);
   } catch (error) {
     logger.error('Get contact error', {
       error: error.message,
@@ -92,6 +121,7 @@ export async function create(req, res, next) {
 
     const contact = await contactsService.createContact(storeId, contactData);
 
+    // Contact is already transformed to Retail-aligned shape in service
     return sendCreated(res, contact, 'Contact created successfully');
   } catch (error) {
     logger.error('Create contact error', {

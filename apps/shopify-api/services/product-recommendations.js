@@ -16,6 +16,7 @@ export async function getRecommendedProductsForOrder(
   shopDomain,
   orderId,
   limit = 3,
+  options = {},
 ) {
   try {
     // Get order details to extract line items
@@ -23,12 +24,15 @@ export async function getRecommendedProductsForOrder(
       ? orderId
       : `gid://shopify/Order/${orderId}`;
 
-    const order = await getOrderDetails(shopDomain, orderGid);
+    const order = await getOrderDetails(shopDomain, orderGid, {
+      requestId: options?.requestId || 'unknown',
+    });
 
     if (!order.lineItems || !order.lineItems.edges || order.lineItems.edges.length === 0) {
       logger.warn('Order has no line items for recommendations', {
         shopDomain,
         orderId,
+        requestId: options?.requestId,
       });
       return [];
     }
@@ -46,6 +50,9 @@ export async function getRecommendedProductsForOrder(
             shopDomain,
             productId,
             limit,
+            {
+              requestId: options?.requestId || 'unknown',
+            },
           );
 
           // Add unique recommendations (avoid duplicates)

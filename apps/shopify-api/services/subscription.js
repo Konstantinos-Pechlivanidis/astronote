@@ -5,6 +5,14 @@ import {
   SubscriptionStatus,
   SubscriptionPlanType,
 } from '../utils/prismaEnums.js';
+import Stripe from 'stripe';
+
+// Initialize Stripe (only if API key is available)
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2024-06-20',
+  })
+  : null;
 
 /**
  * Subscription Service
@@ -91,6 +99,14 @@ export async function getSubscriptionStatus(shopId) {
         planType: true,
         subscriptionStatus: true,
         lastFreeCreditsAllocatedAt: true,
+        subscriptionInterval: true,
+        currentPeriodStart: true,
+        currentPeriodEnd: true,
+        cancelAtPeriodEnd: true,
+        includedSmsPerPeriod: true,
+        usedSmsThisPeriod: true,
+        currency: true,
+        lastBillingError: true,
       },
     });
 
@@ -109,6 +125,20 @@ export async function getSubscriptionStatus(shopId) {
       stripeCustomerId: shop.stripeCustomerId,
       stripeSubscriptionId: shop.stripeSubscriptionId,
       lastFreeCreditsAllocatedAt: shop.lastFreeCreditsAllocatedAt,
+      billingCurrency: shop.currency || 'EUR',
+      interval: shop.subscriptionInterval || null,
+      currentPeriodStart: shop.currentPeriodStart || null,
+      currentPeriodEnd: shop.currentPeriodEnd || null,
+      cancelAtPeriodEnd: shop.cancelAtPeriodEnd ?? false,
+      includedSmsPerPeriod: shop.includedSmsPerPeriod || 0,
+      usedSmsThisPeriod: shop.usedSmsThisPeriod || 0,
+      remainingSmsThisPeriod: Math.max(
+        0,
+        (shop.subscriptionStatus === SubscriptionStatus.active
+          ? shop.includedSmsPerPeriod || 0
+          : 0) - (shop.usedSmsThisPeriod || 0),
+      ),
+      lastBillingError: shop.lastBillingError || null,
     };
   } catch (err) {
     logger.error(
@@ -290,6 +320,7 @@ export async function allocateFreeCredits(
  * @param {string} stripeCustomerId - Stripe customer ID
  * @param {string} stripeSubscriptionId - Stripe subscription ID
  * @param {string} planType - 'starter' or 'pro'
+ * @param {Object} [stripeSubscription] - Optional Stripe subscription object for interval/period tracking
  * @returns {Promise<Object>} Updated shop object
  */
 export async function activateSubscription(
@@ -297,6 +328,7 @@ export async function activateSubscription(
   stripeCustomerId,
   stripeSubscriptionId,
   planType,
+  stripeSubscription = null,
 ) {
   try {
     if (
@@ -308,6 +340,30 @@ export async function activateSubscription(
       throw new Error(`Invalid plan type: ${planType}`);
     }
 
+    // Determine interval and period dates from Stripe subscription if provided
+    let interval = null;
+    let currentPeriodStart = null;
+    let currentPeriodEnd = null;
+    let cancelAtPeriodEnd = false;
+    let includedSms = null;
+
+    if (stripeSubscription) {
+      if (stripeSubscription.items?.data?.[0]?.price?.recurring) {
+        interval = stripeSubscription.items.data[0].price.recurring.interval;
+      }
+      if (stripeSubscription.current_period_start) {
+        currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);
+      }
+      if (stripeSubscription.current_period_end) {
+        currentPeriodEnd = new Date(stripeSubscription.current_period_end * 1000);
+      }
+      cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end || false;
+    }
+
+    // Get allowance for plan
+    const freeCredits = getFreeCreditsForPlan(planType);
+    includedSms = freeCredits; // 1 credit = 1 SMS
+
     const shop = await prisma.shop.update({
       where: { id: shopId },
       data: {
@@ -315,6 +371,14 @@ export async function activateSubscription(
         stripeSubscriptionId,
         planType,
         subscriptionStatus: 'active',
+        lastBillingError: null,
+        ...(interval && { subscriptionInterval: interval }),
+        ...(currentPeriodStart && { currentPeriodStart }),
+        ...(currentPeriodEnd && { currentPeriodEnd }),
+        cancelAtPeriodEnd,
+        ...(includedSms !== null && { includedSmsPerPeriod: includedSms }),
+        usedSmsThisPeriod: 0, // Reset on activation
+        lastPeriodResetAt: new Date(),
       },
       select: {
         id: true,
@@ -322,12 +386,13 @@ export async function activateSubscription(
         subscriptionStatus: true,
         stripeCustomerId: true,
         stripeSubscriptionId: true,
+        subscriptionInterval: true,
       },
     });
 
     logger.info(
-      { shopId, planType, stripeSubscriptionId },
-      'Subscription activated',
+      { shopId, planType, stripeSubscriptionId, interval, includedSms },
+      'Subscription activated with allowance tracking',
     );
     return shop;
   } catch (err) {
@@ -399,6 +464,291 @@ export function calculateTopupPrice(credits) {
   };
 }
 
+/**
+ * Get billing summary (subscription + allowance + credits)
+ * @param {string} shopId - Shop ID
+ * @returns {Promise<Object>} Billing summary
+ */
+export async function getBillingSummary(shopId) {
+  try {
+    const { getBalance } = await import('./wallet.js');
+    const balance = await getBalance(shopId);
+    const subscription = await getSubscriptionStatus(shopId);
+
+    const remainingAllowance = subscription?.remainingSmsThisPeriod || 0;
+
+    return {
+      subscription,
+      allowance: {
+        includedPerPeriod: subscription?.includedSmsPerPeriod || 0,
+        usedThisPeriod: subscription?.usedSmsThisPeriod || 0,
+        remainingThisPeriod: remainingAllowance,
+        currentPeriodStart: subscription?.currentPeriodStart || null,
+        currentPeriodEnd: subscription?.currentPeriodEnd || null,
+        interval: subscription?.interval || null,
+      },
+      credits: {
+        balance,
+        currency: subscription?.billingCurrency || 'EUR',
+      },
+      billingCurrency: subscription?.billingCurrency || 'EUR',
+    };
+  } catch (err) {
+    logger.error(
+      { shopId, err: err.message },
+      'Failed to get billing summary',
+    );
+    throw err;
+  }
+}
+
+/**
+ * Track SMS usage (consumes allowance first, then credits)
+ * @param {string} shopId - Shop ID
+ * @param {number} count - Number of SMS sent
+ * @returns {Promise<Object>} Consumption result
+ */
+export async function trackSmsUsage(shopId, count) {
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: {
+        subscriptionStatus: true,
+        includedSmsPerPeriod: true,
+        usedSmsThisPeriod: true,
+      },
+    });
+
+    if (!shop) {
+      throw new Error('Shop not found');
+    }
+
+    // Only track if subscription is active
+    if (shop.subscriptionStatus !== 'active') {
+      return {
+        tracked: false,
+        reason: 'subscription_not_active',
+      };
+    }
+
+    // Update usedSmsThisPeriod
+    const newUsedCount = (shop.usedSmsThisPeriod || 0) + count;
+    await prisma.shop.update({
+      where: { id: shopId },
+      data: {
+        usedSmsThisPeriod: newUsedCount,
+      },
+    });
+
+    logger.info(
+      { shopId, count, newUsedCount },
+      'SMS usage tracked',
+    );
+
+    return {
+      tracked: true,
+      usedThisPeriod: newUsedCount,
+      remainingAllowance: shop.includedSmsPerPeriod
+        ? Math.max(0, shop.includedSmsPerPeriod - newUsedCount)
+        : 0,
+    };
+  } catch (err) {
+    logger.error(
+      { shopId, count, err: err.message },
+      'Failed to track SMS usage',
+    );
+    throw err;
+  }
+}
+
+/**
+ * Reset allowance for new billing period (idempotent)
+ * @param {string} shopId - Shop ID
+ * @param {Object} stripeSubscription - Stripe subscription object
+ * @returns {Promise<Object>} Reset result
+ */
+export async function resetAllowanceForNewPeriod(shopId, stripeSubscription) {
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: {
+        subscriptionStatus: true,
+        planType: true,
+        subscriptionInterval: true,
+        currentPeriodStart: true,
+        currentPeriodEnd: true,
+        lastPeriodResetAt: true,
+      },
+    });
+
+    if (!shop) {
+      throw new Error('Shop not found');
+    }
+
+    if (shop.subscriptionStatus !== 'active') {
+      return {
+        reset: false,
+        reason: 'subscription_not_active',
+      };
+    }
+
+    // Get new period dates from Stripe
+    const newPeriodStart = stripeSubscription.current_period_start
+      ? new Date(stripeSubscription.current_period_start * 1000)
+      : null;
+    const newPeriodEnd = stripeSubscription.current_period_end
+      ? new Date(stripeSubscription.current_period_end * 1000)
+      : null;
+
+    // Check if already reset for this period (idempotency)
+    if (
+      shop.currentPeriodStart &&
+      newPeriodStart &&
+      shop.currentPeriodStart.getTime() === newPeriodStart.getTime()
+    ) {
+      logger.info(
+        { shopId, periodStart: newPeriodStart },
+        'Allowance already reset for this period',
+      );
+      return {
+        reset: false,
+        reason: 'already_reset',
+      };
+    }
+
+    // Determine interval from Stripe subscription
+    let interval = shop.subscriptionInterval;
+    if (!interval && stripeSubscription.items?.data?.[0]?.price?.recurring) {
+      interval = stripeSubscription.items.data[0].price.recurring.interval; // 'month' or 'year'
+    }
+
+    // Get allowance for plan and interval
+    const freeCredits = getFreeCreditsForPlan(shop.planType);
+    const includedSms = freeCredits; // 1 credit = 1 SMS
+
+    // Reset allowance
+    await prisma.shop.update({
+      where: { id: shopId },
+      data: {
+        subscriptionInterval: interval || null,
+        currentPeriodStart: newPeriodStart,
+        currentPeriodEnd: newPeriodEnd,
+        includedSmsPerPeriod: includedSms,
+        usedSmsThisPeriod: 0,
+        lastPeriodResetAt: new Date(),
+      },
+    });
+
+    logger.info(
+      {
+        shopId,
+        planType: shop.planType,
+        interval,
+        includedSms,
+        periodStart: newPeriodStart,
+        periodEnd: newPeriodEnd,
+      },
+      'Allowance reset for new billing period',
+    );
+
+    return {
+      reset: true,
+      includedSms,
+      periodStart: newPeriodStart?.toISOString() || null,
+      periodEnd: newPeriodEnd?.toISOString() || null,
+    };
+  } catch (err) {
+    logger.error(
+      { shopId, err: err.message },
+      'Failed to reset allowance for new period',
+    );
+    throw err;
+  }
+}
+
+/**
+ * Switch subscription interval (monthly/yearly)
+ * @param {string} shopId - Shop ID
+ * @param {string} interval - 'month' or 'year'
+ * @returns {Promise<Object>} Switch result
+ */
+export async function switchSubscriptionInterval(shopId, interval) {
+  try {
+    if (!['month', 'year'].includes(interval)) {
+      throw new Error(`Invalid interval: ${interval}. Must be 'month' or 'year'`);
+    }
+
+    const subscription = await getSubscriptionStatus(shopId);
+
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      throw new Error('No active subscription found');
+    }
+
+    if (!stripe) {
+      throw new Error('Stripe is not configured');
+    }
+
+    // Map interval to plan: month = starter, year = pro (aligned with Retail)
+    const intervalToPlan = {
+      month: SubscriptionPlanType.starter,
+      year: SubscriptionPlanType.pro,
+    };
+    const newPlanType = intervalToPlan[interval];
+
+    // If already on the correct plan for this interval, no change needed
+    if (subscription.planType === newPlanType) {
+      logger.info(
+        { shopId, interval, planType: newPlanType },
+        'Subscription already on correct plan for interval',
+      );
+      return {
+        interval,
+        planType: newPlanType,
+        alreadyUpdated: true,
+      };
+    }
+
+    // Get shop currency
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { currency: true },
+    });
+    const currency = shop?.currency || 'EUR';
+
+    // Update Stripe subscription with new plan's price ID
+    const { updateSubscription } = await import('./stripe.js');
+    await updateSubscription(
+      subscription.stripeSubscriptionId,
+      newPlanType,
+      currency,
+    );
+
+    // Update local DB immediately (webhook will also update, but this prevents race conditions)
+    await activateSubscription(
+      shopId,
+      subscription.stripeCustomerId,
+      subscription.stripeSubscriptionId,
+      newPlanType,
+    );
+
+    logger.info(
+      { shopId, interval, oldPlan: subscription.planType, newPlan: newPlanType },
+      'Subscription interval switched',
+    );
+
+    return {
+      interval,
+      planType: newPlanType,
+    };
+  } catch (err) {
+    logger.error(
+      { shopId, interval, err: err.message },
+      'Failed to switch subscription interval',
+    );
+    throw err;
+  }
+}
+
 export default {
   PLANS,
   CREDIT_PRICE_EUR,
@@ -412,4 +762,8 @@ export default {
   deactivateSubscription,
   calculateTopupPrice,
   getBillingPeriodStart,
+  getBillingSummary,
+  trackSmsUsage,
+  resetAllowanceForNewPeriod,
+  switchSubscriptionInterval,
 };

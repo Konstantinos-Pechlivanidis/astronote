@@ -166,27 +166,43 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       return { ok: false, reason: 'no_recipients', enqueuedJobs: 0 };
     }
 
-    logger.info({ ...baseContext, step, recipientCount: contacts.length }, 'Audience built, checking subscription and credits');
+    logger.info({ ...baseContext, step, recipientCount: contacts.length }, 'Audience built, checking subscription and billing');
 
     // 1) Check subscription status BEFORE starting any transaction
     step = 'check_subscription';
     logger.info({ ...baseContext, step }, 'Checking subscription status');
-    const { isSubscriptionActive } = require('./subscription.service');
+    const { isSubscriptionActive, getAllowanceStatus } = require('./subscription.service');
     const subscriptionActive = await isSubscriptionActive(camp.ownerId);
     if (!subscriptionActive) {
       logger.warn({ ...baseContext, step }, 'Inactive subscription - campaign enqueue blocked');
-      return { ok: false, reason: 'inactive_subscription', enqueuedJobs: 0 };
+      return { ok: false, reason: 'subscription_required', enqueuedJobs: 0 };
     }
 
-    // 2) Check credits BEFORE starting any transaction
-    step = 'check_credits';
+    // 2) Check allowance + credits BEFORE starting any transaction
+    step = 'check_billing';
     const { getBalance } = require('./wallet.service');
     const currentBalance = await getBalance(camp.ownerId);
+    const allowance = await getAllowanceStatus(camp.ownerId);
     const requiredCredits = contacts.length;
+    const availableCredits = (allowance?.remainingThisPeriod || 0) + (currentBalance || 0);
 
-    logger.info({ ...baseContext, step, currentBalance, requiredCredits }, 'Credits check completed');
-    if (currentBalance < requiredCredits) {
-      logger.warn({ ...baseContext, step, currentBalance, requiredCredits }, 'Insufficient credits');
+    logger.info({
+      ...baseContext,
+      step,
+      currentBalance,
+      allowanceRemaining: allowance?.remainingThisPeriod || 0,
+      requiredCredits,
+      availableCredits,
+    }, 'Billing check completed');
+    if (availableCredits < requiredCredits) {
+      logger.warn({
+        ...baseContext,
+        step,
+        currentBalance,
+        allowanceRemaining: allowance?.remainingThisPeriod || 0,
+        requiredCredits,
+        availableCredits,
+      }, 'Insufficient allowance or credits');
       return { ok: false, reason: 'insufficient_credits', enqueuedJobs: 0 };
     }
 

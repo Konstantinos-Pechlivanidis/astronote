@@ -24,6 +24,7 @@ export async function createStripeCheckoutSession({
   metadata = {},
   successUrl,
   cancelUrl,
+  idempotencyKey = null,
 }) {
   try {
     if (!stripe) {
@@ -78,7 +79,7 @@ export async function createStripeCheckoutSession({
 
     let session;
     try {
-      session = await stripe.checkout.sessions.create({
+      const sessionParams = {
         payment_method_types: ['card'],
         line_items: [
           {
@@ -119,7 +120,17 @@ export async function createStripeCheckoutSession({
         payment_intent_data: {
           statement_descriptor: 'ASTRONOTE MARKETING',
         },
-      });
+      };
+
+      // Add idempotency key if provided (aligned with Retail)
+      if (idempotencyKey) {
+        session = await stripe.checkout.sessions.create(
+          sessionParams,
+          { idempotencyKey },
+        );
+      } else {
+        session = await stripe.checkout.sessions.create(sessionParams);
+      }
 
       logger.info('Stripe checkout session created', {
         sessionId: session.id,
@@ -788,7 +799,11 @@ export async function createCreditTopupCheckoutSession({
  * @param {string} newPlanType - 'starter' or 'pro'
  * @returns {Promise<Object>} Updated subscription
  */
-export async function updateSubscription(subscriptionId, newPlanType) {
+export async function updateSubscription(
+  subscriptionId,
+  newPlanType,
+  currency = 'EUR',
+) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
   }
@@ -797,8 +812,8 @@ export async function updateSubscription(subscriptionId, newPlanType) {
     throw new Error(`Invalid plan type: ${newPlanType}`);
   }
 
-  // Get subscription price ID for the new plan
-  const newPriceId = getStripeSubscriptionPriceId(newPlanType, 'EUR');
+  // Get subscription price ID for the new plan (with currency support)
+  const newPriceId = getStripeSubscriptionPriceId(newPlanType, currency);
   if (!newPriceId) {
     throw new Error(`Stripe price ID not found for ${newPlanType} plan`);
   }
@@ -817,6 +832,7 @@ export async function updateSubscription(subscriptionId, newPlanType) {
     proration_behavior: 'always_invoice', // Prorate the change
     metadata: {
       planType: newPlanType,
+      currency: String(currency).toUpperCase(),
       updatedAt: new Date().toISOString(),
     },
   });

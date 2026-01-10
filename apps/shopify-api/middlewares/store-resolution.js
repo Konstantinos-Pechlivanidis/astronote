@@ -14,24 +14,91 @@ import {
  * all subsequent operations are scoped to the correct store (tenant).
  *
  * Sources (in order of precedence):
- * 1. JWT Token (Authorization: Bearer <token>) - App JWT or Shopify session token
- * 2. Shopify headers with shop domain
- * 3. App installation context
- * 4. Explicit store ID in headers (for internal services)
+ * 1. X-Shopify-Shop-Domain header (PREFERRED - most reliable)
+ * 2. JWT Token (Authorization: Bearer <token>) - App JWT or Shopify session token
+ * 3. Query param `shop` (LAST RESORT - only for redirect/callback routes)
+ *
+ * Security: Shop domain must match pattern: [a-zA-Z0-9-]+\.myshopify\.com
  */
 
+/**
+ * Validate shop domain format strictly
+ * @param {string} domain - Shop domain to validate
+ * @returns {boolean} True if valid
+ */
+function isValidShopDomain(domain) {
+  if (!domain || typeof domain !== 'string') {
+    return false;
+  }
+  // Must match: alphanumeric, hyphens, ending with .myshopify.com
+  const shopDomainPattern = /^[a-zA-Z0-9-]+\.myshopify\.com$/;
+  return shopDomainPattern.test(domain.trim());
+}
+
+/**
+ * Normalize shop domain (add .myshopify.com if missing)
+ * @param {string} domain - Shop domain to normalize
+ * @returns {string|null} Normalized domain or null if invalid
+ */
+function normalizeShopDomain(domain) {
+  if (!domain || typeof domain !== 'string') {
+    return null;
+  }
+  const trimmed = domain.trim();
+  if (!trimmed) {
+    return null;
+  }
+  // If already has .myshopify.com, validate and return
+  if (trimmed.includes('.')) {
+    return isValidShopDomain(trimmed) ? trimmed : null;
+  }
+  // Add .myshopify.com suffix
+  const normalized = `${trimmed}.myshopify.com`;
+  return isValidShopDomain(normalized) ? normalized : null;
+}
+
+/**
+ * Check if route is a redirect/callback route (allows query param fallback)
+ * @param {string} path - Request path
+ * @returns {boolean} True if redirect/callback route
+ */
+function isRedirectRoute(path) {
+  const redirectPaths = ['/auth/callback', '/auth/shopify', '/auth/shopify-token'];
+  return redirectPaths.some(redirectPath => path.includes(redirectPath));
+}
+
 export async function resolveStore(req, res, next) {
+  const requestId = req.id || req.headers['x-request-id'] || 'unknown';
   try {
     let storeId = null;
     let shopDomain = null;
     let store = null;
+    let resolutionMethod = null;
 
-    // Method 1: JWT Token Authentication (PRIORITY METHOD)
+    // Method 1: X-Shopify-Shop-Domain header (PREFERRED - highest priority)
+    const headerShopDomain = req.headers['x-shopify-shop-domain'] || req.headers['x-shopify-shop'];
+    if (headerShopDomain) {
+      const normalized = normalizeShopDomain(headerShopDomain);
+      if (normalized) {
+        shopDomain = normalized;
+        resolutionMethod = 'header';
+        logger.debug('Shop domain from header', {
+          requestId,
+          shopDomain,
+          header: req.headers['x-shopify-shop-domain'] ? 'x-shopify-shop-domain' : 'x-shopify-shop',
+        });
+      } else {
+        logger.warn('Invalid shop domain format in header', {
+          requestId,
+          headerValue: headerShopDomain,
+          path: req.path,
+        });
+      }
+    }
+
+    // Method 2: JWT Token Authentication (if header not provided)
     // Check Authorization header for Bearer token
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith('Bearer ')
-    ) {
+    if (!shopDomain && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
       const token = req.headers.authorization.replace('Bearer ', '');
 
       try {
@@ -47,251 +114,135 @@ export async function resolveStore(req, res, next) {
 
           if (store) {
             shopDomain = store.shopDomain;
-            logger.debug('Store resolved from app JWT token', {
+            resolutionMethod = 'jwt-storeId';
+            logger.debug('Store resolved from app JWT token (storeId)', {
+              requestId,
               storeId,
               shopDomain,
             });
-          } else {
-            logger.warn('Store not found for storeId from JWT token', {
-              storeId,
-            });
-            // If store not found but token has shopDomain, use it as fallback
-            if (decoded.shopDomain) {
-              shopDomain = decoded.shopDomain;
-              logger.debug('Using shopDomain from JWT token as fallback', {
+          } else if (decoded.shopDomain) {
+            // Store not found but token has shopDomain
+            const normalized = normalizeShopDomain(decoded.shopDomain);
+            if (normalized) {
+              shopDomain = normalized;
+              resolutionMethod = 'jwt-shopDomain';
+              logger.debug('Using shopDomain from JWT token (store not found)', {
+                requestId,
                 shopDomain,
               });
             }
           }
-        } else {
-          logger.warn('JWT token decoded but no storeId found', { decoded });
-          // If token has shopDomain but no storeId, use it
-          if (decoded.shopDomain) {
-            shopDomain = decoded.shopDomain;
+        } else if (decoded.shopDomain) {
+          // Token has shopDomain but no storeId
+          const normalized = normalizeShopDomain(decoded.shopDomain);
+          if (normalized) {
+            shopDomain = normalized;
+            resolutionMethod = 'jwt-shopDomain';
             logger.debug('Using shopDomain from JWT token (no storeId)', {
+              requestId,
               shopDomain,
             });
           }
         }
       } catch (jwtError) {
         // Not our app token, might be Shopify session token from App Bridge
-        logger.debug(
-          'App JWT token verification failed, trying Shopify session token',
-          {
-            error: jwtError.message,
-            errorName: jwtError.name,
-          },
-        );
+        logger.debug('App JWT token verification failed, trying Shopify session token', {
+          requestId,
+          error: jwtError.message,
+        });
 
         try {
           const shopifySession = await verifyShopifySessionToken(token);
+          const normalized = normalizeShopDomain(shopifySession.shop);
+          
+          if (normalized) {
+            shopDomain = normalized;
+            resolutionMethod = 'shopify-session-token';
+            
+            // Generate app token and get store
+            const { store: storeFromToken } = await generateAppToken(shopifySession.shop);
+            storeId = storeFromToken.id;
 
-          // Generate app token and get store
-          const { store: storeFromToken } = await generateAppToken(
-            shopifySession.shop,
-          );
-          storeId = storeFromToken.id;
-          shopDomain = shopifySession.shop;
+            store = await prisma.shop.findUnique({
+              where: { id: storeId },
+              include: { settings: true },
+            });
 
-          store = await prisma.shop.findUnique({
-            where: { id: storeId },
-            include: { settings: true },
-          });
-
-          if (store) {
             logger.debug('Store resolved from Shopify session token', {
+              requestId,
               storeId,
               shopDomain,
             });
-          } else {
-            logger.warn(
-              'Store not found for storeId from Shopify session token',
-              { storeId, shopDomain },
-            );
           }
         } catch (shopifyError) {
-          // Neither token type worked, log for debugging but continue to fallback methods
-          logger.debug(
-            'Both token verification methods failed, falling back to headers',
-            {
-              jwtError: jwtError.message,
-              jwtErrorName: jwtError.name,
-              shopifyError: shopifyError.message,
-              shopifyErrorName: shopifyError.name,
-              hasAuthHeader: !!req.headers.authorization,
-              tokenLength: token?.length,
-              hasShopDomainHeader: !!req.headers['x-shopify-shop-domain'],
-            },
-          );
+          // Neither token type worked
+          logger.debug('Both token verification methods failed', {
+            requestId,
+            jwtError: jwtError.message,
+            shopifyError: shopifyError.message,
+          });
         }
       }
-    } else {
-      // No Authorization header, log for debugging
-      logger.debug('No Authorization header found, using fallback methods', {
-        hasShopDomainHeader: !!req.headers['x-shopify-shop-domain'],
-        hasShopHeader: !!req.headers['x-shopify-shop'],
+    }
+
+    // Method 3: Query param `shop` (LAST RESORT - only for redirect/callback routes)
+    if (!shopDomain && isRedirectRoute(req.path)) {
+      const queryShop = req.query.shop || req.query.shop_domain;
+      if (queryShop) {
+        const normalized = normalizeShopDomain(queryShop);
+        if (normalized) {
+          shopDomain = normalized;
+          resolutionMethod = 'query-param';
+          logger.debug('Shop domain from query param (redirect route)', {
+            requestId,
+            shopDomain,
+            path: req.path,
+          });
+        } else {
+          logger.warn('Invalid shop domain format in query param', {
+            requestId,
+            queryValue: queryShop,
+            path: req.path,
+          });
+        }
+      }
+    }
+
+    // Final validation - shop domain is required
+    if (!shopDomain || !isValidShopDomain(shopDomain)) {
+      logger.error('Shop domain resolution failed', {
+        requestId,
+        method: req.method,
+        path: req.path,
+        url: req.url,
+        hasHeader: !!req.headers['x-shopify-shop-domain'],
+        hasToken: !!req.headers.authorization,
+        isRedirectRoute: isRedirectRoute(req.path),
+        headerValues: {
+          'x-shopify-shop-domain': req.headers['x-shopify-shop-domain'],
+          'x-shopify-shop': req.headers['x-shopify-shop'],
+          authorization: req.headers.authorization ? 'Bearer ***' : undefined,
+        },
+        queryShop: req.query.shop,
+      });
+
+      // Set response headers
+      res.setHeader('X-Astronote-Tenant-Required', 'true');
+      res.setHeader('X-Request-ID', requestId);
+
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid shop domain',
+        message:
+          'Unable to determine shop domain from request. Please provide X-Shopify-Shop-Domain header or Bearer token.',
+        code: 'INVALID_SHOP_DOMAIN',
+        requestId,
+        apiVersion: 'v1',
       });
     }
 
-    // Method 2: Shopify Headers (backward compatible)
-    // Check multiple possible sources for shop domain
-    // Note: Express converts headers to lowercase, so we only check lowercase
-    // If store was not found from token, or if shopDomain is not set, check headers
-    if (!store || !shopDomain) {
-      const possibleShopDomain =
-        req.headers['x-shopify-shop-domain'] ||
-        req.headers['x-shopify-shop'] ||
-        req.headers['x-shopify-shop-name'] ||
-        req.query.shop ||
-        req.query.shop_domain ||
-        req.query.shop_name ||
-        req.body?.shop ||
-        req.body?.shop_domain ||
-        req.body?.shop_name;
-
-      // Method 2.1: Extract shop domain from URL path (for embedded Shopify apps)
-      // URL pattern: /store/{shop-domain}/apps/{app-name}/app
-      let shopDomainFromPath = null;
-      if (!possibleShopDomain && req.url) {
-        const pathMatch = req.url.match(/\/store\/([^\\/]+)\//);
-        if (pathMatch && pathMatch[1]) {
-          shopDomainFromPath = pathMatch[1];
-          // Ensure it has .myshopify.com suffix
-          if (!shopDomainFromPath.includes('.')) {
-            shopDomainFromPath = `${shopDomainFromPath}.myshopify.com`;
-          }
-        }
-      }
-
-      // Prioritize header shopDomain if provided (especially if store wasn't found from token)
-      if (possibleShopDomain) {
-        const headerShopDomain = possibleShopDomain;
-        // Normalize shop domain
-        const normalizedHeaderDomain = headerShopDomain.includes('.')
-          ? headerShopDomain
-          : `${headerShopDomain}.myshopify.com`;
-
-        // Always use header shopDomain if:
-        // 1. Store was not found from token (even if shopDomain was set from token)
-        // 2. Header is explicitly provided (X-Shopify-Shop-Domain)
-        // 3. No shopDomain was set from token
-        if (!store || req.headers['x-shopify-shop-domain'] || !shopDomain) {
-          shopDomain = normalizedHeaderDomain;
-          logger.debug('Using shopDomain from header', {
-            shopDomain,
-            hadStoreFromToken: !!store,
-            hadShopDomainFromToken: !!shopDomain,
-            headerSource: req.headers['x-shopify-shop-domain']
-              ? 'x-shopify-shop-domain'
-              : 'other',
-          });
-        }
-      } else if (shopDomainFromPath) {
-        if (!shopDomain) {
-          shopDomain = shopDomainFromPath;
-        }
-      } else if (!shopDomain) {
-        // Try to extract from Shopify App Bridge session or JWT
-        const shopifySession = req.session?.shopify || req.session?.shop;
-        if (shopifySession) {
-          shopDomain = shopifySession.shop || shopifySession.shopDomain;
-          if (shopDomain && !shopDomain.includes('.')) {
-            shopDomain = `${shopDomain}.myshopify.com`;
-          }
-        }
-      }
-
-      // Final validation - ensure shopDomain is a valid string
-      if (
-        !shopDomain ||
-        typeof shopDomain !== 'string' ||
-        shopDomain.trim() === ''
-      ) {
-        // No shop domain provided - shop domain is required in production
-        logger.warn('No shop domain provided in headers, query, or body', {
-          method: req.method,
-          path: req.path,
-          url: req.url,
-          headers: Object.keys(req.headers).filter(h =>
-            h.toLowerCase().includes('shop'),
-          ),
-          headerValues: {
-            'x-shopify-shop-domain': req.headers['x-shopify-shop-domain'],
-            'x-shopify-shop': req.headers['x-shopify-shop'],
-            'x-shopify-shop-name': req.headers['x-shopify-shop-name'],
-            authorization: req.headers.authorization ? 'Bearer ***' : undefined,
-          },
-          query: req.query,
-          body: req.body ? Object.keys(req.body) : 'no body',
-          possibleShopDomain,
-          nodeEnv: process.env.NODE_ENV,
-          hasToken: !!req.headers.authorization,
-          storeResolved: !!store,
-          shopDomainFromToken: shopDomain,
-        });
-
-        // In production, shop domain is required - fail if not provided
-        logger.error('Shop domain is required in production mode');
-      }
-
-      // Normalize shopDomain (ensure it's a valid string)
-      if (shopDomain && typeof shopDomain === 'string') {
-        shopDomain = shopDomain.trim();
-        // Ensure it has .myshopify.com suffix if it doesn't already
-        if (shopDomain && !shopDomain.includes('.')) {
-          shopDomain = `${shopDomain}.myshopify.com`;
-        }
-      }
-
-      // Final validation - ensure shopDomain is a valid non-empty string after normalization
-      if (
-        !shopDomain ||
-        typeof shopDomain !== 'string' ||
-        shopDomain.trim() === ''
-      ) {
-        logger.error('Invalid shopDomain after all attempts', {
-          shopDomain,
-          type: typeof shopDomain,
-          method: req.method,
-          path: req.path,
-          headers: Object.keys(req.headers).filter(h =>
-            h.toLowerCase().includes('shop'),
-          ),
-          headerValues: {
-            'x-shopify-shop-domain': req.headers['x-shopify-shop-domain'],
-            'x-shopify-shop': req.headers['x-shopify-shop'],
-            'x-shopify-shop-name': req.headers['x-shopify-shop-name'],
-            authorization: req.headers.authorization ? 'Bearer ***' : undefined,
-          },
-          hadToken: !!req.headers.authorization,
-          storeResolved: !!store,
-        });
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid shop domain',
-          message:
-            'Unable to determine shop domain from request. Please provide X-Shopify-Shop-Domain header or Bearer token.',
-          code: 'INVALID_SHOP_DOMAIN',
-          apiVersion: 'v1',
-        });
-      }
-
-      // Double-check shopDomain is valid before querying
-      if (!shopDomain || typeof shopDomain !== 'string') {
-        logger.error('shopDomain is invalid before Prisma query', {
-          shopDomain,
-          type: typeof shopDomain,
-          possibleShopDomain,
-        });
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid shop domain',
-          message:
-            'Unable to determine shop domain from request. Please provide X-Shopify-Shop-Domain header or Bearer token.',
-          code: 'INVALID_SHOP_DOMAIN',
-        });
-      }
-
+    // Fetch store from database (if not already fetched from token)
+    if (!store && shopDomain) {
       try {
         store = await prisma.shop.findUnique({
           where: { shopDomain },
@@ -302,36 +253,57 @@ export async function resolveStore(req, res, next) {
 
         if (store) {
           storeId = store.id;
+          logger.debug('Store found in database', {
+            requestId,
+            storeId,
+            shopDomain,
+            resolutionMethod,
+          });
         } else {
-          // Auto-create store if it doesn't exist
-          logger.info('Auto-creating new store', { shopDomain });
-
-          store = await prisma.shop.create({
-            data: {
+          // Auto-create store if it doesn't exist (only for certain routes)
+          // Don't auto-create for most API routes - require proper installation
+          if (isRedirectRoute(req.path) || resolutionMethod === 'shopify-session-token') {
+            logger.info('Auto-creating new store', {
+              requestId,
               shopDomain,
-              shopName: shopDomain.replace('.myshopify.com', ''),
-              accessToken: req.headers['x-shopify-access-token'] || 'pending',
-              credits: 100, // Give some initial credits
-              currency: 'EUR',
-              status: 'active',
-              settings: {
-                create: {
-                  currency: 'EUR',
-                  timezone: 'Europe/Athens',
-                  senderNumber: process.env.MITTO_SENDER_NAME || 'Astronote',
-                  senderName: process.env.MITTO_SENDER_NAME || 'Astronote',
+              resolutionMethod,
+            });
+
+            store = await prisma.shop.create({
+              data: {
+                shopDomain,
+                shopName: shopDomain.replace('.myshopify.com', ''),
+                accessToken: req.headers['x-shopify-access-token'] || 'pending',
+                credits: 100, // Give some initial credits
+                currency: 'EUR',
+                status: 'active',
+                settings: {
+                  create: {
+                    currency: 'EUR',
+                    timezone: 'Europe/Athens',
+                    senderNumber: process.env.MITTO_SENDER_NAME || 'Astronote',
+                    senderName: process.env.MITTO_SENDER_NAME || 'Astronote',
+                  },
                 },
               },
-            },
-            include: {
-              settings: true,
-            },
-          });
+              include: {
+                settings: true,
+              },
+            });
 
-          storeId = store.id;
+            storeId = store.id;
+          } else {
+            logger.warn('Store not found and auto-create not allowed', {
+              requestId,
+              shopDomain,
+              path: req.path,
+              resolutionMethod,
+            });
+          }
         }
       } catch (dbError) {
         logger.error('Database error during store resolution', {
+          requestId,
           shopDomain,
           error: dbError.message,
         });
@@ -358,18 +330,25 @@ export async function resolveStore(req, res, next) {
 
     // Validation: Ensure store was found
     if (!store || !storeId) {
-      logger.warn('Store resolution failed', {
-        headers: req.headers,
-        query: req.query,
-        url: req.url,
+      logger.warn('Store resolution failed - store not found in database', {
+        requestId,
+        shopDomain,
+        resolutionMethod,
+        path: req.path,
+        hasHeader: !!req.headers['x-shopify-shop-domain'],
+        hasToken: !!req.headers.authorization,
       });
+
+      res.setHeader('X-Astronote-Tenant-Required', 'true');
+      res.setHeader('X-Request-ID', requestId);
 
       return res.status(401).json({
         success: false,
         error: 'Store not found',
         message:
-          'Unable to resolve store context. Please ensure you are properly authenticated.',
+          'Unable to resolve store context. Please ensure you are properly authenticated and the app is installed.',
         code: 'STORE_NOT_FOUND',
+        requestId,
       });
     }
 
@@ -387,24 +366,43 @@ export async function resolveStore(req, res, next) {
         createdAt: store.createdAt,
         updatedAt: store.updatedAt,
       },
+      resolutionMethod, // Track how store was resolved for debugging
     };
 
     // Add store context to logger for this request
     req.logger = logger;
 
+    // Add request ID to response headers
+    res.setHeader('X-Request-ID', requestId);
+
+    logger.debug('Store resolution successful', {
+      requestId,
+      storeId: store.id,
+      shopDomain: store.shopDomain,
+      resolutionMethod,
+      path: req.path,
+    });
+
     next();
   } catch (error) {
+    const requestId = req.id || req.headers['x-request-id'] || 'unknown';
     logger.error('Store resolution middleware failed', {
+      requestId,
       error: error.message,
-      headers: req.headers,
-      query: req.query,
+      stack: error.stack,
+      path: req.path,
+      method: req.method,
     });
+
+    res.setHeader('X-Astronote-Tenant-Required', 'true');
+    res.setHeader('X-Request-ID', requestId);
 
     res.status(500).json({
       success: false,
       error: 'Store resolution failed',
       message: 'Internal error during store resolution',
       code: 'STORE_RESOLUTION_ERROR',
+      requestId,
     });
   }
 }

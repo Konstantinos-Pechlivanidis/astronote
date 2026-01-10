@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import {
   validateAndConsumeCredits,
   InsufficientCreditsError,
+  SubscriptionRequiredError,
 } from './credit-validation.js';
 
 // Custom error classes for better error handling
@@ -128,6 +129,9 @@ export async function sendSms({
         });
       } catch (error) {
         if (error instanceof InsufficientCreditsError) {
+          throw new ValidationError(error.message);
+        }
+        if (error instanceof SubscriptionRequiredError) {
           throw new ValidationError(error.message);
         }
         throw error;

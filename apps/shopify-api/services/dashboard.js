@@ -305,7 +305,7 @@ async function getActiveAutomationsCount(shopId) {
   return await prisma.userAutomation.count({
     where: {
       shopId,
-      active: true,
+      isActive: true,
     },
   });
 }

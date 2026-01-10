@@ -2,7 +2,7 @@
 // Subscription management service
 
 const prisma = require('../lib/prisma');
-const { credit } = require('./wallet.service');
+const { debit } = require('./wallet.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'subscription-service' });
@@ -23,6 +23,16 @@ const PLANS = {
     freeCredits: 500,    // 500 credits allocated on each billing cycle (yearly)
     stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_PRO_EUR',
   },
+};
+
+const INTERVAL_BY_PLAN = {
+  starter: 'month',
+  pro: 'year',
+};
+
+const ALLOWANCE_BY_INTERVAL = {
+  month: 100,
+  year: 500,
 };
 
 // Credit top-up pricing
@@ -52,6 +62,23 @@ function getFreeCreditsForPlan(planType) {
  */
 function getPlanConfig(planType) {
   return PLANS[planType] || null;
+}
+
+function normalizeInterval(interval) {
+  return interval === 'month' || interval === 'year' ? interval : null;
+}
+
+function getIntervalForPlan(planType) {
+  return INTERVAL_BY_PLAN[planType] || null;
+}
+
+function getIncludedSmsForInterval(interval) {
+  return ALLOWANCE_BY_INTERVAL[interval] || 0;
+}
+
+function resolveIntervalFromStripe(stripeSubscription) {
+  const interval = stripeSubscription?.items?.data?.[0]?.price?.recurring?.interval;
+  return normalizeInterval(interval);
 }
 
 /**
@@ -88,6 +115,13 @@ async function getSubscriptionStatus(userId) {
         subscriptionStatus: true,
         lastFreeCreditsAllocatedAt: true,
         billingCurrency: true,
+        subscriptionInterval: true,
+        subscriptionCurrentPeriodStart: true,
+        subscriptionCurrentPeriodEnd: true,
+        cancelAtPeriodEnd: true,
+        includedSmsPerPeriod: true,
+        usedSmsThisPeriod: true,
+        lastBillingError: true,
       },
     });
 
@@ -107,6 +141,17 @@ async function getSubscriptionStatus(userId) {
       stripeSubscriptionId: user.stripeSubscriptionId,
       lastFreeCreditsAllocatedAt: user.lastFreeCreditsAllocatedAt,
       billingCurrency: user.billingCurrency || 'EUR',
+      interval: user.subscriptionInterval,
+      currentPeriodStart: user.subscriptionCurrentPeriodStart,
+      currentPeriodEnd: user.subscriptionCurrentPeriodEnd,
+      cancelAtPeriodEnd: user.cancelAtPeriodEnd ?? false,
+      includedSmsPerPeriod: user.includedSmsPerPeriod || 0,
+      usedSmsThisPeriod: user.usedSmsThisPeriod || 0,
+      remainingSmsThisPeriod: Math.max(
+        0,
+        (user.subscriptionStatus === 'active' ? user.includedSmsPerPeriod || 0 : 0) - (user.usedSmsThisPeriod || 0),
+      ),
+      lastBillingError: user.lastBillingError || null,
     };
   } catch (err) {
     logger.error({ userId, err: err.message }, 'Failed to get subscription status');
@@ -133,15 +178,26 @@ function getBillingPeriodStart(stripeSubscription, now = new Date()) {
   return new Date(stripeSubscription.current_period_start * 1000);
 }
 
+function getBillingPeriodEnd(stripeSubscription, now = new Date()) {
+  if (!stripeSubscription || !stripeSubscription.current_period_end) {
+    const end = new Date(now);
+    end.setMonth(end.getMonth() + 1);
+    end.setDate(0);
+    end.setHours(23, 59, 59, 999);
+    return end;
+  }
+  return new Date(stripeSubscription.current_period_end * 1000);
+}
+
 /**
- * Allocate free credits for a billing cycle (idempotent)
+ * Ensure allowance is reset for the current billing period (idempotent)
  * @param {number} userId - User ID
  * @param {string} planType - 'starter' or 'pro'
  * @param {string} invoiceId - Stripe invoice ID (for idempotency)
  * @param {Object} stripeSubscription - Stripe subscription object (optional)
- * @returns {Promise<Object>} Result with allocated credits and status
+ * @returns {Promise<Object>} Result with allowance reset status
  */
-async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscription = null) {
+async function resetAllowanceForPeriod(userId, planType, invoiceId, stripeSubscription = null) {
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -149,6 +205,7 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
         planType: true,
         subscriptionStatus: true,
         lastFreeCreditsAllocatedAt: true,
+        subscriptionCurrentPeriodStart: true,
       },
     });
 
@@ -168,19 +225,17 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
       logger.warn({ userId, userPlanType: user.planType, requestedPlanType: planType }, 'Plan type mismatch, but proceeding with requested planType');
     }
 
-    // Get free credits for plan
-    const freeCredits = getFreeCreditsForPlan(planType);
-    if (freeCredits === 0) {
-      logger.warn({ userId, planType }, 'No free credits for plan');
-      return { allocated: false, reason: 'no_free_credits' };
-    }
+    const interval = resolveIntervalFromStripe(stripeSubscription) || getIntervalForPlan(planType) || 'month';
+    const includedSmsPerPeriod = getIncludedSmsForInterval(interval);
 
-    // Check if credits already allocated for current billing period
+    // Check if allowance already reset for current billing period
     const now = new Date();
     let billingPeriodStart = null;
+    let billingPeriodEnd = null;
 
     if (stripeSubscription) {
       billingPeriodStart = getBillingPeriodStart(stripeSubscription, now);
+      billingPeriodEnd = getBillingPeriodEnd(stripeSubscription, now);
     } else if (user.lastFreeCreditsAllocatedAt) {
       // If no subscription data, assume monthly billing
       // Check if last allocation was in current month
@@ -188,55 +243,38 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
       const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
       if (lastAllocated >= currentMonthStart) {
-        logger.info({ userId, lastAllocated, currentMonthStart }, 'Credits already allocated for this billing period');
-        return { allocated: false, reason: 'already_allocated', credits: freeCredits };
+        logger.info({ userId, lastAllocated, currentMonthStart }, 'Allowance already reset for this billing period');
+        return { allocated: false, reason: 'already_allocated', includedSmsPerPeriod };
       }
       billingPeriodStart = currentMonthStart;
     }
 
-    // Check idempotency via CreditTransaction (check if invoice already processed)
-    if (invoiceId) {
-      const existingTxn = await prisma.creditTransaction.findFirst({
-        where: {
-          ownerId: userId,
-          reason: `subscription:${planType}:cycle`,
-          meta: {
-            path: ['invoiceId'],
-            equals: invoiceId,
-          },
-        },
-      });
+    const shouldReset =
+      billingPeriodStart &&
+      (!user.subscriptionCurrentPeriodStart ||
+        new Date(user.subscriptionCurrentPeriodStart).getTime() !== billingPeriodStart.getTime());
 
-      if (existingTxn) {
-        logger.info({ userId, invoiceId }, 'Credits already allocated for this invoice');
-        return { allocated: false, reason: 'invoice_already_processed', credits: freeCredits };
-      }
+    if (!shouldReset && user.lastFreeCreditsAllocatedAt) {
+      logger.info({ userId, invoiceId }, 'Allowance reset already processed');
+      return { allocated: false, reason: 'already_allocated', includedSmsPerPeriod };
     }
 
-    // Allocate credits
-    await prisma.$transaction(async (tx) => {
-      // Credit wallet
-      await credit(userId, freeCredits, {
-        reason: `subscription:${planType}:cycle`,
-        meta: {
-          invoiceId: invoiceId || null,
-          planType,
-          allocatedAt: now.toISOString(),
-          billingPeriodStart: billingPeriodStart ? billingPeriodStart.toISOString() : null,
-        },
-      }, tx);
-
-      // Update last allocated timestamp
-      await tx.user.update({
-        where: { id: userId },
-        data: { lastFreeCreditsAllocatedAt: now },
-      });
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        subscriptionInterval: interval,
+        subscriptionCurrentPeriodStart: billingPeriodStart || null,
+        subscriptionCurrentPeriodEnd: billingPeriodEnd || null,
+        includedSmsPerPeriod,
+        usedSmsThisPeriod: 0,
+        lastFreeCreditsAllocatedAt: now,
+      },
     });
 
-    logger.info({ userId, planType, freeCredits, invoiceId }, 'Free credits allocated');
-    return { allocated: true, credits: freeCredits };
+    logger.info({ userId, planType, includedSmsPerPeriod, invoiceId }, 'Allowance reset for billing period');
+    return { allocated: true, includedSmsPerPeriod };
   } catch (err) {
-    logger.error({ userId, planType, err: err.message, stack: err.stack }, 'Failed to allocate free credits');
+    logger.error({ userId, planType, err: err.message, stack: err.stack }, 'Failed to reset allowance');
     throw err;
   }
 }
@@ -249,11 +287,14 @@ async function allocateFreeCredits(userId, planType, invoiceId, stripeSubscripti
  * @param {string} planType - 'starter' or 'pro'
  * @returns {Promise<Object>} Updated user object
  */
-async function activateSubscription(userId, stripeCustomerId, stripeSubscriptionId, planType) {
+async function activateSubscription(userId, stripeCustomerId, stripeSubscriptionId, planType, options = {}) {
   try {
     if (!['starter', 'pro'].includes(planType)) {
       throw new Error(`Invalid plan type: ${planType}`);
     }
+
+    const interval = normalizeInterval(options.interval) || getIntervalForPlan(planType) || 'month';
+    const includedSmsPerPeriod = getIncludedSmsForInterval(interval);
 
     const user = await prisma.user.update({
       where: { id: userId },
@@ -262,6 +303,14 @@ async function activateSubscription(userId, stripeCustomerId, stripeSubscription
         stripeSubscriptionId,
         planType,
         subscriptionStatus: 'active',
+        subscriptionInterval: interval,
+        subscriptionCurrentPeriodStart: options.currentPeriodStart || null,
+        subscriptionCurrentPeriodEnd: options.currentPeriodEnd || null,
+        cancelAtPeriodEnd: options.cancelAtPeriodEnd ?? false,
+        includedSmsPerPeriod,
+        usedSmsThisPeriod: 0,
+        lastFreeCreditsAllocatedAt: new Date(),
+        lastBillingError: null,
       },
       select: {
         id: true,
@@ -269,6 +318,12 @@ async function activateSubscription(userId, stripeCustomerId, stripeSubscription
         subscriptionStatus: true,
         stripeCustomerId: true,
         stripeSubscriptionId: true,
+        subscriptionInterval: true,
+        subscriptionCurrentPeriodStart: true,
+        subscriptionCurrentPeriodEnd: true,
+        cancelAtPeriodEnd: true,
+        includedSmsPerPeriod: true,
+        usedSmsThisPeriod: true,
       },
     });
 
@@ -294,6 +349,7 @@ async function deactivateSubscription(userId, reason = 'cancelled') {
       where: { id: userId },
       data: {
         subscriptionStatus: status,
+        cancelAtPeriodEnd: false,
         // Keep stripeCustomerId and stripeSubscriptionId for reference
         // Keep planType for historical reference
       },
@@ -347,6 +403,146 @@ function calculateTopupPrice(credits, currency = 'EUR') {
   };
 }
 
+async function getAllowanceStatus(userId) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      subscriptionStatus: true,
+      includedSmsPerPeriod: true,
+      usedSmsThisPeriod: true,
+      subscriptionCurrentPeriodStart: true,
+      subscriptionCurrentPeriodEnd: true,
+      subscriptionInterval: true,
+    },
+  });
+
+  if (!user) {
+    return {
+      includedPerPeriod: 0,
+      usedThisPeriod: 0,
+      remainingThisPeriod: 0,
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      interval: null,
+    };
+  }
+
+  const included = user.includedSmsPerPeriod || 0;
+  const used = user.usedSmsThisPeriod || 0;
+  const remaining = user.subscriptionStatus === 'active'
+    ? Math.max(0, included - used)
+    : 0;
+
+  return {
+    includedPerPeriod: included,
+    usedThisPeriod: used,
+    remainingThisPeriod: remaining,
+    currentPeriodStart: user.subscriptionCurrentPeriodStart,
+    currentPeriodEnd: user.subscriptionCurrentPeriodEnd,
+    interval: user.subscriptionInterval,
+  };
+}
+
+async function consumeAllowanceThenCredits(userId, amount, opts = {}, tx = null) {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new Error('INVALID_AMOUNT');
+  }
+
+  const execute = async (client) => {
+    const user = await client.user.findUnique({
+      where: { id: userId },
+      select: {
+        subscriptionStatus: true,
+        includedSmsPerPeriod: true,
+        usedSmsThisPeriod: true,
+      },
+    });
+
+    const included = user?.includedSmsPerPeriod || 0;
+    const used = user?.usedSmsThisPeriod || 0;
+    const remaining = user?.subscriptionStatus === 'active'
+      ? Math.max(0, included - used)
+      : 0;
+
+    const allowanceToUse = Math.min(amount, remaining);
+    if (allowanceToUse > 0) {
+      await client.user.update({
+        where: { id: userId },
+        data: { usedSmsThisPeriod: { increment: allowanceToUse } },
+      });
+    }
+
+    const debitAmount = amount - allowanceToUse;
+    let walletResult = null;
+    if (debitAmount > 0) {
+      walletResult = await debit(userId, debitAmount, opts, client);
+    }
+
+    return {
+      usedAllowance: allowanceToUse,
+      debitedCredits: debitAmount,
+      remainingAllowance: Math.max(0, remaining - allowanceToUse),
+      balance: walletResult?.balance ?? null,
+    };
+  };
+
+  if (tx) {
+    return execute(tx);
+  }
+
+  return prisma.$transaction(execute);
+}
+
+async function consumeMessageBilling(userId, amount, opts = {}) {
+  const messageId = opts?.messageId ? Number(opts.messageId) : null;
+
+  if (!messageId) {
+    const result = await consumeAllowanceThenCredits(userId, amount, opts);
+    return {
+      ...result,
+      billingStatus: 'paid',
+      billedAt: new Date(),
+    };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const message = await tx.campaignMessage.findUnique({
+      where: { id: messageId },
+      select: { billingStatus: true, billedAt: true },
+    });
+
+    if (message?.billingStatus === 'paid') {
+      return {
+        alreadyBilled: true,
+        billingStatus: 'paid',
+        billedAt: message.billedAt,
+        usedAllowance: 0,
+        debitedCredits: 0,
+        remainingAllowance: null,
+        balance: null,
+      };
+    }
+
+    const result = await consumeAllowanceThenCredits(userId, amount, opts, tx);
+    const billedAt = new Date();
+
+    await tx.campaignMessage.update({
+      where: { id: messageId },
+      data: {
+        billingStatus: 'paid',
+        billedAt,
+        billingError: null,
+      },
+    });
+
+    return {
+      ...result,
+      billingStatus: 'paid',
+      billedAt,
+    };
+  });
+}
+
 module.exports = {
   PLANS,
   CREDIT_PRICE_EUR,
@@ -355,9 +551,16 @@ module.exports = {
   getPlanConfig,
   isSubscriptionActive,
   getSubscriptionStatus,
-  allocateFreeCredits,
+  resetAllowanceForPeriod,
   activateSubscription,
   deactivateSubscription,
   calculateTopupPrice,
   getBillingPeriodStart,
+  getBillingPeriodEnd,
+  getAllowanceStatus,
+  consumeAllowanceThenCredits,
+  consumeMessageBilling,
+  getIntervalForPlan,
+  getIncludedSmsForInterval,
+  resolveIntervalFromStripe,
 };

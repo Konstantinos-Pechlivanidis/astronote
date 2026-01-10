@@ -65,8 +65,15 @@ export async function getSettings(req, res, next) {
     };
 
     // Return flat structure for easier frontend access
-    // Frontend expects: senderId (senderNumber or senderName), timezone, currency, etc.
+    // Frontend expects: senderId (senderNumber or senderName), timezone, currency, baseUrl, etc.
     const settings = shop.settings || {};
+
+    // Get baseUrl (from settings or env fallback for display)
+    let baseUrl = settings.baseUrl || null;
+    if (!baseUrl) {
+      // Fallback to env var for display (read-only, not stored)
+      baseUrl = process.env.PUBLIC_BASE_URL || null;
+    }
 
     return sendSuccess(res, {
       // Shop info
@@ -82,6 +89,7 @@ export async function getSettings(req, res, next) {
       senderName: settings.senderName || null,
       timezone: settings.timezone || 'UTC',
       currency: settings.currency || shop.currency || 'EUR',
+      baseUrl: baseUrl, // Expose baseUrl (from DB or env fallback)
       // Additional data
       recentTransactions: shop.billingTransactions,
       usageGuide,
@@ -300,6 +308,13 @@ export async function updateSettings(req, res, next) {
       fields: Object.keys(updateData),
     });
 
+    // Get baseUrl (from updated settings or env fallback for display)
+    let baseUrl = updatedSettings.baseUrl || null;
+    if (!baseUrl) {
+      // Fallback to env var for display (read-only, not stored)
+      baseUrl = process.env.PUBLIC_BASE_URL || null;
+    }
+
     // Return in same format as getSettings
     return sendSuccess(
       res,
@@ -310,6 +325,7 @@ export async function updateSettings(req, res, next) {
         senderName: updatedSettings.senderName || null,
         timezone: updatedSettings.timezone || 'UTC',
         currency: updatedSettings.currency || 'EUR',
+        baseUrl: baseUrl, // Return baseUrl (from DB or env fallback)
         updatedAt: updatedSettings.updatedAt,
       },
       'Settings updated successfully',

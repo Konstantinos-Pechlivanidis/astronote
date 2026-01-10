@@ -1,0 +1,418 @@
+import { z } from 'zod';
+import shopifyApi from './shopify/api/axios';
+
+export type BillingApiError = {
+  success: false;
+  code: string;
+  message: string;
+  requestId?: string;
+  status?: number;
+};
+
+const normalizeBillingError = (
+  error: unknown,
+  fallbackMessage: string,
+): BillingApiError => {
+  const err = error as any;
+  const responseData = err?.response?.data;
+
+  return {
+    success: false,
+    code:
+      err?.code ||
+      responseData?.code ||
+      responseData?.error ||
+      'UNKNOWN_ERROR',
+    message: responseData?.message || err?.message || fallbackMessage,
+    requestId: responseData?.requestId || err?.requestId,
+    status: err?.response?.status,
+  };
+};
+
+const safeRequest = async <T>(
+  action: () => Promise<T>,
+  fallbackMessage: string,
+): Promise<T> => {
+  try {
+    return await action();
+  } catch (error) {
+    throw normalizeBillingError(error, fallbackMessage);
+  }
+};
+
+export type SubscriptionPlanType = 'starter' | 'pro';
+export type SubscriptionStatusCode =
+  | 'active'
+  | 'trialing'
+  | 'past_due'
+  | 'unpaid'
+  | 'incomplete'
+  | 'paused'
+  | 'inactive'
+  | 'cancelled';
+
+export interface SubscriptionStatus {
+  active: boolean;
+  planType: SubscriptionPlanType | null;
+  status: SubscriptionStatusCode;
+  interval?: 'month' | 'year' | null;
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  includedSmsPerPeriod?: number;
+  usedSmsThisPeriod?: number;
+  remainingSmsThisPeriod?: number;
+  billingCurrency?: string;
+  lastBillingError?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+}
+
+export interface BillingSummary {
+  subscription: SubscriptionStatus;
+  allowance: {
+    includedPerPeriod: number;
+    usedThisPeriod: number;
+    remainingThisPeriod: number;
+    currentPeriodStart?: string | null;
+    currentPeriodEnd?: string | null;
+    interval?: 'month' | 'year' | null;
+  };
+  credits: {
+    balance: number;
+    currency: string;
+  };
+  billingCurrency?: string;
+}
+
+export interface Balance {
+  credits: number;
+  balance: number;
+  currency?: string;
+  subscription?: SubscriptionStatus;
+}
+
+export interface CreditPackage {
+  id: string;
+  name: string;
+  displayName?: string;
+  units?: number;
+  credits: number;
+  price: number;
+  amount?: number;
+  currency: string;
+  priceId?: string;
+  stripePriceId?: string;
+  available?: boolean;
+  type?: string;
+  description?: string;
+}
+
+export interface PackagesResponse {
+  packages: CreditPackage[];
+  currency: string;
+  subscriptionRequired?: boolean;
+}
+
+export interface TopupPrice {
+  credits: number;
+  price: number;
+  currency: string;
+  priceEur?: number;
+  priceEurWithVat?: number;
+  vatAmount?: number;
+}
+
+export interface Transaction {
+  id: string;
+  type: 'credit_purchase' | 'topup' | 'subscription' | 'refund';
+  amount: number;
+  currency: string;
+  credits?: number;
+  status: 'completed' | 'pending' | 'failed';
+  createdAt: string;
+  description?: string;
+}
+
+export interface TransactionHistoryResponse {
+  transactions: Transaction[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  };
+}
+
+export interface CreatePurchaseRequest {
+  packageId: string;
+  successUrl: string;
+  cancelUrl: string;
+  currency?: string;
+}
+
+export interface CreateTopupRequest {
+  credits: number;
+  successUrl: string;
+  cancelUrl: string;
+  currency?: string;
+}
+
+export interface CheckoutSessionResponse {
+  sessionUrl?: string;
+  checkoutUrl?: string;
+  sessionId?: string;
+}
+
+export interface SubscribeRequest {
+  planType: SubscriptionPlanType;
+  currency?: string;
+}
+
+export interface UpdateSubscriptionRequest {
+  planType: SubscriptionPlanType;
+  currency?: string;
+}
+
+export interface SwitchIntervalRequest {
+  interval: 'month' | 'year';
+  currency?: string;
+}
+
+export interface SubscriptionCheckoutResponse {
+  checkoutUrl?: string;
+  sessionId?: string;
+  planType?: SubscriptionPlanType;
+  currency?: string;
+}
+
+export interface PortalResponse {
+  portalUrl: string;
+}
+
+const subscriptionStatusSchema = z
+  .object({
+    active: z.boolean().optional(),
+    planType: z.enum(['starter', 'pro']).nullable().optional(),
+    status: z
+      .enum([
+        'active',
+        'trialing',
+        'past_due',
+        'unpaid',
+        'incomplete',
+        'paused',
+        'inactive',
+        'cancelled',
+      ])
+      .optional(),
+    interval: z.enum(['month', 'year']).nullable().optional(),
+    currentPeriodStart: z.string().nullable().optional(),
+    currentPeriodEnd: z.string().nullable().optional(),
+    cancelAtPeriodEnd: z.boolean().optional(),
+    includedSmsPerPeriod: z.number().optional(),
+    usedSmsThisPeriod: z.number().optional(),
+    remainingSmsThisPeriod: z.number().optional(),
+    billingCurrency: z.string().optional(),
+    lastBillingError: z.string().nullable().optional(),
+    stripeCustomerId: z.string().nullable().optional(),
+    stripeSubscriptionId: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const billingSummarySchema = z
+  .object({
+    subscription: subscriptionStatusSchema.optional(),
+    allowance: z
+      .object({
+        includedPerPeriod: z.number().optional(),
+        usedThisPeriod: z.number().optional(),
+        remainingThisPeriod: z.number().optional(),
+        currentPeriodStart: z.string().nullable().optional(),
+        currentPeriodEnd: z.string().nullable().optional(),
+        interval: z.enum(['month', 'year']).nullable().optional(),
+      })
+      .optional(),
+    credits: z
+      .object({
+        balance: z.number().optional(),
+        currency: z.string().optional(),
+      })
+      .optional(),
+    billingCurrency: z.string().optional(),
+  })
+  .passthrough();
+
+const defaultSummary: BillingSummary = {
+  subscription: {
+    active: false,
+    planType: null,
+    status: 'inactive',
+  },
+  allowance: {
+    includedPerPeriod: 0,
+    usedThisPeriod: 0,
+    remainingThisPeriod: 0,
+  },
+  credits: {
+    balance: 0,
+    currency: 'EUR',
+  },
+  billingCurrency: 'EUR',
+};
+
+const parseBillingSummary = (payload: unknown): BillingSummary => {
+  const parsed = billingSummarySchema.safeParse(payload);
+  if (!parsed.success) {
+    return defaultSummary;
+  }
+
+  return {
+    ...defaultSummary,
+    ...parsed.data,
+    subscription: {
+      ...defaultSummary.subscription,
+      ...(parsed.data.subscription || {}),
+    },
+    allowance: {
+      ...defaultSummary.allowance,
+      ...(parsed.data.allowance || {}),
+    },
+    credits: {
+      ...defaultSummary.credits,
+      ...(parsed.data.credits || {}),
+    },
+  };
+};
+
+const buildIdempotencyKey = (prefix = 'shopify') => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+export const shopifyBillingApi = {
+  getBillingSummary: async (): Promise<BillingSummary> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<BillingSummary>('/billing/summary');
+      return parseBillingSummary(response);
+    }, 'Failed to load billing summary'),
+
+  getBalance: async (): Promise<Balance> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<Balance>('/billing/balance');
+      return response as unknown as Balance;
+    }, 'Failed to load balance'),
+
+  listCreditPackages: async (currency?: string): Promise<PackagesResponse> =>
+    safeRequest(async () => {
+      const params = currency ? { currency } : {};
+      const response = await shopifyApi.get<PackagesResponse>('/billing/packages', { params });
+      return response as unknown as PackagesResponse;
+    }, 'Failed to load credit packages'),
+
+  getHistory: async (params: { page?: number; pageSize?: number }): Promise<TransactionHistoryResponse> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<TransactionHistoryResponse>('/billing/history', { params });
+      return response as unknown as TransactionHistoryResponse;
+    }, 'Failed to load billing history'),
+
+  getBillingHistory: async (params: { page?: number; pageSize?: number }): Promise<TransactionHistoryResponse> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<TransactionHistoryResponse>('/billing/billing-history', { params });
+      return response as unknown as TransactionHistoryResponse;
+    }, 'Failed to load Stripe transactions'),
+
+  calculateTopup: async (credits: number): Promise<TopupPrice> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<TopupPrice>('/billing/topup/calculate', {
+        params: { credits },
+      });
+      return response as unknown as TopupPrice;
+    }, 'Failed to calculate top-up'),
+
+  createTopup: async (data: CreateTopupRequest): Promise<CheckoutSessionResponse> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<CheckoutSessionResponse>('/billing/topup', data);
+      return response as unknown as CheckoutSessionResponse;
+    }, 'Failed to create top-up session'),
+
+  createPurchase: async (data: CreatePurchaseRequest): Promise<CheckoutSessionResponse> =>
+    safeRequest(async () => {
+      const idempotencyKey = buildIdempotencyKey('billing-purchase');
+      const response = await shopifyApi.post<CheckoutSessionResponse>(
+        '/billing/purchase',
+        data,
+        {
+          headers: {
+            'Idempotency-Key': idempotencyKey,
+          },
+        },
+      );
+      return response as unknown as CheckoutSessionResponse;
+    }, 'Failed to create purchase session'),
+
+  getSubscriptionStatus: async (): Promise<SubscriptionStatus> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<SubscriptionStatus>('/subscriptions/status');
+      return response as unknown as SubscriptionStatus;
+    }, 'Failed to load subscription status'),
+
+  subscribe: async (data: SubscribeRequest): Promise<SubscriptionCheckoutResponse> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<SubscriptionCheckoutResponse>('/subscriptions/subscribe', data);
+      return response as unknown as SubscriptionCheckoutResponse;
+    }, 'Failed to initiate subscription'),
+
+  updateSubscription: async (data: UpdateSubscriptionRequest): Promise<SubscriptionStatus> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<SubscriptionStatus>('/subscriptions/update', data);
+      return response as unknown as SubscriptionStatus;
+    }, 'Failed to update subscription'),
+
+  switchSubscription: async (
+    data: SwitchIntervalRequest,
+  ): Promise<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean }> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean }>(
+        '/subscriptions/switch',
+        data,
+      );
+      return response as unknown as { interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean };
+    }, 'Failed to switch subscription interval'),
+
+  cancelSubscription: async (): Promise<{ cancelledAt?: string }> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<{ cancelledAt?: string }>('/subscriptions/cancel');
+      return response as unknown as { cancelledAt?: string };
+    }, 'Failed to cancel subscription'),
+
+  getBillingPortalUrl: async (): Promise<PortalResponse> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<PortalResponse>('/subscriptions/portal');
+      return response as unknown as PortalResponse;
+    }, 'Failed to open billing portal'),
+};
+
+export const billingApi = {
+  getBalance: shopifyBillingApi.getBalance,
+  getPackages: shopifyBillingApi.listCreditPackages,
+  calculateTopup: shopifyBillingApi.calculateTopup,
+  createTopup: shopifyBillingApi.createTopup,
+  createPurchase: shopifyBillingApi.createPurchase,
+  getHistory: shopifyBillingApi.getHistory,
+  getBillingHistory: shopifyBillingApi.getBillingHistory,
+  getSummary: shopifyBillingApi.getBillingSummary,
+};
+
+export const subscriptionsApi = {
+  getStatus: shopifyBillingApi.getSubscriptionStatus,
+  subscribe: shopifyBillingApi.subscribe,
+  update: shopifyBillingApi.updateSubscription,
+  cancel: shopifyBillingApi.cancelSubscription,
+  getPortal: shopifyBillingApi.getBillingPortalUrl,
+  switchInterval: shopifyBillingApi.switchSubscription,
+};

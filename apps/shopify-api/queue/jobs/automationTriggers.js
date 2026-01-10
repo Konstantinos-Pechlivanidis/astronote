@@ -13,6 +13,7 @@ import prisma from '../../services/prisma.js';
 import {
   validateAndConsumeCredits,
   InsufficientCreditsError,
+  SubscriptionRequiredError,
   logAutomationSkip,
 } from '../../services/credit-validation.js';
 
@@ -57,6 +58,22 @@ export async function handleAbandonedCartTrigger(job) {
     try {
       await validateAndConsumeCredits(shopId, 1);
     } catch (error) {
+      if (error instanceof SubscriptionRequiredError) {
+        await logAutomationSkip(automationId, shopId, 'Subscription required');
+        logger.warn(
+          'Abandoned cart automation skipped due to inactive subscription',
+          {
+            shopId,
+            contactId,
+            automationId,
+          },
+        );
+        return {
+          success: false,
+          reason: 'subscription_required',
+          error: error.message,
+        };
+      }
       if (error instanceof InsufficientCreditsError) {
         await logAutomationSkip(automationId, shopId, 'Insufficient credits');
         logger.warn(
@@ -128,6 +145,22 @@ export async function handleOrderConfirmationTrigger(job) {
     try {
       await validateAndConsumeCredits(shopId, 1);
     } catch (error) {
+      if (error instanceof SubscriptionRequiredError) {
+        await logAutomationSkip(automationId, shopId, 'Subscription required');
+        logger.warn(
+          'Order confirmation automation skipped due to inactive subscription',
+          {
+            shopId,
+            contactId,
+            automationId,
+          },
+        );
+        return {
+          success: false,
+          reason: 'subscription_required',
+          error: error.message,
+        };
+      }
       if (error instanceof InsufficientCreditsError) {
         await logAutomationSkip(automationId, shopId, 'Insufficient credits');
         logger.warn(
@@ -202,6 +235,22 @@ export async function handleOrderFulfilledTrigger(job) {
     try {
       await validateAndConsumeCredits(shopId, 1);
     } catch (error) {
+      if (error instanceof SubscriptionRequiredError) {
+        await logAutomationSkip(automationId, shopId, 'Subscription required');
+        logger.warn(
+          'Order fulfillment automation skipped due to inactive subscription',
+          {
+            shopId,
+            contactId,
+            automationId,
+          },
+        );
+        return {
+          success: false,
+          reason: 'subscription_required',
+          error: error.message,
+        };
+      }
       if (error instanceof InsufficientCreditsError) {
         await logAutomationSkip(automationId, shopId, 'Insufficient credits');
         logger.warn(
@@ -275,6 +324,22 @@ export async function handleCustomerReengagementTrigger(job) {
     try {
       await validateAndConsumeCredits(shopId, 1);
     } catch (error) {
+      if (error instanceof SubscriptionRequiredError) {
+        await logAutomationSkip(automationId, shopId, 'Subscription required');
+        logger.warn(
+          'Customer re-engagement automation skipped due to inactive subscription',
+          {
+            shopId,
+            contactId,
+            automationId,
+          },
+        );
+        return {
+          success: false,
+          reason: 'subscription_required',
+          error: error.message,
+        };
+      }
       if (error instanceof InsufficientCreditsError) {
         await logAutomationSkip(automationId, shopId, 'Insufficient credits');
         logger.warn(
@@ -344,6 +409,19 @@ export async function handleBirthdayTrigger(_job) {
     try {
       await validateAndConsumeCredits(shopId, 1);
     } catch (error) {
+      if (error instanceof SubscriptionRequiredError) {
+        await logAutomationSkip(automationId, shopId, 'Subscription required');
+        logger.warn('Birthday automation skipped due to inactive subscription', {
+          shopId,
+          contactId,
+          automationId,
+        });
+        return {
+          success: false,
+          reason: 'subscription_required',
+          error: error.message,
+        };
+      }
       if (error instanceof InsufficientCreditsError) {
         await logAutomationSkip(automationId, shopId, 'Insufficient credits');
         logger.warn('Birthday automation skipped due to insufficient credits', {
@@ -421,6 +499,19 @@ export async function handleWelcomeTrigger(job) {
     try {
       await validateAndConsumeCredits(shopId, 1);
     } catch (error) {
+      if (error instanceof SubscriptionRequiredError) {
+        await logAutomationSkip(automationId, shopId, 'Subscription required');
+        logger.warn('Welcome automation skipped due to inactive subscription', {
+          shopId,
+          contactId,
+          automationId,
+        });
+        return {
+          success: false,
+          reason: 'subscription_required',
+          error: error.message,
+        };
+      }
       if (error instanceof InsufficientCreditsError) {
         await logAutomationSkip(automationId, shopId, 'Insufficient credits');
         logger.warn('Welcome automation skipped due to insufficient credits', {
@@ -590,6 +681,19 @@ export async function handleCrossSellTrigger(job) {
     try {
       await validateAndConsumeCredits(shopId, 1);
     } catch (error) {
+      if (error instanceof SubscriptionRequiredError) {
+        await logAutomationSkip(automationId, shopId, 'Subscription required');
+        logger.warn('Cross-sell automation skipped due to inactive subscription', {
+          shopId,
+          contactId,
+          automationId,
+        });
+        return {
+          success: false,
+          reason: 'subscription_required',
+          error: error.message,
+        };
+      }
       if (error instanceof InsufficientCreditsError) {
         await logAutomationSkip(automationId, shopId, 'Insufficient credits');
         logger.warn('Cross-sell automation skipped due to insufficient credits', {
@@ -662,6 +766,22 @@ export async function handleReviewRequestTrigger(job) {
     try {
       await validateAndConsumeCredits(shopId, 1);
     } catch (error) {
+      if (error instanceof SubscriptionRequiredError) {
+        await logAutomationSkip(automationId, shopId, 'Subscription required');
+        logger.warn(
+          'Review request automation skipped due to inactive subscription',
+          {
+            shopId,
+            contactId,
+            automationId,
+          },
+        );
+        return {
+          success: false,
+          reason: 'subscription_required',
+          error: error.message,
+        };
+      }
       if (error instanceof InsufficientCreditsError) {
         await logAutomationSkip(automationId, shopId, 'Insufficient credits');
         logger.warn(

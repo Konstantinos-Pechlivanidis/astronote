@@ -20,14 +20,22 @@ export interface Template {
 }
 
 export interface TemplatesListParams {
+  eshopType?: string; // eShop type filter (required or derived from shop settings)
   limit?: number;
   offset?: number;
+  page?: number; // Retail-aligned pagination
+  pageSize?: number; // Retail-aligned pagination
   category?: string;
   search?: string;
+  language?: string; // Optional, but will be forced to 'en' (English-only)
 }
 
 export interface TemplatesListResponse {
-  templates: Template[];
+  items?: Template[]; // Retail-aligned field name
+  templates: Template[]; // Backward compatibility
+  total?: number; // Retail-aligned field
+  page?: number; // Retail-aligned field
+  pageSize?: number; // Retail-aligned field
   pagination: {
     page: number;
     pageSize: number;
@@ -49,16 +57,31 @@ export const templatesApi = {
   list: async (params?: TemplatesListParams): Promise<TemplatesListResponse> => {
     const queryParams: Record<string, string | number> = {};
 
+    // eShop type is required (or will be derived from shop settings on backend)
+    if (params?.eshopType) queryParams.eshopType = params.eshopType;
+    
+    // Support both page/pageSize (Retail-aligned) and offset/limit (backward compatibility)
+    if (params?.page) queryParams.page = params.page;
+    if (params?.pageSize) queryParams.pageSize = params.pageSize;
     if (params?.limit) queryParams.limit = params.limit;
     if (params?.offset !== undefined) queryParams.offset = params.offset;
+    
     if (params?.category) queryParams.category = params.category;
     if (params?.search) queryParams.search = params.search;
+    
+    // Language is forced to 'en' (English-only for Shopify)
+    queryParams.language = 'en';
 
     const response = await shopifyApi.get<TemplatesListResponse>('/templates', {
       params: queryParams,
     });
     // Response interceptor already extracts data
-    return response as unknown as TemplatesListResponse;
+    const data = response as unknown as TemplatesListResponse;
+    // Ensure backward compatibility: if items exists, also set templates
+    if (data.items && !data.templates) {
+      data.templates = data.items;
+    }
+    return data;
   },
 
   /**
@@ -84,6 +107,34 @@ export const templatesApi = {
    */
   trackUsage: async (id: string): Promise<void> => {
     await shopifyApi.post(`/templates/${id}/track`);
+  },
+
+  /**
+   * Ensure default templates exist for shop and eShop type
+   * Idempotent endpoint that creates missing templates and repairs existing ones
+   */
+  ensureDefaults: async (eshopType: string): Promise<{
+    created: number;
+    updated: number;
+    repaired: number;
+    skipped: number;
+    total: number;
+  }> => {
+    const response = await shopifyApi.post<{
+      created: number;
+      updated: number;
+      repaired: number;
+      skipped: number;
+      total: number;
+    }>(`/templates/ensure-defaults?eshopType=${eshopType}`);
+    // Response interceptor already extracts data
+    return response as unknown as {
+      created: number;
+      updated: number;
+      repaired: number;
+      skipped: number;
+      total: number;
+    };
   },
 };
 

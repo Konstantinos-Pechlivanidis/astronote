@@ -119,6 +119,8 @@ export function useEnqueueCampaign() {
         toast.error('Campaign has no eligible recipients');
       } else if (code === 'ALREADY_SENDING') {
         toast.error('Campaign is already being sent');
+      } else if (code === 'SUBSCRIPTION_REQUIRED') {
+        toast.error('Active subscription required to send campaigns.');
       } else if (code === 'INSUFFICIENT_CREDITS') {
         toast.error('Insufficient credits. Please purchase more credits.');
       } else {
@@ -217,4 +219,3 @@ export function useRetryFailedCampaign() {
     },
   });
 }
-

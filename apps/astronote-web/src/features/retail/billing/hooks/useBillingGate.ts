@@ -3,9 +3,9 @@ import { billingApi } from '@/src/lib/retail/api/billing';
 
 export function useBillingGate() {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['retail-balance'],
+    queryKey: ['retail-billing-summary'],
     queryFn: async () => {
-      const res = await billingApi.getBalance();
+      const res = await billingApi.getSummary();
       return res.data;
     },
     staleTime: 60 * 1000, // 1 minute
@@ -32,4 +32,3 @@ export function useBillingGate() {
     error,
   };
 }
-

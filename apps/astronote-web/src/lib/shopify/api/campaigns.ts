@@ -9,6 +9,8 @@ export type CampaignStatus =
   | 'draft'
   | 'scheduled'
   | 'sending'
+  | 'paused'
+  | 'completed'
   | 'sent'
   | 'failed'
   | 'cancelled';
@@ -31,8 +33,10 @@ export interface Campaign {
   audience: string | { type: 'all' | 'segment'; segmentId?: string };
   discountId?: string | null;
   recipientCount?: number;
+  totalRecipients?: number; // Alias for recipientCount
   sentCount?: number;
   failedCount?: number;
+  deliveredCount?: number;
   priority?: CampaignPriority;
   recurringDays?: number | null;
 }
@@ -97,9 +101,15 @@ export interface CampaignProgress {
 }
 
 export interface CampaignPreview {
+  ok?: boolean;
+  reason?: string;
+  message?: string;
   canSend?: boolean;
-  recipientCount: number;
-  estimatedCost: number;
+  recipientCount?: number;
+  estimatedCost?: number;
+  availableCredits?: number;
+  remainingAllowance?: number;
+  totalAvailable?: number;
   insufficientCredits?: boolean;
   missingCredits?: number;
   errors?: string[];
@@ -366,4 +376,3 @@ export const campaignsApi = {
   getFailedRecipients,
   retryFailedRecipients,
 };
-

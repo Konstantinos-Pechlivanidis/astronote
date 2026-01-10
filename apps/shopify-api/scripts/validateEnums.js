@@ -27,7 +27,16 @@ const PRISMA_ENUMS = {
   MessageStatus: ['queued', 'sent', 'delivered', 'failed', 'received'],
   TransactionType: ['purchase', 'debit', 'credit', 'refund', 'adjustment'],
   SubscriptionPlanType: ['starter', 'pro'],
-  SubscriptionStatus: ['active', 'inactive', 'cancelled'],
+  SubscriptionStatus: [
+    'active',
+    'trialing',
+    'past_due',
+    'unpaid',
+    'incomplete',
+    'paused',
+    'inactive',
+    'cancelled',
+  ],
   CreditTxnType: ['credit', 'debit', 'refund'],
   AutomationTrigger: [
     'welcome',
@@ -62,7 +71,7 @@ const ENUM_PATTERNS = {
   MessageDirection: /['"](outbound|inbound)['"]/g,
   MessageStatus: /['"](queued|sent|delivered|failed|received)['"]/g,
   SubscriptionPlanType: /['"](starter|pro)['"]/g,
-  SubscriptionStatus: /['"](active|inactive|cancelled)['"]/g,
+  SubscriptionStatus: /['"](active|trialing|past_due|unpaid|incomplete|paused|inactive|cancelled)['"]/g,
   PaymentStatus: /['"](pending|paid|failed|refunded)['"]/g,
 };
 

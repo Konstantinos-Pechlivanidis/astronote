@@ -3,9 +3,17 @@ import { endpoints } from './endpoints';
 
 export interface Subscription {
   id: number
-  planType: string
-  status: string
-  active: boolean
+  planType?: string | null
+  status?: string | null
+  active?: boolean
+  interval?: 'month' | 'year' | null
+  currentPeriodStart?: string | null
+  currentPeriodEnd?: string | null
+  cancelAtPeriodEnd?: boolean
+  includedSmsPerPeriod?: number
+  usedSmsThisPeriod?: number
+  remainingSmsThisPeriod?: number
+  lastBillingError?: string | null
 }
 
 export const subscriptionsApi = {
@@ -20,8 +28,17 @@ export const subscriptionsApi = {
   update: (data: { planType: string; currency?: string }) =>
     api.post(endpoints.subscriptions.update, data),
 
-  cancel: () =>
-    api.post<{ success: boolean }>(endpoints.subscriptions.cancel, {}),
+  switch: (data: { planType?: string; interval?: 'month' | 'year'; currency?: string; idempotencyKey?: string }) => {
+    const { idempotencyKey, ...payload } = data;
+    return api.post(endpoints.subscriptions.switch, payload, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    });
+  },
+
+  cancel: (idempotencyKey?: string) =>
+    api.post<{ success: boolean }>(endpoints.subscriptions.cancel, {}, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }),
 
   getPortal: () =>
     api.get<{ portalUrl?: string; url?: string }>(endpoints.subscriptions.portal),

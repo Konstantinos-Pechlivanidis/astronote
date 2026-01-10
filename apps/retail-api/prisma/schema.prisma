@@ -35,6 +35,13 @@ model User {
   subscriptionStatus      SubscriptionStatus   @default(inactive)
   lastFreeCreditsAllocatedAt DateTime?
   billingCurrency         BillingCurrency      @default(EUR)
+  subscriptionInterval    SubscriptionInterval?
+  subscriptionCurrentPeriodStart DateTime?
+  subscriptionCurrentPeriodEnd   DateTime?
+  cancelAtPeriodEnd       Boolean              @default(false)
+  includedSmsPerPeriod    Int                  @default(0)
+  usedSmsThisPeriod       Int                  @default(0)
+  lastBillingError        String?              @db.VarChar(255)
 
   // Back-relations (named where needed)
   ownedCampaigns    Campaign[]          @relation("CampaignOwner")
@@ -545,8 +552,18 @@ enum SubscriptionPlanType {
 
 enum SubscriptionStatus {
   active
+  trialing
+  past_due
+  unpaid
+  incomplete
+  paused
   inactive
   cancelled
+}
+
+enum SubscriptionInterval {
+  month
+  year
 }
 
 enum BillingCurrency {

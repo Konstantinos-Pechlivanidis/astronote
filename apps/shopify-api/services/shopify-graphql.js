@@ -1,5 +1,14 @@
 import { logger } from '../utils/logger.js';
 import { getShopifySession, initShopifyContext } from './shopify.js';
+import {
+  OrderResponseSchema,
+  FulfillmentResponseSchema,
+  AbandonmentResponseSchema,
+  AbandonedCheckoutsListResponseSchema,
+  CustomerResponseSchema,
+  ProductRecommendationsResponseSchema,
+  validateGraphQLResponse,
+} from '../schemas/graphql-responses.schema.js';
 
 /**
  * Get GraphQL client from Shopify API instance
@@ -43,52 +52,177 @@ function getGraphQLClient(api) {
  * @param {string} shopDomain - Shop domain
  * @param {string} query - GraphQL query string
  * @param {Object} variables - Query variables
+ * @param {Object} options - Options (maxRetries, baseDelay, queryName, requestId)
  * @returns {Promise<Object>} GraphQL response data
  */
-async function executeGraphQLQuery(shopDomain, query, variables = {}) {
-  try {
-    const session = await getShopifySession(shopDomain);
-    const api = initShopifyContext();
-    const GraphqlClient = getGraphQLClient(api);
-    const client = new GraphqlClient({ session });
+async function executeGraphQLQuery(shopDomain, query, variables = {}, options = {}) {
+  const maxRetries = options.maxRetries || 3;
+  const baseDelay = options.baseDelay || 2000;
+  const queryName = options.queryName || 'unknown';
+  const requestId = options.requestId || 'unknown';
+  const startTime = Date.now();
 
-    const response = await client.query({
-      data: {
-        query,
-        variables,
-      },
-    });
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const session = await getShopifySession(shopDomain);
+      const api = initShopifyContext();
+      const GraphqlClient = getGraphQLClient(api);
+      const client = new GraphqlClient({ session });
 
-    // Check for GraphQL errors
-    if (response.body.errors && response.body.errors.length > 0) {
-      const graphqlErrors = response.body.errors
-        .map(err => err.message)
-        .join('; ');
-      logger.error('Shopify GraphQL errors', {
+      logger.debug('Executing GraphQL query', {
         shopDomain,
-        errors: response.body.errors,
-        errorMessages: graphqlErrors,
+        queryName,
+        requestId,
+        attempt: attempt + 1,
+        maxRetries,
       });
-      throw new Error(`Shopify GraphQL error: ${graphqlErrors}`);
-    }
 
-    if (!response.body.data) {
-      logger.error('Invalid response structure from Shopify GraphQL', {
+      const response = await client.query({
+        data: {
+          query,
+          variables,
+        },
+      });
+
+      const duration = Date.now() - startTime;
+
+      // Check for throttle status in extensions
+      const throttleStatus = response.body.extensions?.throttleStatus;
+      const cost = response.body.extensions?.cost;
+
+      // Log cost if available
+      if (cost) {
+        logger.info('GraphQL query cost', {
+          shopDomain,
+          queryName,
+          requestId,
+          requestedQueryCost: cost.requestedQueryCost,
+          actualQueryCost: cost.actualQueryCost,
+          throttleStatus: throttleStatus?.currentlyAvailable,
+          throttleMaximum: throttleStatus?.maximumAvailable,
+        });
+
+        // Warn on high-cost queries
+        if (cost.actualQueryCost > 50) {
+          logger.warn('High-cost GraphQL query', {
+            shopDomain,
+            queryName,
+            requestId,
+            cost: cost.actualQueryCost,
+          });
+        }
+      }
+
+      // Check if throttle budget is low (less than 10% remaining)
+      if (throttleStatus && throttleStatus.maximumAvailable) {
+        const throttlePercentage =
+          (throttleStatus.currentlyAvailable / throttleStatus.maximumAvailable) * 100;
+        if (throttlePercentage < 10 && attempt < maxRetries - 1) {
+          // Low throttle budget, wait before retrying
+          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Jitter
+          logger.warn('Low throttle budget, waiting before retry', {
+            shopDomain,
+            queryName,
+            requestId,
+            throttlePercentage: throttlePercentage.toFixed(2),
+            delay,
+            attempt: attempt + 1,
+          });
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+      }
+
+      // Check for 429 status code
+      if (response.statusCode === 429) {
+        const retryAfter =
+          (response.headers && response.headers['retry-after']) ||
+          baseDelay * Math.pow(2, attempt);
+        logger.warn('GraphQL query rate limited (429), retrying', {
+          shopDomain,
+          queryName,
+          requestId,
+          retryAfter,
+          attempt: attempt + 1,
+        });
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          continue;
+        }
+      }
+
+      // Check for GraphQL errors
+      if (response.body.errors && response.body.errors.length > 0) {
+        const graphqlErrors = response.body.errors.map(err => err.message).join('; ');
+        logger.error('Shopify GraphQL errors', {
+          shopDomain,
+          queryName,
+          requestId,
+          duration,
+          errors: response.body.errors,
+          errorMessages: graphqlErrors,
+        });
+        throw new Error(`Shopify GraphQL error: ${graphqlErrors}`);
+      }
+
+      if (!response.body.data) {
+        logger.error('Invalid response structure from Shopify GraphQL', {
+          shopDomain,
+          queryName,
+          requestId,
+          duration,
+          responseStructure: Object.keys(response.body),
+        });
+        throw new Error('Invalid response structure from Shopify API');
+      }
+
+      logger.info('GraphQL query executed successfully', {
         shopDomain,
-        responseStructure: Object.keys(response.body),
+        queryName,
+        requestId,
+        duration,
+        cost: cost?.actualQueryCost,
       });
-      throw new Error('Invalid response structure from Shopify API');
-    }
 
-    return response.body.data;
-  } catch (error) {
-    logger.error('GraphQL query execution failed', {
-      shopDomain,
-      error: error.message,
-      stack: error.stack,
-    });
-    throw error;
+      // Return validated data (validation is optional per query)
+      return response.body.data;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      // Check if error is a 429 (rate limit) and we can retry
+      if (
+        (error.statusCode === 429 || error.message?.includes('429') || error.message?.includes('rate limit')) &&
+        attempt < maxRetries - 1
+      ) {
+        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Jitter
+        logger.warn('GraphQL query rate limited, retrying with backoff', {
+          shopDomain,
+          queryName,
+          requestId,
+          attempt: attempt + 1,
+          delay,
+          error: error.message,
+        });
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      logger.error('GraphQL query execution failed', {
+        shopDomain,
+        queryName,
+        requestId,
+        duration,
+        attempt: attempt + 1,
+        maxRetries,
+        error: error.message,
+        stack: error.stack,
+      });
+      throw error;
+    }
   }
+
+  // Should not reach here, but handle edge case
+  throw new Error(`GraphQL query failed after ${maxRetries} attempts`);
 }
 
 /**
@@ -98,7 +232,10 @@ async function executeGraphQLQuery(shopDomain, query, variables = {}) {
  * @param {string} orderId - Shopify order ID (gid://shopify/Order/...)
  * @returns {Promise<Object>} Order details
  */
-export async function getOrderDetails(shopDomain, orderId) {
+export async function getOrderDetails(shopDomain, orderId, options = {}) {
+  const queryName = 'GetOrderDetails';
+  const requestId = options.requestId || 'unknown';
+
   const query = `
     query GetOrderDetails($id: ID!) {
       order(id: $id) {
@@ -158,13 +295,29 @@ export async function getOrderDetails(shopDomain, orderId) {
     }
   `;
 
-  const data = await executeGraphQLQuery(shopDomain, query, { id: orderId });
+  const data = await executeGraphQLQuery(
+    shopDomain,
+    query,
+    { id: orderId },
+    {
+      queryName,
+      requestId,
+    },
+  );
 
-  if (!data.order) {
+  // Validate response with zod schema
+  const validated = validateGraphQLResponse(
+    data,
+    OrderResponseSchema,
+    queryName,
+    requestId,
+  );
+
+  if (!validated.order) {
     throw new Error(`Order not found: ${orderId}`);
   }
 
-  return data.order;
+  return validated.order;
 }
 
 /**
@@ -174,7 +327,10 @@ export async function getOrderDetails(shopDomain, orderId) {
  * @param {string} fulfillmentId - Shopify fulfillment ID (gid://shopify/Fulfillment/...)
  * @returns {Promise<Object>} Fulfillment details
  */
-export async function getFulfillmentDetails(shopDomain, fulfillmentId) {
+export async function getFulfillmentDetails(shopDomain, fulfillmentId, options = {}) {
+  const queryName = 'GetFulfillmentDetails';
+  const requestId = options.requestId || 'unknown';
+
   const query = `
     query GetFulfillmentDetails($fulfillmentId: ID!) {
       fulfillment(id: $fulfillmentId) {
@@ -204,15 +360,29 @@ export async function getFulfillmentDetails(shopDomain, fulfillmentId) {
     }
   `;
 
-  const data = await executeGraphQLQuery(shopDomain, query, {
-    fulfillmentId,
-  });
+  const data = await executeGraphQLQuery(
+    shopDomain,
+    query,
+    { fulfillmentId },
+    {
+      queryName,
+      requestId,
+    },
+  );
 
-  if (!data.fulfillment) {
+  // Validate response with zod schema
+  const validated = validateGraphQLResponse(
+    data,
+    FulfillmentResponseSchema,
+    queryName,
+    requestId,
+  );
+
+  if (!validated.fulfillment) {
     throw new Error(`Fulfillment not found: ${fulfillmentId}`);
   }
 
-  return data.fulfillment;
+  return validated.fulfillment;
 }
 
 /**
@@ -225,7 +395,11 @@ export async function getFulfillmentDetails(shopDomain, fulfillmentId) {
 export async function getAbandonedCheckout(
   shopDomain,
   abandonedCheckoutId,
+  options = {},
 ) {
+  const queryName = 'GetAbandonment';
+  const requestId = options.requestId || 'unknown';
+
   const query = `
     query GetAbandonment($id: ID!) {
       abandonment(id: $id) {
@@ -268,32 +442,57 @@ export async function getAbandonedCheckout(
     }
   `;
 
-  const data = await executeGraphQLQuery(shopDomain, query, {
-    id: abandonedCheckoutId,
-  });
+  const data = await executeGraphQLQuery(
+    shopDomain,
+    query,
+    { id: abandonedCheckoutId },
+    {
+      queryName,
+      requestId,
+    },
+  );
 
-  if (!data.abandonment) {
+  // Validate response with zod schema
+  const validated = validateGraphQLResponse(
+    data,
+    AbandonmentResponseSchema,
+    queryName,
+    requestId,
+  );
+
+  if (!validated.abandonment) {
     throw new Error(`Abandoned checkout not found: ${abandonedCheckoutId}`);
   }
 
-  return data.abandonment;
+  return validated.abandonment;
 }
 
 /**
  * Get abandoned checkouts by query (for polling approach)
+ * Implements cursor-based pagination to fetch all results
  * @param {string} shopDomain - Shop domain
  * @param {string} queryString - Query string (e.g., "id:gid://shopify/Checkout/...")
- * @param {number} first - Number of results to return
+ * @param {number} first - Number of results per page (default: 10, max: 250)
+ * @param {Object} options - Options (requestId, maxPages)
  * @returns {Promise<Array>} Array of abandoned checkouts
  */
 export async function getAbandonedCheckouts(
   shopDomain,
   queryString = '',
   first = 10,
+  options = {},
 ) {
+  const maxPages = options.maxPages || 100; // Prevent infinite loops
+  const requestId = options.requestId || 'unknown';
+  const queryName = 'GetAbandonedCheckouts';
+
   const query = `
-    query GetAbandonedCheckouts($first: Int!, $query: String) {
-      abandonedCheckouts(first: $first, query: $query) {
+    query GetAbandonedCheckouts($first: Int!, $query: String, $after: String) {
+      abandonedCheckouts(first: $first, query: $query, after: $after) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         nodes {
           id
           abandonedCheckoutUrl
@@ -332,12 +531,69 @@ export async function getAbandonedCheckouts(
     }
   `;
 
-  const data = await executeGraphQLQuery(shopDomain, query, {
-    first,
-    query: queryString || undefined,
+  const allCheckouts = [];
+  let cursor = null;
+  let hasNextPage = true;
+  let pageCount = 0;
+
+  while (hasNextPage && pageCount < maxPages) {
+    const data = await executeGraphQLQuery(
+      shopDomain,
+      query,
+      {
+        first: Math.min(first, 250), // Shopify max is 250
+        query: queryString || undefined,
+        after: cursor || undefined,
+      },
+      {
+        queryName,
+        requestId,
+      },
+    );
+
+    // Validate response with zod schema
+    const validated = validateGraphQLResponse(
+      data,
+      AbandonedCheckoutsListResponseSchema,
+      queryName,
+      requestId,
+    );
+
+    const checkouts = validated.abandonedCheckouts?.nodes || [];
+    allCheckouts.push(...checkouts);
+
+    const pageInfo = validated.abandonedCheckouts?.pageInfo;
+    hasNextPage = pageInfo?.hasNextPage || false;
+    cursor = pageInfo?.endCursor || null;
+    pageCount++;
+
+    logger.debug('Fetched abandoned checkouts page', {
+      shopDomain,
+      requestId,
+      pageCount,
+      checkoutsInPage: checkouts.length,
+      totalCheckouts: allCheckouts.length,
+      hasNextPage,
+    });
+  }
+
+  if (pageCount >= maxPages) {
+    logger.warn('Reached max pages limit for abandoned checkouts', {
+      shopDomain,
+      requestId,
+      maxPages,
+      totalCheckouts: allCheckouts.length,
+    });
+  }
+
+  logger.info('Fetched all abandoned checkouts', {
+    shopDomain,
+    requestId,
+    totalCheckouts: allCheckouts.length,
+    pages: pageCount,
   });
 
-  return data.abandonedCheckouts?.nodes || [];
+  return allCheckouts;
 }
 
 /**
@@ -346,7 +602,10 @@ export async function getAbandonedCheckouts(
  * @param {string} customerId - Shopify customer ID (gid://shopify/Customer/...)
  * @returns {Promise<Object>} Customer details
  */
-export async function getCustomerDetails(shopDomain, customerId) {
+export async function getCustomerDetails(shopDomain, customerId, options = {}) {
+  const queryName = 'GetCustomerDetails';
+  const requestId = options.requestId || 'unknown';
+
   const query = `
     query GetCustomerDetails($id: ID!) {
       customer(id: $id) {
@@ -379,13 +638,29 @@ export async function getCustomerDetails(shopDomain, customerId) {
     }
   `;
 
-  const data = await executeGraphQLQuery(shopDomain, query, { id: customerId });
+  const data = await executeGraphQLQuery(
+    shopDomain,
+    query,
+    { id: customerId },
+    {
+      queryName,
+      requestId,
+    },
+  );
 
-  if (!data.customer) {
+  // Validate response with zod schema
+  const validated = validateGraphQLResponse(
+    data,
+    CustomerResponseSchema,
+    queryName,
+    requestId,
+  );
+
+  if (!validated.customer) {
     throw new Error(`Customer not found: ${customerId}`);
   }
 
-  return data.customer;
+  return validated.customer;
 }
 
 /**
@@ -399,7 +674,11 @@ export async function getProductRecommendations(
   shopDomain,
   productId,
   first = 5,
+  options = {},
 ) {
+  const queryName = 'GetProductRecommendations';
+  const requestId = options.requestId || 'unknown';
+
   const query = `
     query GetProductRecommendations($productId: ID!, $first: Int!) {
       productRecommendations(productId: $productId) {
@@ -424,17 +703,42 @@ export async function getProductRecommendations(
   `;
 
   try {
-    const data = await executeGraphQLQuery(shopDomain, query, {
-      productId,
-      first,
-    });
+    const data = await executeGraphQLQuery(
+      shopDomain,
+      query,
+      { productId, first },
+      {
+        queryName,
+        requestId,
+      },
+    );
 
-    return data.productRecommendations || [];
+    // Validate response with zod schema (best-effort, may fail for some stores)
+    try {
+      const validated = validateGraphQLResponse(
+        data,
+        ProductRecommendationsResponseSchema,
+        queryName,
+        requestId,
+      );
+      return validated.productRecommendations || [];
+    } catch (validationError) {
+      // Product recommendations may not be available for all stores
+      // Return empty array if validation fails (graceful degradation)
+      logger.warn('Product recommendations validation failed, returning empty array', {
+        shopDomain,
+        productId,
+        requestId,
+        error: validationError.message,
+      });
+      return [];
+    }
   } catch (error) {
     // Product recommendations API might not be available for all stores
     logger.warn('Product recommendations not available', {
       shopDomain,
       productId,
+      requestId,
       error: error.message,
     });
     return [];

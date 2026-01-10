@@ -2,6 +2,7 @@ import prisma from '../services/prisma.js';
 import { logger } from '../utils/logger.js';
 import { sendSuccess, sendCreated, sendPaginated } from '../utils/response.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
+import { getStoreId } from '../middlewares/store-resolution.js';
 
 /**
  * Create a new template (admin only)
@@ -9,6 +10,7 @@ import { NotFoundError, ValidationError } from '../utils/errors.js';
 export async function createTemplate(req, res, _next) {
   try {
     const { title, category, content, previewImage, tags = [] } = req.body;
+    const shopId = getStoreId(req);
 
     // Validate required fields
     if (!title || !category || !content) {
@@ -17,6 +19,7 @@ export async function createTemplate(req, res, _next) {
 
     const template = await prisma.template.create({
       data: {
+        shopId,
         title,
         category,
         content,

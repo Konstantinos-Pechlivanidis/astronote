@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useTemplates } from '@/src/features/shopify/templates/hooks/useTemplates';
 import { useTemplateCategories } from '@/src/features/shopify/templates/hooks/useTemplateCategories';
 import { useTrackTemplateUsage } from '@/src/features/shopify/templates/hooks/useTrackTemplateUsage';
+import { useEnsureDefaults } from '@/src/features/shopify/templates/hooks/useEnsureDefaults';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
@@ -47,9 +49,16 @@ export default function TemplatesPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // eShop type state (can be derived from shop settings or selected by user)
+  const [eshopType, setEshopType] = useState<string>('generic'); // Default to generic
+
   // Build query params
   const queryParams = useMemo(() => {
     const params: any = {
+      eshopType, // eShop type filter (required)
+      page: currentPage, // Use page/pageSize (Retail-aligned)
+      pageSize,
+      // Also support limit/offset for backward compatibility
       limit: pageSize,
       offset: (currentPage - 1) * pageSize,
     };
@@ -59,8 +68,10 @@ export default function TemplatesPage() {
     if (debouncedSearch) {
       params.search = debouncedSearch;
     }
+    // Language is forced to 'en' (English-only for Shopify)
+    params.language = 'en';
     return params;
-  }, [categoryFilter, debouncedSearch, currentPage, pageSize]);
+  }, [eshopType, categoryFilter, debouncedSearch, currentPage, pageSize]);
 
   // Fetch templates
   const {
@@ -75,15 +86,17 @@ export default function TemplatesPage() {
 
   // Track usage mutation
   const trackUsage = useTrackTemplateUsage();
+  const ensureDefaults = useEnsureDefaults();
 
   // Filter by favorites if enabled
+  // Support both Retail-aligned "items" and Shopify "templates" field names
   const templates = useMemo(() => {
-    const allTemplates = templatesData?.templates || [];
+    const allTemplates = templatesData?.items || templatesData?.templates || [];
     if (favoritesFilter) {
       return allTemplates.filter((t) => favorites.has(t.id));
     }
     return allTemplates;
-  }, [templatesData?.templates, favoritesFilter, favorites]);
+  }, [templatesData?.items, templatesData?.templates, favoritesFilter, favorites]);
 
   const pagination = templatesData?.pagination || {
     page: 1,
@@ -149,11 +162,21 @@ export default function TemplatesPage() {
   };
 
   return (
-    <div>
-      {/* Header */}
-      <RetailPageHeader
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
         title="Templates"
         description="Browse SMS templates and use them to create campaigns"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => ensureDefaults.mutate(eshopType)}
+            disabled={ensureDefaults.isPending}
+          >
+            {ensureDefaults.isPending ? 'Ensuring...' : 'Ensure Default Templates'}
+          </Button>
+        }
       />
 
       {/* Toolbar */}
@@ -183,6 +206,8 @@ export default function TemplatesPage() {
                 ))}
               </SelectContent>
             </Select>
+            {/* eShop Type Selector (if needed - can be derived from shop settings) */}
+            {/* For now, eshopType is set via state, but can be enhanced to fetch from shop settings */}
             <Button
               variant={favoritesFilter ? 'default' : 'outline'}
               size="sm"
@@ -575,6 +600,7 @@ export default function TemplatesPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </RetailPageLayout>
   );
 }

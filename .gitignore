@@ -102,3 +102,9 @@ logs/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Release gate pass stamps (generated, not committed)
+reports/release-gate-pass.json
+reports/release-gate-pass.md
+reports/release-gate-*.json
+reports/release-gate-*.md

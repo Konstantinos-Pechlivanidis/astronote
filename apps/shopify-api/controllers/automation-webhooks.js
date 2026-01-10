@@ -9,6 +9,7 @@ import {
   getAbandonedCheckout,
 } from '../services/shopify-graphql.js';
 import { cancelAutomationsForOrder } from '../services/automation-scheduler.js';
+import * as webhookReplay from '../services/webhook-replay.js';
 
 /**
  * Convert numeric order ID to Shopify GID format
@@ -27,6 +28,7 @@ function convertToOrderGid(orderId) {
 /**
  * Handle Shopify order creation webhook
  * Enhanced with GraphQL to fetch complete order details
+ * Includes webhook replay protection for idempotency
  */
 export async function handleOrderCreated(req, res, _next) {
   try {
@@ -36,6 +38,40 @@ export async function handleOrderCreated(req, res, _next) {
       throw new ValidationError('shop_domain, id, and customer are required');
     }
 
+    // Extract event ID from webhook (Shopify order ID)
+    const eventId = `shopify:orders:create:${id}`;
+    const eventHash = webhookReplay.generateEventHash(req.body);
+
+    // Check for replay (deduplication)
+    const existing = await webhookReplay.checkWebhookReplay(
+      'shopify',
+      eventId,
+      eventHash,
+      null, // shopId will be resolved later
+    );
+
+    if (existing) {
+      logger.info('Order creation webhook already processed (replay detected)', {
+        shop_domain,
+        orderId: id,
+        eventId,
+        previousStatus: existing.status,
+      });
+      // Return success to prevent Shopify retries
+      return sendSuccess(
+        res,
+        { automationQueued: false, reason: 'duplicate' },
+        'Order webhook already processed',
+      );
+    }
+
+    // Record webhook event (before processing)
+    const webhookEvent = await webhookReplay.recordWebhookEvent('shopify', eventId, {
+      eventHash,
+      shopId: null, // Will update after shop is found
+      payload: req.body,
+    });
+
     // Find the shop
     const shop = await prisma.shop.findUnique({
       where: { shopDomain: shop_domain },
@@ -43,8 +79,19 @@ export async function handleOrderCreated(req, res, _next) {
 
     if (!shop) {
       logger.warn('Shop not found for order webhook', { shop_domain });
+      // Mark webhook as failed
+      await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+        status: 'failed',
+        error: 'Shop not found',
+      });
       throw new NotFoundError('Shop');
     }
+
+    // Update webhook event with shopId
+    await prisma.webhookEvent.update({
+      where: { id: webhookEvent.id },
+      data: { shopId: shop.id },
+    });
 
     // Find or create the customer contact
     let contact = await prisma.contact.findFirst({
@@ -89,17 +136,21 @@ export async function handleOrderCreated(req, res, _next) {
     let orderDetails = null;
     try {
       const orderGid = convertToOrderGid(id);
-      orderDetails = await getOrderDetails(shop_domain, orderGid);
+      orderDetails = await getOrderDetails(shop_domain, orderGid, {
+        requestId: req.id || req.headers['x-request-id'] || 'unknown',
+      });
       logger.info('Order details fetched via GraphQL', {
         shopId: shop.id,
         orderId: id,
         orderName: orderDetails.name,
+        requestId: req.id || req.headers['x-request-id'],
       });
     } catch (graphqlError) {
       logger.warn('Failed to fetch order details via GraphQL, using webhook data', {
         shopId: shop.id,
         orderId: id,
         error: graphqlError.message,
+        requestId: req.id || req.headers['x-request-id'],
       });
       // Fallback to webhook data if GraphQL fails
     }
@@ -214,6 +265,11 @@ export async function handleOrderCreated(req, res, _next) {
         orderName: orderData.name || orderData.orderNumber,
       });
 
+      // Mark webhook as processed
+      await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+        status: 'processed',
+      });
+
       // Return success immediately - job will be processed asynchronously
       return sendSuccess(
         res,
@@ -227,6 +283,13 @@ export async function handleOrderCreated(req, res, _next) {
         orderId: id,
         error: queueError.message,
       });
+      // Mark webhook as failed
+      if (webhookEvent) {
+        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+          status: 'failed',
+          error: queueError.message,
+        });
+      }
       // Still return success to Shopify to prevent retries
       // The error is logged and can be handled separately
       return sendSuccess(
@@ -239,7 +302,32 @@ export async function handleOrderCreated(req, res, _next) {
     logger.error('Order webhook processing failed', {
       error: error.message,
       body: req.body,
+      eventId: req.body.id ? `shopify:orders:create:${req.body.id}` : 'unknown',
     });
+    // Mark webhook as failed if it was recorded
+    if (req.body.id) {
+      try {
+        const eventId = `shopify:orders:create:${req.body.id}`;
+        const existing = await prisma.webhookEvent.findUnique({
+          where: {
+            provider_eventId: {
+              provider: 'shopify',
+              eventId,
+            },
+          },
+        });
+        if (existing) {
+          await webhookReplay.markWebhookProcessed(existing.id, {
+            status: 'failed',
+            error: error.message,
+          });
+        }
+      } catch (markError) {
+        logger.warn('Failed to mark webhook as failed', {
+          error: markError.message,
+        });
+      }
+    }
     throw error;
   }
 }
@@ -264,6 +352,7 @@ function convertToAbandonmentGid(checkoutId) {
 /**
  * Handle abandoned checkout webhook (from Shopify Flow or polling)
  * Based on cursor_instructions.txt lines 128-179
+ * Includes webhook replay protection for idempotency
  */
 export async function handleAbandonedCheckout(req, res, _next) {
   try {
@@ -277,6 +366,40 @@ export async function handleAbandonedCheckout(req, res, _next) {
       );
     }
 
+    // Extract event ID from webhook
+    const eventId = `shopify:checkout:abandoned:${checkoutId}`;
+    const eventHash = webhookReplay.generateEventHash(req.body);
+
+    // Check for replay (deduplication)
+    const existing = await webhookReplay.checkWebhookReplay(
+      'shopify',
+      eventId,
+      eventHash,
+      null, // shopId will be resolved later
+    );
+
+    if (existing) {
+      logger.info('Abandoned checkout webhook already processed (replay detected)', {
+        shop_domain,
+        checkoutId,
+        eventId,
+        previousStatus: existing.status,
+      });
+      // Return success to prevent retries
+      return sendSuccess(
+        res,
+        { automationQueued: false, reason: 'duplicate' },
+        'Abandoned checkout webhook already processed',
+      );
+    }
+
+    // Record webhook event (before processing)
+    const webhookEvent = await webhookReplay.recordWebhookEvent('shopify', eventId, {
+      eventHash,
+      shopId: null, // Will update after shop is found
+      payload: req.body,
+    });
+
     // Find the shop
     const shop = await prisma.shop.findUnique({
       where: { shopDomain: shop_domain },
@@ -286,25 +409,40 @@ export async function handleAbandonedCheckout(req, res, _next) {
       logger.warn('Shop not found for abandoned checkout webhook', {
         shop_domain,
       });
+      // Mark webhook as failed
+      await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+        status: 'failed',
+        error: 'Shop not found',
+      });
       throw new NotFoundError('Shop');
     }
+
+    // Update webhook event with shopId
+    await prisma.webhookEvent.update({
+      where: { id: webhookEvent.id },
+      data: { shopId: shop.id },
+    });
 
     // Fetch abandoned checkout details using GraphQL
     let abandonmentData = null;
     try {
       const abandonmentGid = convertToAbandonmentGid(checkoutId);
-      abandonmentData = await getAbandonedCheckout(shop_domain, abandonmentGid);
+      abandonmentData = await getAbandonedCheckout(shop_domain, abandonmentGid, {
+        requestId: req.id || req.headers['x-request-id'] || 'unknown',
+      });
       logger.info('Abandoned checkout details fetched via GraphQL', {
         shopId: shop.id,
         checkoutId,
         hasRecoveryUrl: !!abandonmentData.abandonedCheckoutPayload
           ?.abandonedCheckoutUrl,
+        requestId: req.id || req.headers['x-request-id'],
       });
     } catch (graphqlError) {
       logger.error('Failed to fetch abandoned checkout via GraphQL', {
         shopId: shop.id,
         checkoutId,
         error: graphqlError.message,
+        requestId: req.id || req.headers['x-request-id'],
       });
       throw new ValidationError(
         `Failed to fetch abandoned checkout: ${graphqlError.message}`,
@@ -445,6 +583,11 @@ export async function handleAbandonedCheckout(req, res, _next) {
         jobId: job.id,
       });
 
+      // Mark webhook as processed
+      await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+        status: 'processed',
+      });
+
       return sendSuccess(
         res,
         {
@@ -461,6 +604,13 @@ export async function handleAbandonedCheckout(req, res, _next) {
         checkoutId,
         error: queueError.message,
       });
+      // Mark webhook as failed
+      if (webhookEvent) {
+        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+          status: 'failed',
+          error: queueError.message,
+        });
+      }
       return sendSuccess(
         res,
         { automationQueued: false, error: 'Queue failed' },
@@ -471,7 +621,33 @@ export async function handleAbandonedCheckout(req, res, _next) {
     logger.error('Abandoned checkout webhook processing failed', {
       error: error.message,
       body: req.body,
+      checkoutId: req.body.abandonedCheckoutId || req.body.checkout_id,
     });
+    // Mark webhook as failed if it was recorded
+    const checkoutId = req.body.abandonedCheckoutId || req.body.checkout_id;
+    if (checkoutId) {
+      try {
+        const eventId = `shopify:checkout:abandoned:${checkoutId}`;
+        const existing = await prisma.webhookEvent.findUnique({
+          where: {
+            provider_eventId: {
+              provider: 'shopify',
+              eventId,
+            },
+          },
+        });
+        if (existing) {
+          await webhookReplay.markWebhookProcessed(existing.id, {
+            status: 'failed',
+            error: error.message,
+          });
+        }
+      } catch (markError) {
+        logger.warn('Failed to mark webhook as failed', {
+          error: markError.message,
+        });
+      }
+    }
     throw error;
   }
 }
@@ -554,6 +730,7 @@ function convertToFulfillmentGid(fulfillmentId) {
 /**
  * Handle Shopify order fulfillment webhook
  * Enhanced with GraphQL to fetch complete fulfillment details
+ * Includes webhook replay protection for idempotency
  */
 export async function handleOrderFulfilled(req, res, _next) {
   try {
@@ -571,6 +748,43 @@ export async function handleOrderFulfilled(req, res, _next) {
       throw new ValidationError('shop_domain, id, and customer are required');
     }
 
+    // Extract event ID from webhook (Shopify order ID + fulfillment ID if available)
+    const eventId = fulfillment_id
+      ? `shopify:orders:fulfilled:${id}:${fulfillment_id}`
+      : `shopify:orders:fulfilled:${id}`;
+    const eventHash = webhookReplay.generateEventHash(req.body);
+
+    // Check for replay (deduplication)
+    const existing = await webhookReplay.checkWebhookReplay(
+      'shopify',
+      eventId,
+      eventHash,
+      null, // shopId will be resolved later
+    );
+
+    if (existing) {
+      logger.info('Order fulfillment webhook already processed (replay detected)', {
+        shop_domain,
+        orderId: id,
+        fulfillmentId: fulfillment_id,
+        eventId,
+        previousStatus: existing.status,
+      });
+      // Return success to prevent Shopify retries
+      return sendSuccess(
+        res,
+        { automationQueued: false, reason: 'duplicate' },
+        'Order fulfillment webhook already processed',
+      );
+    }
+
+    // Record webhook event (before processing)
+    const webhookEvent = await webhookReplay.recordWebhookEvent('shopify', eventId, {
+      eventHash,
+      shopId: null, // Will update after shop is found
+      payload: req.body,
+    });
+
     // Find the shop
     const shop = await prisma.shop.findUnique({
       where: { shopDomain: shop_domain },
@@ -580,8 +794,19 @@ export async function handleOrderFulfilled(req, res, _next) {
       logger.warn('Shop not found for order fulfillment webhook', {
         shop_domain,
       });
+      // Mark webhook as failed
+      await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+        status: 'failed',
+        error: 'Shop not found',
+      });
       throw new NotFoundError('Shop');
     }
+
+    // Update webhook event with shopId
+    await prisma.webhookEvent.update({
+      where: { id: webhookEvent.id },
+      data: { shopId: shop.id },
+    });
 
     // Find or create the customer contact
     let contact = await prisma.contact.findFirst({
@@ -629,11 +854,15 @@ export async function handleOrderFulfilled(req, res, _next) {
         fulfillmentDetails = await getFulfillmentDetails(
           shop_domain,
           fulfillmentGid,
+          {
+            requestId: req.id || req.headers['x-request-id'] || 'unknown',
+          },
         );
         logger.info('Fulfillment details fetched via GraphQL', {
           shopId: shop.id,
           fulfillmentId: fulfillment_id,
           trackingNumber: fulfillmentDetails.trackingInfo?.number,
+          requestId: req.id || req.headers['x-request-id'],
         });
       } catch (graphqlError) {
         logger.warn(
@@ -642,6 +871,7 @@ export async function handleOrderFulfilled(req, res, _next) {
             shopId: shop.id,
             fulfillmentId: fulfillment_id,
             error: graphqlError.message,
+            requestId: req.id || req.headers['x-request-id'],
           },
         );
       }
@@ -798,6 +1028,11 @@ export async function handleOrderFulfilled(req, res, _next) {
         });
       }
 
+      // Mark webhook as processed
+      await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+        status: 'processed',
+      });
+
       return sendSuccess(
         res,
         { automationQueued: true },
@@ -810,6 +1045,13 @@ export async function handleOrderFulfilled(req, res, _next) {
         orderId: id,
         error: queueError.message,
       });
+      // Mark webhook as failed
+      if (webhookEvent) {
+        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+          status: 'failed',
+          error: queueError.message,
+        });
+      }
       return sendSuccess(
         res,
         { automationQueued: false, error: 'Queue failed' },
@@ -820,7 +1062,35 @@ export async function handleOrderFulfilled(req, res, _next) {
     logger.error('Order fulfillment webhook processing failed', {
       error: error.message,
       body: req.body,
+      orderId: req.body.id,
+      fulfillmentId: req.body.fulfillment_id,
     });
+    // Mark webhook as failed if it was recorded
+    if (req.body.id) {
+      try {
+        const eventId = req.body.fulfillment_id
+          ? `shopify:orders:fulfilled:${req.body.id}:${req.body.fulfillment_id}`
+          : `shopify:orders:fulfilled:${req.body.id}`;
+        const existing = await prisma.webhookEvent.findUnique({
+          where: {
+            provider_eventId: {
+              provider: 'shopify',
+              eventId,
+            },
+          },
+        });
+        if (existing) {
+          await webhookReplay.markWebhookProcessed(existing.id, {
+            status: 'failed',
+            error: error.message,
+          });
+        }
+      } catch (markError) {
+        logger.warn('Failed to mark webhook as failed', {
+          error: markError.message,
+        });
+      }
+    }
     throw error;
   }
 }

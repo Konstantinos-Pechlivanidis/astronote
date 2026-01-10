@@ -91,12 +91,17 @@ export async function getBalance(storeId) {
   // Use Wallet service instead of Shop.credits
   const balance = await getWalletBalance(storeId);
 
+  // Get subscription status (aligned with Retail)
+  const { getSubscriptionStatus } = await import('./subscription.js');
+  const subscription = await getSubscriptionStatus(storeId);
+
   logger.info('Balance retrieved', { storeId, credits: balance });
 
   return {
     credits: balance,
     balance, // Alias for consistency
     currency: shop.currency || 'EUR',
+    subscription, // Include subscription info (aligned with Retail)
   };
 }
 
@@ -113,16 +118,33 @@ export async function getPackages(currency = 'EUR') {
     orderBy: { units: 'asc' },
   });
 
-  return packages.map(pkg => ({
-    id: pkg.id,
-    name: pkg.name,
-    credits: pkg.units,
-    price: (pkg.priceCents / 100).toFixed(2),
-    currency,
-    // Get Stripe price ID for this currency
-    stripePriceId:
-      currency === 'USD' ? pkg.stripePriceIdUsd : pkg.stripePriceIdEur,
-  }));
+  return packages.map(pkg => {
+    const resolvedPriceCents =
+      currency === 'USD' && Number.isFinite(pkg.priceCentsUsd)
+        ? pkg.priceCentsUsd
+        : pkg.priceCents;
+    const amount = Number((resolvedPriceCents / 100).toFixed(2));
+    const stripePriceId =
+      currency === 'USD' ? pkg.stripePriceIdUsd : pkg.stripePriceIdEur;
+
+    return {
+      id: pkg.id,
+      name: pkg.name,
+      displayName: pkg.name, // Aligned with Retail
+      units: pkg.units,
+      credits: pkg.units, // Alias for backward compatibility
+      priceCents: resolvedPriceCents,
+      amount, // Aligned with Retail
+      price: amount, // Alias
+      currency,
+      priceId: stripePriceId, // Aligned with Retail
+      stripePriceId,
+      available: !!stripePriceId,
+      type: 'credit_topup', // Aligned with Retail
+      createdAt: pkg.createdAt,
+      updatedAt: pkg.updatedAt,
+    };
+  });
 }
 
 /**
@@ -158,6 +180,7 @@ export async function createPurchaseSession(
   packageId,
   returnUrls,
   requestedCurrency = null,
+  idempotencyKey = null,
 ) {
   logger.info('Creating purchase session', {
     storeId,
@@ -226,7 +249,11 @@ export async function createPurchaseSession(
     currency = shop.currency.toUpperCase();
   }
 
-  const price = pkg.priceCents / 100; // Convert from cents
+    const priceCents =
+      currency === 'USD' && Number.isFinite(pkg.priceCentsUsd)
+        ? pkg.priceCentsUsd
+        : pkg.priceCents;
+    const price = priceCents / 100; // Convert from cents
   const stripePriceId = getStripePriceId(pkg.name, currency, pkg);
 
   // Validate Stripe price ID
@@ -248,18 +275,49 @@ export async function createPurchaseSession(
     packageId,
   });
 
-  // Create Purchase record instead of BillingTransaction
-  const purchase = await prisma.purchase.create({
-    data: {
-      shopId: storeId,
-      packageId: pkg.id,
-      units: pkg.units,
-      priceCents: pkg.priceCents,
-      status: 'pending',
-      currency,
-      stripePriceId,
-    },
-  });
+  // Create Purchase record (with idempotency key if provided)
+  // Note: priceCents is resolved above based on currency
+  let purchase;
+  try {
+    purchase = await prisma.purchase.create({
+      data: {
+        shopId: storeId,
+        packageId: pkg.id,
+        units: pkg.units,
+        priceCents, // Use resolved priceCents (EUR or USD)
+        status: 'pending',
+        currency,
+        stripePriceId,
+        idempotencyKey: idempotencyKey || null,
+      },
+    });
+  } catch (err) {
+    // Handle unique constraint violation (idempotency key already exists)
+    if (err?.code === 'P2002' && idempotencyKey) {
+      // Find existing purchase
+      purchase = await prisma.purchase.findFirst({
+        where: {
+          shopId: storeId,
+          idempotencyKey,
+        },
+      });
+      if (purchase?.stripeSessionId) {
+        // Return existing session
+        return {
+          sessionId: purchase.stripeSessionId,
+          sessionUrl: null, // Will be retrieved by controller
+          purchaseId: purchase.id,
+          idempotent: true,
+        };
+      }
+    } else {
+      throw err;
+    }
+  }
+
+  if (!purchase) {
+    throw new Error('Failed to create or find purchase record');
+  }
 
   // Create Stripe checkout session
   let session;
@@ -282,6 +340,7 @@ export async function createPurchaseSession(
       shopDomain: shop.shopDomain,
       successUrl: returnUrls.successUrl,
       cancelUrl: returnUrls.cancelUrl,
+      idempotencyKey: idempotencyKey || undefined, // Pass idempotency key to Stripe
       metadata: {
         storeId,
         shopId: storeId, // Keep for backward compatibility

@@ -3,15 +3,19 @@ import shopifyApi from './axios';
  * Contact Type Definitions
  */
 export interface Contact {
-  id: number;
+  id: string; // Prisma uses String (cuid), not number
   phoneE164: string;
-  phone?: string;
+  phone?: string; // Retail-aligned field name
   email?: string | null;
   firstName?: string | null;
   lastName?: string | null;
   gender?: 'male' | 'female' | 'other' | null;
   birthDate?: string | null;
+  birthday?: string | null; // Retail-aligned field name
   smsConsent?: 'opted_in' | 'opted_out' | 'unknown';
+  smsConsentStatus?: 'opted_in' | 'opted_out' | null; // Retail-aligned field
+  smsConsentAt?: string | null; // Retail-aligned field
+  isSubscribed?: boolean; // Retail-aligned field
   tags?: string[];
   createdAt?: string;
   updatedAt?: string;
@@ -22,6 +26,8 @@ export interface ContactsListParams {
   pageSize?: number;
   q?: string;
   smsConsent?: 'opted_in' | 'opted_out' | 'unknown';
+  isSubscribed?: 'true' | 'false' | boolean; // Retail-aligned filter
+  listId?: string; // Retail-aligned filter (segment/list ID)
   gender?: 'male' | 'female' | 'other';
   filter?: 'all' | 'male' | 'female' | 'consented' | 'nonconsented';
   hasBirthDate?: 'true' | 'false';
@@ -30,7 +36,11 @@ export interface ContactsListParams {
 }
 
 export interface ContactsListResponse {
-  contacts: Contact[];
+  items?: Contact[]; // Retail-aligned field name
+  contacts: Contact[]; // Backward compatibility
+  total?: number; // Retail-aligned field
+  page?: number; // Retail-aligned field
+  pageSize?: number; // Retail-aligned field
   pagination: {
     page: number;
     pageSize: number;
@@ -83,24 +93,30 @@ export interface ContactStats {
 }
 
 export interface CreateContactRequest {
-  phoneE164: string;
+  phoneE164?: string; // Shopify field name
+  phone?: string; // Retail-aligned field name (either phone or phoneE164 required)
   firstName?: string | null;
   lastName?: string | null;
   email?: string | null;
   gender?: 'male' | 'female' | 'other' | null;
-  birthDate?: string | null;
+  birthDate?: string | null; // Shopify field name
+  birthday?: string | null; // Retail-aligned field name
   smsConsent?: 'opted_in' | 'opted_out' | 'unknown';
+  isSubscribed?: boolean; // Retail-aligned field
   tags?: string[];
 }
 
 export interface UpdateContactRequest {
-  phoneE164?: string;
+  phoneE164?: string; // Shopify field name
+  phone?: string; // Retail-aligned field name
   firstName?: string | null;
   lastName?: string | null;
   email?: string | null;
   gender?: 'male' | 'female' | 'other' | null;
-  birthDate?: string | null;
+  birthDate?: string | null; // Shopify field name
+  birthday?: string | null; // Retail-aligned field name
   smsConsent?: 'opted_in' | 'opted_out' | 'unknown';
+  isSubscribed?: boolean; // Retail-aligned field
   tags?: string[];
 }
 
@@ -144,6 +160,8 @@ export const contactsApi = {
     if (params?.pageSize) queryParams.pageSize = params.pageSize;
     if (params?.q) queryParams.q = params.q;
     if (params?.smsConsent) queryParams.smsConsent = params.smsConsent;
+    if (params?.isSubscribed !== undefined) queryParams.isSubscribed = String(params.isSubscribed);
+    if (params?.listId) queryParams.listId = params.listId;
     if (params?.gender) queryParams.gender = params.gender;
     if (params?.filter) queryParams.filter = params.filter;
     if (params?.hasBirthDate) queryParams.hasBirthDate = params.hasBirthDate;
@@ -154,7 +172,12 @@ export const contactsApi = {
       params: queryParams,
     });
     // Response interceptor already extracts data
-    return response as unknown as ContactsListResponse;
+    const data = response as unknown as ContactsListResponse;
+    // Ensure backward compatibility: if items exists, also set contacts
+    if (data.items && !data.contacts) {
+      data.contacts = data.items;
+    }
+    return data;
   },
 
   /**
@@ -169,7 +192,7 @@ export const contactsApi = {
   /**
    * Get single contact by ID
    */
-  get: async (id: number): Promise<Contact> => {
+  get: async (id: string): Promise<Contact> => {
     const response = await shopifyApi.get<Contact>(`/contacts/${id}`);
     // Response interceptor already extracts data
     return response as unknown as Contact;
@@ -179,7 +202,17 @@ export const contactsApi = {
    * Create a new contact
    */
   create: async (data: CreateContactRequest): Promise<Contact> => {
-    const response = await shopifyApi.post<Contact>('/contacts', data);
+    // Map Retail field names to Shopify field names for API compatibility
+    const apiData: any = { ...data };
+    if (apiData.phone && !apiData.phoneE164) {
+      apiData.phoneE164 = apiData.phone;
+      delete apiData.phone;
+    }
+    if (apiData.birthday && !apiData.birthDate) {
+      apiData.birthDate = apiData.birthday;
+      delete apiData.birthday;
+    }
+    const response = await shopifyApi.post<Contact>('/contacts', apiData);
     // Response interceptor already extracts data
     return response as unknown as Contact;
   },
@@ -187,8 +220,18 @@ export const contactsApi = {
   /**
    * Update an existing contact
    */
-  update: async (id: number, data: UpdateContactRequest): Promise<Contact> => {
-    const response = await shopifyApi.put<Contact>(`/contacts/${id}`, data);
+  update: async (id: string, data: UpdateContactRequest): Promise<Contact> => {
+    // Map Retail field names to Shopify field names for API compatibility
+    const apiData: any = { ...data };
+    if (apiData.phone && !apiData.phoneE164) {
+      apiData.phoneE164 = apiData.phone;
+      delete apiData.phone;
+    }
+    if (apiData.birthday !== undefined && apiData.birthDate === undefined) {
+      apiData.birthDate = apiData.birthday;
+      delete apiData.birthday;
+    }
+    const response = await shopifyApi.put<Contact>(`/contacts/${id}`, apiData);
     // Response interceptor already extracts data
     return response as unknown as Contact;
   },
@@ -196,7 +239,7 @@ export const contactsApi = {
   /**
    * Delete a contact
    */
-  delete: async (id: number): Promise<void> => {
+  delete: async (id: string): Promise<void> => {
     await shopifyApi.delete(`/contacts/${id}`);
   },
 

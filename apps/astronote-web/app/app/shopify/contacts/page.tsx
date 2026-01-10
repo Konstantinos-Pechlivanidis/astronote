@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useContacts } from '@/src/features/shopify/contacts/hooks/useContacts';
 import { useContactStats } from '@/src/features/shopify/contacts/hooks/useContactStats';
 import { useDeleteContact } from '@/src/features/shopify/contacts/hooks/useContactMutations';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailDataTable } from '@/src/components/retail/RetailDataTable';
@@ -24,8 +25,8 @@ export default function ContactsPage() {
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [consentFilter, setConsentFilter] = useState<string>('');
-  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
-  const [selectedContacts, setSelectedContacts] = useState<Set<number>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
 
   const pageSize = 20;
@@ -59,7 +60,8 @@ export default function ContactsPage() {
   // Delete mutation
   const deleteContact = useDeleteContact();
 
-  const contacts = contactsData?.contacts || [];
+  // Support both Retail-aligned "items" and Shopify "contacts" field names
+  const contacts = contactsData?.items || contactsData?.contacts || [];
   const pagination = contactsData?.pagination || {
     page: 1,
     pageSize: 20,
@@ -96,7 +98,7 @@ export default function ContactsPage() {
 
   // Select all functionality moved to header button in columns definition
 
-  const handleSelectContact = (id: number) => {
+  const handleSelectContact = (id: string) => {
     const newSelected = new Set(selectedContacts);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -275,9 +277,9 @@ export default function ContactsPage() {
   ];
 
   return (
-    <div>
-      {/* Header */}
-      <RetailPageHeader
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
         title="Contacts"
         description="Manage your customer contacts"
         actions={
@@ -548,6 +550,7 @@ export default function ContactsPage() {
         cancelText="Cancel"
         variant="danger"
       />
-    </div>
+      </div>
+    </RetailPageLayout>
   );
 }

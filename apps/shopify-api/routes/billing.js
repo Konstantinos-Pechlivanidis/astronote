@@ -23,6 +23,9 @@ r.use(billingRateLimit);
 // GET /billing/balance - Get credit balance
 r.get('/balance', billingBalanceCache, ctrl.getBalance);
 
+// GET /billing/summary - Get billing summary (subscription + allowance + credits)
+r.get('/summary', ctrl.getSummary);
+
 // GET /billing/packages - Get available credit packages (only if subscription active)
 r.get('/packages', ctrl.getPackages);
 

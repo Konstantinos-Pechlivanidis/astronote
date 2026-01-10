@@ -221,14 +221,16 @@ export async function handleReconciliation() {
         // 3. Check if all recipients are terminal
         if (progress.pending === 0) {
           // All recipients are terminal (sent or failed)
+          // Aligned with Retail: use 'completed' instead of 'sent'
           const finalStatus = progress.failed === progress.total
             ? CampaignStatus.failed
-            : CampaignStatus.sent;
+            : CampaignStatus.completed;
 
           await prisma.campaign.update({
             where: { id: campaign.id },
             data: {
               status: finalStatus,
+              finishedAt: new Date(), // Aligned with Retail: track when campaign finished
               updatedAt: new Date(),
             },
           });

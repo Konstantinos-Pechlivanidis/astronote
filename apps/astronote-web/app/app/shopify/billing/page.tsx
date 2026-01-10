@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useBillingBalance } from '@/src/features/shopify/billing/hooks/useBillingBalance';
 import { useBillingPackages } from '@/src/features/shopify/billing/hooks/useBillingPackages';
 import { useBillingHistory } from '@/src/features/shopify/billing/hooks/useBillingHistory';
+import { useBillingSummary } from '@/src/features/shopify/billing/hooks/useBillingSummary';
 import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
 import {
   useCreatePurchase,
@@ -14,9 +15,9 @@ import {
 import { useCalculateTopup } from '@/src/features/shopify/billing/hooks/useCalculateTopup';
 import {
   useSubscribe,
-  useUpdateSubscription,
   useCancelSubscription,
   useGetPortal,
+  useSwitchInterval,
 } from '@/src/features/shopify/billing/hooks/useSubscriptionMutations';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
@@ -43,6 +44,7 @@ import { format } from 'date-fns';
 export default function BillingPage() {
   const searchParams = useSearchParams();
   const [selectedCurrency, setSelectedCurrency] = useState<string>('EUR');
+  const [currencyTouched, setCurrencyTouched] = useState(false);
   const [topupCredits, setTopupCredits] = useState<string>('');
   const [page, setPage] = useState(1);
   const pageSize = 20;
@@ -58,6 +60,7 @@ export default function BillingPage() {
 
   // Fetch data
   const { data: balanceData } = useBillingBalance();
+  const { data: billingSummary, isLoading: summaryLoading } = useBillingSummary();
   const { data: subscriptionData, isLoading: subscriptionLoading } = useSubscriptionStatus();
   const { data: packagesData, isLoading: packagesLoading } = useBillingPackages(selectedCurrency);
   const { data: historyData, isLoading: historyLoading } = useBillingHistory({ page, pageSize });
@@ -66,9 +69,9 @@ export default function BillingPage() {
   const createPurchase = useCreatePurchase();
   const createTopup = useCreateTopup();
   const subscribe = useSubscribe();
-  const updateSubscription = useUpdateSubscription();
   const cancelSubscription = useCancelSubscription();
   const getPortal = useGetPortal();
+  const switchInterval = useSwitchInterval();
 
   // Calculate top-up price
   const creditsNum = topupCredits ? parseInt(topupCredits) : null;
@@ -76,12 +79,48 @@ export default function BillingPage() {
     creditsNum && creditsNum > 0 && creditsNum <= 1000000 ? creditsNum : null,
   );
 
-  // Normalize data
-  const balance = balanceData?.credits || balanceData?.balance || 0;
-  const currency = balanceData?.currency || selectedCurrency || 'EUR';
-  const subscription = subscriptionData || { active: false, planType: null };
-  const isSubscriptionActive = subscription.active === true;
-  const subscriptionPlan = subscription.planType || null;
+  // Normalize data - prefer billing summary if available, fallback to individual calls
+  const summary = billingSummary || null;
+  const billingCurrency =
+    summary?.billingCurrency ||
+    (summary?.subscription as any)?.billingCurrency ||
+    balanceData?.currency ||
+    'EUR';
+  const balance = summary?.credits?.balance || balanceData?.credits || balanceData?.balance || 0;
+  const currency = summary?.credits?.currency || balanceData?.currency || billingCurrency || selectedCurrency || 'EUR';
+  const subscriptionRaw = summary?.subscription || subscriptionData || { status: 'inactive', planType: null, interval: null, active: false };
+  // Handle subscription type - can be string or object
+  const subscription = typeof subscriptionRaw === 'string' 
+    ? { status: subscriptionRaw, planType: null, interval: null, active: subscriptionRaw === 'active' }
+    : subscriptionRaw;
+  const isSubscriptionActive = (subscription as any).status === 'active' || (subscription as any).active === true;
+  const subscriptionPlan = (subscription as any).planType || null;
+  const subscriptionInterval = (subscription as any).interval || null;
+  const subscriptionStatus = (subscription as any).status || ((subscription as any).active ? 'active' : 'inactive');
+  const normalizedStatus = subscriptionStatus === 'canceled' ? 'cancelled' : subscriptionStatus;
+  const statusIsWarning = ['trialing', 'past_due', 'unpaid', 'incomplete', 'paused'].includes(normalizedStatus);
+  const statusIsDanger = ['cancelled', 'inactive'].includes(normalizedStatus);
+  const statusVariant = normalizedStatus === 'active' ? 'success' : statusIsWarning ? 'warning' : 'danger';
+  const statusLabel = normalizedStatus === 'active'
+    ? 'Active'
+    : normalizedStatus === 'trialing'
+      ? 'Trialing'
+      : normalizedStatus === 'past_due'
+        ? 'Past Due'
+        : normalizedStatus === 'unpaid'
+          ? 'Unpaid'
+          : normalizedStatus === 'incomplete'
+            ? 'Incomplete'
+            : normalizedStatus === 'paused'
+              ? 'Paused'
+              : normalizedStatus === 'cancelled'
+                ? 'Canceled'
+                : 'Inactive';
+  const currentPeriodStart = (subscription as any).currentPeriodStart || null;
+  const currentPeriodEnd = (subscription as any).currentPeriodEnd || null;
+  const cancelAtPeriodEnd = (subscription as any).cancelAtPeriodEnd || false;
+  const lastBillingError = (subscription as any).lastBillingError || null;
+  const allowance = summary?.allowance || null;
   const packages = packagesData?.packages || [];
   const subscriptionRequired = packagesData?.subscriptionRequired === false ? false : packages.length === 0 && isSubscriptionActive === false;
   const history = historyData?.transactions || [];
@@ -94,6 +133,19 @@ export default function BillingPage() {
     hasPrevPage: false,
   };
   const topupPrice = topupPriceData;
+
+  useEffect(() => {
+    if (currencyTouched) return;
+    if (billingCurrency && billingCurrency !== selectedCurrency) {
+      setSelectedCurrency(billingCurrency);
+    }
+  }, [billingCurrency, currencyTouched, selectedCurrency]);
+
+  const formatDateSafe = (value: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : format(date, 'MMM d, yyyy');
+  };
 
   // Get frontend URL for checkout redirects
   const getFrontendUrl = (path: string) => {
@@ -155,14 +207,6 @@ export default function BillingPage() {
     }
   };
 
-  const handleUpdateSubscription = async (planType: 'starter' | 'pro') => {
-    try {
-      await updateSubscription.mutateAsync({ planType });
-    } catch (error) {
-      // Error handled by mutation hook
-    }
-  };
-
   const handleCancelSubscription = async () => {
     if (!window.confirm('Are you sure you want to cancel your subscription? You will lose access to subscription benefits.')) {
       return;
@@ -183,6 +227,18 @@ export default function BillingPage() {
     }
   };
 
+  const handleSwitchInterval = async (interval: 'month' | 'year') => {
+    if (!window.confirm(`Are you sure you want to switch to ${interval === 'month' ? 'monthly' : 'yearly'} billing? This will update your subscription immediately.`)) {
+      return;
+    }
+
+    try {
+      await switchInterval.mutateAsync({ interval });
+    } catch (error) {
+      // Error handled by mutation hook
+    }
+  };
+
   const isLowBalance = balance < 100;
 
   return (
@@ -194,6 +250,21 @@ export default function BillingPage() {
       />
 
       <div className="space-y-6">
+        {/* Subscription Required Banner */}
+        {!isSubscriptionActive && (
+          <RetailCard className="p-6 border-2 border-red-500/50 bg-red-500/10">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-6 w-6 text-red-500 flex-shrink-0" />
+              <div>
+                <h3 className="text-lg font-bold text-red-500 mb-1">Subscription Required</h3>
+                <p className="text-sm text-red-500/90">
+                  An active subscription is required to send messages. Please subscribe to a plan below.
+                </p>
+              </div>
+            </div>
+          </RetailCard>
+        )}
+
         {/* Current Balance */}
         <RetailCard
           className={`p-6 ${isLowBalance ? 'border-2 border-red-500/50 bg-red-500/10' : ''}`}
@@ -235,8 +306,16 @@ export default function BillingPage() {
         {/* Subscription Section */}
         <RetailCard className="p-6">
           <h2 className="text-2xl font-bold text-text-primary mb-6">Subscription</h2>
+          {lastBillingError && (
+            <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-500">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <span>Last billing error: {lastBillingError}</span>
+              </div>
+            </div>
+          )}
 
-          {subscriptionLoading ? (
+          {(subscriptionLoading || summaryLoading) ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-8 w-8 animate-spin text-text-tertiary" />
             </div>
@@ -244,38 +323,87 @@ export default function BillingPage() {
             <div className="space-y-6">
               <div className="p-5 rounded-xl bg-surface-light border border-border">
                 <div className="flex items-center gap-3 mb-3">
-                  <StatusBadge status="success" label="Active" />
+                  <StatusBadge
+                    status={statusVariant}
+                    label={statusLabel}
+                  />
                   <h3 className="text-xl font-bold text-text-primary capitalize">
-                    {subscriptionPlan} Plan
+                    {subscriptionPlan ? `${subscriptionPlan} Plan` : 'No Plan'}
                   </h3>
+                  {subscriptionInterval && (
+                    <span className="text-sm text-text-secondary">
+                      ({subscriptionInterval === 'month' ? 'Monthly' : 'Yearly'})
+                    </span>
+                  )}
                 </div>
-                <p className="text-base text-text-secondary">
-                  {subscriptionPlan === 'starter'
-                    ? '€40/month - 100 free credits per month'
-                    : '€240/year - 500 free credits per year'}
-                </p>
+                <div className="space-y-2">
+                  <p className="text-base text-text-secondary">
+                    {subscriptionPlan === 'starter'
+                      ? '€40/month - 100 free SMS per month'
+                      : '€240/year - 500 free SMS per year'}
+                  </p>
+                  {allowance && (
+                    <div className="text-sm text-text-secondary space-y-1">
+                      <p>
+                        Free SMS included: <span className="font-semibold text-text-primary">
+                          {allowance.includedPerPeriod.toLocaleString()}
+                        </span>
+                      </p>
+                      <p>
+                        Used this period: <span className="font-semibold text-text-primary">
+                          {allowance.usedThisPeriod.toLocaleString()}
+                        </span>
+                      </p>
+                      <p>
+                        Remaining: <span className="font-semibold text-text-primary">
+                          {allowance.remainingThisPeriod.toLocaleString()}
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                  {(currentPeriodStart || currentPeriodEnd) && (
+                    <p className="text-sm text-text-secondary">
+                      Billing period:{' '}
+                      <span className="font-semibold text-text-primary">
+                        {formatDateSafe(currentPeriodStart) || '—'} – {formatDateSafe(currentPeriodEnd) || '—'}
+                      </span>
+                    </p>
+                  )}
+                  {currentPeriodEnd && (
+                    <p className="text-sm text-text-secondary">
+                      {cancelAtPeriodEnd ? 'Cancels on' : 'Renews on'}{' '}
+                      <span className="font-semibold text-text-primary">
+                        {formatDateSafe(currentPeriodEnd) || '—'}
+                      </span>
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button onClick={handleManageSubscription} disabled={getPortal.isPending}>
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  Manage Subscription
+                  Manage Payment Method
                 </Button>
-                {subscriptionPlan === 'starter' ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => handleUpdateSubscription('pro')}
-                    disabled={updateSubscription.isPending}
-                  >
-                    Upgrade to Pro
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onClick={() => handleUpdateSubscription('starter')}
-                    disabled={updateSubscription.isPending}
-                  >
-                    Downgrade to Starter
-                  </Button>
+                {subscriptionInterval && (
+                  <>
+                    {subscriptionInterval === 'month' ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => handleSwitchInterval('year')}
+                        disabled={switchInterval.isPending}
+                      >
+                        Switch to Yearly
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        onClick={() => handleSwitchInterval('month')}
+                        disabled={switchInterval.isPending}
+                      >
+                        Switch to Monthly
+                      </Button>
+                    )}
+                  </>
                 )}
                 <Button
                   variant="outline"
@@ -462,7 +590,13 @@ export default function BillingPage() {
                 <h2 className="text-2xl font-bold text-text-primary mb-1">Credit Packs</h2>
                 <p className="text-sm text-text-secondary">Purchase credit packs at discounted rates</p>
               </div>
-              <Select value={selectedCurrency} onValueChange={setSelectedCurrency}>
+              <Select
+                value={selectedCurrency}
+                onValueChange={(value) => {
+                  setSelectedCurrency(value);
+                  setCurrencyTouched(true);
+                }}
+              >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Currency" />
                 </SelectTrigger>

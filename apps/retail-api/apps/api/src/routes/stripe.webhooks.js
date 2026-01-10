@@ -4,9 +4,12 @@ const prisma = require('../lib/prisma');
 const { verifyWebhookSignature, getCheckoutSession, stripe } = require('../services/stripe.service');
 const { credit } = require('../services/wallet.service');
 const {
-  allocateFreeCredits,
+  resetAllowanceForPeriod,
   activateSubscription,
   deactivateSubscription,
+  getIntervalForPlan,
+  resolveIntervalFromStripe,
+  getIncludedSmsForInterval,
   // calculateTopupPrice // Unused - kept for potential future use
 } = require('../services/subscription.service');
 const pino = require('pino');
@@ -15,6 +18,46 @@ const router = express.Router();
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+
+const mapStripeStatus = (status) => {
+  switch (status) {
+  case 'active':
+    return 'active';
+  case 'trialing':
+    return 'trialing';
+  case 'past_due':
+    return 'past_due';
+  case 'unpaid':
+    return 'unpaid';
+  case 'incomplete':
+    return 'incomplete';
+  case 'paused':
+    return 'paused';
+  case 'canceled':
+  case 'cancelled':
+    return 'cancelled';
+  default:
+    return 'inactive';
+  }
+};
+
+const extractSubscriptionPeriod = (subscription) => {
+  const currentPeriodStart = subscription?.current_period_start
+    ? new Date(subscription.current_period_start * 1000)
+    : null;
+  const currentPeriodEnd = subscription?.current_period_end
+    ? new Date(subscription.current_period_end * 1000)
+    : null;
+  const interval = resolveIntervalFromStripe(subscription);
+  const cancelAtPeriodEnd = Boolean(subscription?.cancel_at_period_end);
+
+  return {
+    interval,
+    currentPeriodStart,
+    currentPeriodEnd,
+    cancelAtPeriodEnd,
+  };
+};
 
 /**
  * Persist webhook event for auditing
@@ -339,16 +382,22 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
       logger.warn({ subscriptionId, err: err.message }, 'Failed to retrieve subscription from Stripe');
     }
 
+    const period = extractSubscriptionPeriod(stripeSubscription);
+
     // Activate subscription (sets planType and subscriptionStatus)
     logger.info({ ownerId, planType, subscriptionId }, 'Activating subscription');
-    await activateSubscription(ownerId, customerId, subscriptionId, planType);
+    await activateSubscription(ownerId, customerId, subscriptionId, planType, {
+      interval: period.interval || getIntervalForPlan(planType),
+      currentPeriodStart: period.currentPeriodStart,
+      currentPeriodEnd: period.currentPeriodEnd,
+      cancelAtPeriodEnd: period.cancelAtPeriodEnd,
+    });
     logger.info({ ownerId, planType, subscriptionId }, 'Subscription activated successfully');
 
-    // Allocate free credits for first billing cycle
+    // Reset allowance for first billing cycle (idempotent)
     // Use subscription ID as invoice ID for idempotency (first invoice will be created separately)
-    // Pass planType explicitly to avoid race condition with database read
-    logger.info({ ownerId, planType, subscriptionId }, 'Allocating free credits for subscription');
-    const result = await allocateFreeCredits(ownerId, planType, `sub_${subscriptionId}`, stripeSubscription);
+    logger.info({ ownerId, planType, subscriptionId }, 'Resetting allowance for subscription');
+    const result = await resetAllowanceForPeriod(ownerId, planType, `sub_${subscriptionId}`, stripeSubscription);
 
     if (!result.allocated) {
       logger.warn({
@@ -356,16 +405,16 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
         planType,
         subscriptionId,
         reason: result.reason,
-        credits: result.credits || 0,
-      }, 'Free credits not allocated - may already be processed or subscription not active');
+        includedSmsPerPeriod: result.includedSmsPerPeriod || 0,
+      }, 'Allowance not reset - may already be processed or subscription not active');
     } else {
       logger.info({
         ownerId,
         planType,
         subscriptionId,
-        credits: result.credits,
+        includedSmsPerPeriod: result.includedSmsPerPeriod,
         invoiceId: `sub_${subscriptionId}`,
-      }, 'Subscription activated and free credits allocated successfully');
+      }, 'Subscription activated and allowance reset successfully');
     }
   } catch (err) {
     logger.error({
@@ -549,32 +598,37 @@ async function handleInvoicePaymentSucceeded(invoice) {
     logger.warn({ subscriptionId, err: err.message }, 'Failed to retrieve subscription from Stripe');
   }
 
-  // Allocate free credits for this billing cycle (idempotent)
+  // Reset allowance for this billing cycle (idempotent)
   logger.info({
     userId: user.id,
     planType: user.planType,
     invoiceId: invoice.id,
     subscriptionId,
-  }, 'Allocating free credits for billing cycle');
+  }, 'Resetting allowance for billing cycle');
 
   try {
-    const result = await allocateFreeCredits(user.id, user.planType, invoice.id, stripeSubscription);
+    const result = await resetAllowanceForPeriod(user.id, user.planType, invoice.id, stripeSubscription);
     if (result.allocated) {
       logger.info({
         userId: user.id,
         planType: user.planType,
         invoiceId: invoice.id,
-        credits: result.credits,
+        includedSmsPerPeriod: result.includedSmsPerPeriod,
         subscriptionId,
-      }, 'Free credits allocated successfully for billing cycle');
+      }, 'Allowance reset successfully for billing cycle');
     } else {
       logger.info({
         userId: user.id,
         invoiceId: invoice.id,
         reason: result.reason,
-        credits: result.credits || 0,
-      }, 'Free credits not allocated (already allocated or other reason)');
+        includedSmsPerPeriod: result.includedSmsPerPeriod || 0,
+      }, 'Allowance not reset (already allocated or other reason)');
     }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastBillingError: null },
+    });
   } catch (err) {
     logger.error({
       userId: user.id,
@@ -654,58 +708,38 @@ async function handleInvoicePaymentFailed(invoice) {
   // If subscription is past_due or unpaid, mark as inactive
   // If subscription is cancelled, mark as cancelled
   const stripeStatus = stripeSubscription?.status;
-  let newStatus = user.subscriptionStatus;
+  const newStatus = stripeStatus ? mapStripeStatus(stripeStatus) : user.subscriptionStatus;
+  const billingError = invoice?.last_payment_error?.message || invoice?.status || 'payment_failed';
 
-  if (stripeStatus === 'past_due' || stripeStatus === 'unpaid') {
-    newStatus = 'inactive';
-    logger.info({
-      userId: user.id,
-      subscriptionId,
-      stripeStatus,
-      oldStatus: user.subscriptionStatus,
-      newStatus,
-    }, 'Subscription payment failed - marking as inactive');
-  } else if (stripeStatus === 'cancelled') {
-    newStatus = 'cancelled';
-    logger.info({
-      userId: user.id,
-      subscriptionId,
-      stripeStatus,
-      oldStatus: user.subscriptionStatus,
-      newStatus,
-    }, 'Subscription cancelled after payment failure');
-  }
+  try {
+    const updateData = {
+      lastBillingError: billingError,
+    };
 
-  // Update subscription status if changed
-  if (user.subscriptionStatus !== newStatus) {
-    try {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { subscriptionStatus: newStatus },
-      });
-      logger.info({
-        userId: user.id,
-        subscriptionId,
-        oldStatus: user.subscriptionStatus,
-        newStatus,
-        invoiceId: invoice.id,
-      }, 'Subscription status updated after payment failure');
-    } catch (err) {
-      logger.error({
-        userId: user.id,
-        subscriptionId,
-        err: err.message,
-        stack: err.stack,
-      }, 'Failed to update subscription status after payment failure');
-      throw err;
+    if (user.subscriptionStatus !== newStatus) {
+      updateData.subscriptionStatus = newStatus;
     }
-  } else {
-    logger.debug({
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: updateData,
+    });
+
+    logger.info({
       userId: user.id,
       subscriptionId,
-      status: user.subscriptionStatus,
-      stripeStatus,
-    }, 'Subscription status unchanged after payment failure');
+      oldStatus: user.subscriptionStatus,
+      newStatus,
+      invoiceId: invoice.id,
+    }, 'Subscription status updated after payment failure');
+  } catch (err) {
+    logger.error({
+      userId: user.id,
+      subscriptionId,
+      err: err.message,
+      stack: err.stack,
+    }, 'Failed to update subscription status after payment failure');
+    throw err;
   }
 }
 
@@ -899,6 +933,7 @@ async function handleSubscriptionDeleted(subscription) {
       id: true,
       subscriptionStatus: true,
       planType: true,
+      subscriptionInterval: true,
     },
   });
 
@@ -979,40 +1014,31 @@ async function handleSubscriptionUpdated(subscription) {
     const { getStripeSubscriptionPriceId } = require('../services/stripe.service');
 
     // Check which plan this price ID belongs to
-    const starterPriceId = getStripeSubscriptionPriceId('starter', 'EUR');
-    const proPriceId = getStripeSubscriptionPriceId('pro', 'EUR');
+    const starterPriceIdEur = getStripeSubscriptionPriceId('starter', 'EUR');
+    const starterPriceIdUsd = getStripeSubscriptionPriceId('starter', 'USD');
+    const proPriceIdEur = getStripeSubscriptionPriceId('pro', 'EUR');
+    const proPriceIdUsd = getStripeSubscriptionPriceId('pro', 'USD');
 
-    if (priceId === starterPriceId) {
+    if (priceId === starterPriceIdEur || priceId === starterPriceIdUsd) {
       newPlanType = 'starter';
-    } else if (priceId === proPriceId) {
+    } else if (priceId === proPriceIdEur || priceId === proPriceIdUsd) {
       newPlanType = 'pro';
     }
   }
 
   // Update subscription status based on Stripe status
-  // Stripe statuses: active, past_due, unpaid, cancelled, incomplete, incomplete_expired, trialing, paused
-  // Our statuses: active, inactive, cancelled
-  let newStatus = 'inactive';
-  if (status === 'active' || status === 'trialing') {
-    newStatus = 'active';
-  } else if (status === 'cancelled' || status === 'unpaid' || status === 'incomplete_expired') {
-    newStatus = 'cancelled';
-  } else if (status === 'past_due' || status === 'incomplete' || status === 'paused') {
-    // Keep as inactive but log for monitoring
-    newStatus = 'inactive';
-    logger.info({
-      userId: user.id,
-      subscriptionId,
-      stripeStatus: status,
-      currentStatus: user.subscriptionStatus,
-    }, 'Subscription in non-active state, setting to inactive');
-  }
+  const newStatus = mapStripeStatus(status);
+  const period = extractSubscriptionPeriod(subscription);
+  const derivedInterval = period.interval || (newPlanType ? getIntervalForPlan(newPlanType) : null);
+  const includedSmsPerPeriod = derivedInterval ? getIncludedSmsForInterval(derivedInterval) : null;
 
   // Determine what needs to be updated
   const statusChanged = user.subscriptionStatus !== newStatus;
   const planTypeChanged = newPlanType && user.planType !== newPlanType;
+  const intervalChanged = derivedInterval && user.subscriptionInterval !== derivedInterval;
+  const hasPeriodUpdate = period.currentPeriodStart || period.currentPeriodEnd || period.cancelAtPeriodEnd !== null;
 
-  if (statusChanged || planTypeChanged) {
+  if (statusChanged || planTypeChanged || intervalChanged || hasPeriodUpdate) {
     logger.info({
       userId: user.id,
       subscriptionId,
@@ -1020,8 +1046,9 @@ async function handleSubscriptionUpdated(subscription) {
       newStatus,
       oldPlanType: user.planType,
       newPlanType,
+      interval: derivedInterval,
       stripeStatus: status,
-    }, 'Updating subscription status and/or planType');
+    }, 'Updating subscription status/plan/interval');
 
     try {
       const updateData = {};
@@ -1030,6 +1057,22 @@ async function handleSubscriptionUpdated(subscription) {
       }
       if (planTypeChanged) {
         updateData.planType = newPlanType;
+      }
+      if (derivedInterval) {
+        updateData.subscriptionInterval = derivedInterval;
+        updateData.includedSmsPerPeriod = includedSmsPerPeriod;
+      }
+      if (period.currentPeriodStart) {
+        updateData.subscriptionCurrentPeriodStart = period.currentPeriodStart;
+      }
+      if (period.currentPeriodEnd) {
+        updateData.subscriptionCurrentPeriodEnd = period.currentPeriodEnd;
+      }
+      if (period.cancelAtPeriodEnd !== null && period.cancelAtPeriodEnd !== undefined) {
+        updateData.cancelAtPeriodEnd = period.cancelAtPeriodEnd;
+      }
+      if (newStatus === 'active') {
+        updateData.lastBillingError = null;
       }
 
       await prisma.user.update({

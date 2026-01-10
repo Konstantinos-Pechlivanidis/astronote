@@ -6,6 +6,9 @@ import { SHOPIFY_API_BASE_URL } from '@/src/lib/shopify/config';
 import { topLevelRedirect } from '@/src/lib/shopify/auth/redirect';
 import { getShopifySessionToken, isEmbeddedShopifyApp } from '@/src/lib/shopify/auth/session-token';
 import { exchangeShopifyToken } from '@/src/lib/shopify/api/auth';
+import { RetailCard } from '@/src/components/retail/RetailCard';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 /**
  * Shopify Login Page
@@ -67,41 +70,50 @@ export default function ShopifyLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-20 bg-background">
-      <div className="p-8 md:p-12 max-w-md w-full glass rounded-xl border border-border">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-lg bg-accent flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-2xl">A</span>
-          </div>
-          <h1 className="text-3xl font-bold mb-2">Shopify Login</h1>
-          <p className="text-text-secondary">Connect your Shopify store to get started</p>
-        </div>
-
-        {isLoading ? (
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-4"></div>
-            <p className="text-text-secondary">Authenticating...</p>
-          </div>
-        ) : (
-          <>
-            {error && (
-              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-                {error}
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <div className="w-full max-w-md">
+        <RetailCard className="p-6 sm:p-8 lg:p-10">
+          <div className="flex flex-col items-center space-y-4 text-center">
+            <div className="flex items-center justify-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-accent sm:h-20 sm:w-20">
+                <span className="text-2xl font-bold text-white">A</span>
               </div>
-            )}
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">
+                Shopify Login
+              </h1>
+              <p className="text-sm text-text-secondary sm:text-base">
+                Connect your Shopify store to get started
+              </p>
+            </div>
+          </div>
 
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="shop" className="block text-sm font-medium text-text-primary mb-2">
+          {isLoading ? (
+            <div className="mt-6 text-center">
+              <div className="mb-4 flex justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              </div>
+              <p className="text-sm text-text-secondary">Authenticating...</p>
+            </div>
+          ) : (
+            <div className="mt-6 space-y-6">
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50/80 p-4 backdrop-blur-sm">
+                  <p className="text-sm font-medium text-red-800">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label htmlFor="shop" className="block text-sm font-medium text-text-secondary">
                   Shop Domain
                 </label>
-                <input
+                <Input
                   id="shop"
                   type="text"
                   value={shopDomain}
                   onChange={(e) => setShopDomain(e.target.value)}
                   placeholder="example.myshopify.com"
-                  className="w-full px-4 py-3 rounded-lg border border-border bg-background text-text-primary focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 min-h-[44px]"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       handleLogin();
@@ -110,15 +122,18 @@ export default function ShopifyLoginPage() {
                 />
               </div>
 
-              <button
-                onClick={handleLogin}
-                className="w-full px-4 py-3 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors font-medium min-h-[44px]"
-              >
-                Log in with Shopify
-              </button>
+              <div className="pt-2">
+                <Button
+                  onClick={handleLogin}
+                  className="w-full h-12 text-base font-semibold shadow-sm"
+                  size="lg"
+                >
+                  Log in with Shopify
+                </Button>
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </RetailCard>
       </div>
     </div>
   );

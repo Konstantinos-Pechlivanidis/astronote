@@ -140,12 +140,12 @@ export function useEnqueueCampaign() {
       } else if (code === 'ALREADY_SENDING') {
         toast.error('Campaign is already being sent');
       } else if (code === 'INSUFFICIENT_CREDITS') {
-        toast.error('Insufficient credits. Please purchase more credits.');
+        toast.error('Not enough free allowance or credits. Please purchase more credits or upgrade your subscription.');
       } else if (code === 'QUEUE_UNAVAILABLE') {
         toast.error('Message queue unavailable. Please try again in a moment.');
       } else if (code === 'ENQUEUE_FAILED') {
         toast.error('Failed to enqueue campaign. Please retry.');
-      } else if (code === 'INACTIVE_SUBSCRIPTION') {
+      } else if (code === 'SUBSCRIPTION_REQUIRED' || code === 'INACTIVE_SUBSCRIPTION') {
         toast.error('Active subscription required to send campaigns.');
       } else if (code === 'NO_MESSAGE_TEXT') {
         toast.error('Campaign is missing message text.');

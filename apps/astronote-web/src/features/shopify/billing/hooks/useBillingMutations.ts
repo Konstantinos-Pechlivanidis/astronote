@@ -4,9 +4,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   billingApi,
+  type BillingApiError,
   type CreatePurchaseRequest,
   type CreateTopupRequest,
-} from '@/src/lib/shopify/api/billing';
+} from '@/src/lib/shopifyBillingApi';
 
 /**
  * React Query hook for creating a purchase (credit packs)
@@ -28,10 +29,12 @@ export function useCreatePurchase() {
       }
     },
     onError: (error: any) => {
-      if (error.response?.data?.code === 'SUBSCRIPTION_REQUIRED' || error.code === 'SUBSCRIPTION_REQUIRED') {
+      const apiError = error as BillingApiError;
+      const code = apiError?.code || error.response?.data?.code || error.code;
+      if (code === 'SUBSCRIPTION_REQUIRED' || code === 'INACTIVE_SUBSCRIPTION') {
         toast.error('An active subscription is required to purchase credit packs.');
       } else {
-        const message = error.response?.data?.message || 'Failed to initiate purchase';
+        const message = apiError?.message || error.response?.data?.message || 'Failed to initiate purchase';
         toast.error(message);
       }
     },
@@ -64,9 +67,9 @@ export function useCreateTopup() {
       }
     },
     onError: (error: any) => {
-      const message = error.response?.data?.message || 'Failed to initiate top-up';
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to initiate top-up';
       toast.error(message);
     },
   });
 }
-

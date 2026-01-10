@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { useCreateCampaign } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
+import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
 import { useAudiences } from '@/src/features/shopify/audiences/hooks/useAudiences';
 import { useDiscounts } from '@/src/features/shopify/discounts/hooks/useDiscounts';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
@@ -24,6 +27,7 @@ import type { ScheduleType } from '@/src/lib/shopify/api/campaigns';
 export default function NewCampaignPage() {
   const router = useRouter();
   const createCampaign = useCreateCampaign();
+  const { data: subscriptionData } = useSubscriptionStatus();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -60,6 +64,7 @@ export default function NewCampaignPage() {
   }, []);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const isSubscriptionActive = subscriptionData?.status === 'active' || subscriptionData?.active === true;
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -95,6 +100,10 @@ export default function NewCampaignPage() {
 
   const handleSubmit = async (action: 'draft' | 'send' | 'schedule') => {
     if (!validate()) {
+      return;
+    }
+    if (action === 'send' && !isSubscriptionActive) {
+      toast.error('Active subscription required to send campaigns');
       return;
     }
 
@@ -136,7 +145,8 @@ export default function NewCampaignPage() {
   const smsCount = formData.message.length > 0 ? smsParts : 0;
 
   return (
-    <div>
+    <RetailPageLayout>
+      <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="mb-6 flex items-center gap-4">
         <Link href="/app/shopify/campaigns">
@@ -386,7 +396,8 @@ export default function NewCampaignPage() {
                   <Button
                     type="button"
                     onClick={() => handleSubmit('send')}
-                    disabled={createCampaign.isPending}
+                    disabled={!isSubscriptionActive || createCampaign.isPending}
+                    title={!isSubscriptionActive ? 'Active subscription required to send campaigns' : 'Create and send now'}
                   >
                     <Send className="mr-2 h-4 w-4" />
                     Create & Send Now
@@ -441,7 +452,7 @@ export default function NewCampaignPage() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </RetailPageLayout>
   );
 }
-

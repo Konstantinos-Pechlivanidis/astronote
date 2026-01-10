@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 
 /**
  * Shopify Auth Callback Page Content
@@ -45,19 +46,22 @@ function ShopifyAuthCallbackContent() {
         // Save token to localStorage
         localStorage.setItem('shopify_token', token);
 
-        // Try to decode token to get basic info (JWT structure: header.payload.signature)
+        // CRITICAL: Extract and store shop domain IMMEDIATELY from token or URL
+        // This ensures shopDomain is available for API calls even if token verification fails
         let storeInfo: { id?: string | number; shopDomain?: string; credits?: number; currency?: string } | null = null;
+
+        // Priority 1: Decode token to get shopDomain (fast, no API call)
         try {
           const tokenParts = token.split('.');
           if (tokenParts.length === 3) {
             const payload = JSON.parse(atob(tokenParts[1]));
             // Extract store info from token payload
-            if (payload.storeId && payload.shopDomain) {
+            if (payload.shopDomain) {
               storeInfo = {
                 id: payload.storeId,
                 shopDomain: payload.shopDomain,
               };
-              // Save basic store info from token (ensures shopDomain is always stored)
+              // Save basic store info from token IMMEDIATELY (ensures shopDomain is always stored)
               localStorage.setItem('shopify_store', JSON.stringify(storeInfo));
             }
           }
@@ -68,7 +72,30 @@ function ShopifyAuthCallbackContent() {
           }
         }
 
+        // Priority 2: If token decode failed, try URL query param (for redirect flows)
+        if (!storeInfo || !storeInfo.shopDomain) {
+          const urlParams = new URLSearchParams(window.location.search);
+          const queryShop = urlParams.get('shop');
+
+          if (queryShop) {
+            // Normalize shop domain
+            const normalizedShop = queryShop.includes('.myshopify.com')
+              ? queryShop
+              : `${queryShop}.myshopify.com`;
+
+            // Validate format
+            if (/^[a-zA-Z0-9-]+\.myshopify\.com$/.test(normalizedShop)) {
+              storeInfo = {
+                shopDomain: normalizedShop,
+              };
+              // Store immediately for API calls
+              localStorage.setItem('shopify_store', JSON.stringify(storeInfo));
+            }
+          }
+        }
+
         // Try to verify token and get full store info from backend
+        // This ensures we have the most up-to-date store info
         try {
           const { verifyToken } = await import('@/src/lib/shopify/api/auth');
           const response = await verifyToken();
@@ -85,27 +112,47 @@ function ShopifyAuthCallbackContent() {
             storeInfo = fullStoreInfo;
           }
         } catch (verifyError) {
-          // If verify fails but we have basic info from token, continue anyway
-          // The token will be validated on the next API call
+          // If verify fails, check if we have shopDomain from token
           if (!storeInfo || !storeInfo.shopDomain) {
-            // No store info with shopDomain - this is a problem
-            if (process.env.NODE_ENV === 'development') {
-              console.error('Token verification failed and no shopDomain available:', verifyError);
+            // Try to get shopDomain from URL query param as last resort
+            const urlParams = new URLSearchParams(window.location.search);
+            const queryShop = urlParams.get('shop');
+
+            if (queryShop) {
+              // Normalize shop domain
+              const normalizedShop = queryShop.includes('.myshopify.com')
+                ? queryShop
+                : `${queryShop}.myshopify.com`;
+
+              // Validate format
+              if (/^[a-zA-Z0-9-]+\.myshopify\.com$/.test(normalizedShop)) {
+                storeInfo = {
+                  shopDomain: normalizedShop,
+                };
+                localStorage.setItem('shopify_store', JSON.stringify(storeInfo));
             }
-            localStorage.removeItem('shopify_token');
-            localStorage.removeItem('shopify_store');
-
-            setStatus('error');
-            setError('Token verification failed. Please try logging in again.');
-
-            setTimeout(() => {
-              router.push('/app/shopify/auth/login');
-            }, 2000);
-            return;
           }
-          // We have basic info from token, continue with redirect
+
+            // If still no shopDomain, this is a problem
+            if (!storeInfo || !storeInfo.shopDomain) {
+              if (process.env.NODE_ENV === 'development') {
+                console.error('Token verification failed and no shopDomain available:', verifyError);
+              }
+              localStorage.removeItem('shopify_token');
+              localStorage.removeItem('shopify_store');
+
+              setStatus('error');
+              setError('Token verification failed. Please try logging in again.');
+
+              setTimeout(() => {
+                router.push('/app/shopify/auth/login');
+              }, 2000);
+              return;
+            }
+          }
+          // We have basic info from token or query param, continue with redirect
           if (process.env.NODE_ENV === 'development') {
-            console.warn('Token verify failed, but using token payload info:', verifyError);
+            console.warn('Token verify failed, but using fallback shopDomain:', storeInfo?.shopDomain);
           }
         }
 
@@ -130,71 +177,79 @@ function ShopifyAuthCallbackContent() {
   }, [searchParams, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-20 bg-background">
-      <div className="p-8 md:p-12 text-center max-w-md w-full glass rounded-xl border border-border">
-        {status === 'processing' && (
-          <>
-            <div className="flex justify-center mb-6">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent"></div>
-            </div>
-            <h1 className="text-2xl font-bold mb-4">Completing Authentication</h1>
-            <p className="text-text-secondary">Please wait while we verify your connection...</p>
-          </>
-        )}
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <div className="w-full max-w-md">
+        <RetailCard className="p-6 sm:p-8 lg:p-10">
+          <div className="text-center">
+            {status === 'processing' && (
+              <>
+                <div className="mb-6 flex justify-center">
+                  <div className="h-12 w-12 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                </div>
+                <h1 className="mb-4 text-2xl font-bold text-text-primary">
+                  Completing Authentication
+                </h1>
+                <p className="text-sm text-text-secondary">
+                  Please wait while we verify your connection...
+                </p>
+              </>
+            )}
 
-        {status === 'success' && (
-          <>
-            <div className="flex justify-center mb-6">
-              <div className="p-4 rounded-xl bg-accent-light">
-                <svg
-                  className="w-8 h-8 text-[#0ABAB5]"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              </div>
-            </div>
-            <h1 className="text-2xl font-bold mb-4 text-accent">Successfully Connected!</h1>
-            <p className="text-text-secondary mb-6">
-              Your Shopify store has been connected. Redirecting to dashboard...
-            </p>
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-accent mx-auto"></div>
-          </>
-        )}
+            {status === 'success' && (
+              <>
+                <div className="mb-6 flex justify-center">
+                  <div className="rounded-xl bg-accent-light p-4">
+                    <svg
+                      className="h-8 w-8 text-accent"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <h1 className="mb-4 text-2xl font-bold text-accent">Successfully Connected!</h1>
+                <p className="mb-6 text-sm text-text-secondary">
+                  Your Shopify store has been connected. Redirecting to dashboard...
+                </p>
+                <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+              </>
+            )}
 
-        {status === 'error' && (
-          <>
-            <div className="flex justify-center mb-6">
-              <div className="p-4 rounded-xl bg-red-500/20">
-                <svg
-                  className="w-8 h-8 text-red-500"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </div>
-            </div>
-            <h1 className="text-2xl font-bold mb-4 text-red-500">Authentication Failed</h1>
-            <p className="text-text-secondary mb-6">
-              {error || 'An error occurred during authentication'}
-            </p>
-            <p className="text-sm text-text-secondary">Redirecting to login page...</p>
-          </>
-        )}
+            {status === 'error' && (
+              <>
+                <div className="mb-6 flex justify-center">
+                  <div className="rounded-xl bg-red-500/20 p-4">
+                    <svg
+                      className="h-8 w-8 text-red-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <h1 className="mb-4 text-2xl font-bold text-red-500">Authentication Failed</h1>
+                <p className="mb-6 text-sm text-text-secondary">
+                  {error || 'An error occurred during authentication'}
+                </p>
+                <p className="text-xs text-text-tertiary">Redirecting to login page...</p>
+              </>
+            )}
+          </div>
+        </RetailCard>
       </div>
     </div>
   );
@@ -208,13 +263,17 @@ export default function ShopifyAuthCallbackPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center px-4 py-20 bg-background">
-          <div className="p-8 md:p-12 text-center max-w-md w-full glass rounded-xl border border-border">
-            <div className="flex justify-center mb-6">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent"></div>
-            </div>
-            <h1 className="text-2xl font-bold mb-4">Loading...</h1>
-            <p className="text-text-secondary">Please wait...</p>
+        <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+          <div className="w-full max-w-md">
+            <RetailCard className="p-6 sm:p-8 lg:p-10">
+              <div className="text-center">
+                <div className="mb-6 flex justify-center">
+                  <div className="h-12 w-12 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                </div>
+                <h1 className="mb-4 text-2xl font-bold text-text-primary">Loading...</h1>
+                <p className="text-sm text-text-secondary">Please wait...</p>
+              </div>
+            </RetailCard>
           </div>
         </div>
       }

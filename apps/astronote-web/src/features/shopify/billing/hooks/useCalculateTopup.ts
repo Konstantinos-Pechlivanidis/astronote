@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { billingApi } from '@/src/lib/shopify/api/billing';
+import { billingApi } from '@/src/lib/shopifyBillingApi';
 
 /**
  * React Query hook for calculating top-up price
@@ -15,4 +15,3 @@ export function useCalculateTopup(credits: number | null) {
     refetchOnMount: false,
   });
 }
-

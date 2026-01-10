@@ -19,9 +19,11 @@ export const CampaignStatus = {
   draft: 'draft',
   scheduled: 'scheduled',
   sending: 'sending',
-  sent: 'sent',
+  paused: 'paused', // Aligned with Retail: allows pausing campaigns
+  completed: 'completed', // Aligned with Retail: campaign finished successfully
+  sent: 'sent', // Legacy alias for completed (kept for backward compatibility)
   failed: 'failed',
-  cancelled: 'cancelled',
+  cancelled: 'cancelled', // Shopify-specific: user cancelled campaign
 };
 
 export const CampaignPriority = {
@@ -82,6 +84,11 @@ export const SubscriptionPlanType = {
 
 export const SubscriptionStatus = {
   active: 'active',
+  trialing: 'trialing',
+  past_due: 'past_due',
+  unpaid: 'unpaid',
+  incomplete: 'incomplete',
+  paused: 'paused',
   inactive: 'inactive',
   cancelled: 'cancelled',
 };
@@ -138,6 +145,8 @@ export const EnumValues = {
     draft: 'draft',
     scheduled: 'scheduled',
     sending: 'sending',
+    paused: 'paused',
+    completed: 'completed',
     sent: 'sent',
     failed: 'failed',
     cancelled: 'cancelled',

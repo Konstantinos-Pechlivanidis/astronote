@@ -2,15 +2,15 @@
 // Bulk SMS sending service with credit enforcement
 
 const { sendBulkMessages } = require('./mitto.service');
-const { getBalance, debitOnce } = require('./wallet.service');
-const { isSubscriptionActive } = require('./subscription.service');
+const { getBalance } = require('./wallet.service');
+const { isSubscriptionActive, getAllowanceStatus, consumeMessageBilling } = require('./subscription.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'sms-bulk-service' });
 
 /**
- * Send bulk SMS with credit enforcement
- * Checks balance before sending, debits ONLY after successful send (when messageId is received)
+ * Send bulk SMS with billing enforcement
+ * Checks allowance + credits before sending, debits/consumes AFTER successful send
  *
  * @param {Array<Object>} messages - Array of message data objects
  * @param {number} messages[].ownerId - Store owner ID
@@ -50,7 +50,7 @@ async function sendBulkSMSWithCredits(messages) {
       results: messages.map(msg => ({
         internalMessageId: msg.internalMessageId,
         sent: false,
-        reason: 'inactive_subscription',
+        reason: 'subscription_required',
         error: 'Active subscription required to send SMS. Please subscribe to a plan.',
       })),
       summary: {
@@ -61,12 +61,20 @@ async function sendBulkSMSWithCredits(messages) {
     };
   }
 
-  // 2. Check balance before sending (need credits for all messages)
+  // 2. Check allowance + credits before sending
+  const allowance = await getAllowanceStatus(ownerId);
   const balance = await getBalance(ownerId);
   const requiredCredits = messages.length;
+  const available = (allowance?.remainingThisPeriod || 0) + (balance || 0);
 
-  if (balance < requiredCredits) {
-    logger.warn({ ownerId, balance, requiredCredits, messageCount: messages.length }, 'Insufficient credits for bulk SMS send');
+  if (available < requiredCredits) {
+    logger.warn({
+      ownerId,
+      balance,
+      allowanceRemaining: allowance?.remainingThisPeriod || 0,
+      requiredCredits,
+      messageCount: messages.length,
+    }, 'Insufficient allowance/credits for bulk SMS send');
     return {
       bulkId: null,
       results: messages.map(msg => ({
@@ -74,7 +82,7 @@ async function sendBulkSMSWithCredits(messages) {
         sent: false,
         reason: 'insufficient_credits',
         balance,
-        error: 'Not enough credits to send SMS. Please purchase credits.',
+        error: 'Not enough free allowance or credits to send SMS. Please purchase credits or upgrade your subscription.',
       })),
       summary: {
         total: messages.length,
@@ -213,22 +221,24 @@ async function sendBulkSMSWithCredits(messages) {
             bulkId: result.bulkId,
           }, '[DEBUG] Mapping accepted messageId');
         }
-        // Message sent successfully - debit credits (idempotent) but never fail the send
+        // Message sent successfully - consume allowance/credits (idempotent) but never fail the send
         try {
-          const debitResult = await debitOnce(mapping.ownerId, 1, {
+          const billingResult = await consumeMessageBilling(mapping.ownerId, 1, {
             reason: mapping.meta.reason || 'sms:send:bulk',
             campaignId: mapping.meta.campaignId || null,
             messageId: mapping.internalMessageId || null,
-            meta: { ...mapping.meta, bulkId: result.bulkId },
+            meta: { ...mapping.meta, bulkId: result.bulkId, providerMessageId: respMsg.messageId },
           });
 
           logger.debug({
             ownerId: mapping.ownerId,
             internalMessageId: mapping.internalMessageId,
             messageId: respMsg.messageId,
-            balanceAfter: debitResult.balance,
-            reusedDebit: Boolean(debitResult.reused),
-          }, 'Credits debited after successful bulk send');
+            usedAllowance: billingResult.usedAllowance,
+            debitedCredits: billingResult.debitedCredits,
+            balanceAfter: billingResult.balance,
+            alreadyBilled: Boolean(billingResult.alreadyBilled),
+          }, 'Billing applied after successful bulk send');
 
           results.push({
             internalMessageId: mapping.internalMessageId,
@@ -236,18 +246,18 @@ async function sendBulkSMSWithCredits(messages) {
             messageId: respMsg.messageId,
             providerMessageId: respMsg.messageId,
             trafficAccountId: respMsg.trafficAccountId,
-            balanceAfter: debitResult.balance,
-            billingStatus: 'paid',
-            billedAt: new Date(),
+            balanceAfter: billingResult.balance ?? balance,
+            billingStatus: billingResult.billingStatus || 'paid',
+            billedAt: billingResult.billedAt || new Date(),
           });
           successCount++;
-        } catch (debitErr) {
+        } catch (billingErr) {
           // Log error but don't fail - message was already sent; mark billing pending/failure
           logger.error({
             ownerId: mapping.ownerId,
             internalMessageId: mapping.internalMessageId,
-            err: debitErr.message,
-          }, 'Failed to debit credits after successful bulk send');
+            err: billingErr.message,
+          }, 'Failed to bill after successful bulk send');
 
           results.push({
             internalMessageId: mapping.internalMessageId,
@@ -257,7 +267,7 @@ async function sendBulkSMSWithCredits(messages) {
             trafficAccountId: respMsg.trafficAccountId,
             balanceAfter: balance, // Return original balance if debit failed
             billingStatus: 'failed',
-            billingError: debitErr.message,
+            billingError: billingErr.message,
           });
           successCount++;
         }

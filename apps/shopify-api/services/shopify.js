@@ -23,7 +23,7 @@ export function initShopifyContext() {
       apiSecretKey: SHOPIFY_API_SECRET,
       scopes: process.env.SCOPES?.split(',') || ['read_products'],
       hostName: HOST.replace(/^https?:\/\//, '').split('/')[0],
-      apiVersion: '2024-04',
+      apiVersion: process.env.SHOPIFY_API_VERSION || '2024-04',
       isEmbeddedApp: true,
     });
     logger.info('Shopify API initialized', {
@@ -49,7 +49,7 @@ export function diagnostics() {
     hasHost: !!HOST,
     scopesCount: (SCOPES || '').split(',').filter(Boolean).length,
     embedded: true,
-    apiVersion: '2024-04',
+    apiVersion: process.env.SHOPIFY_API_VERSION || '2024-04',
   };
 }
 

@@ -33,7 +33,7 @@ export function useUpdateContact() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: UpdateContactRequest }) =>
+    mutationFn: ({ id, data }: { id: string; data: UpdateContactRequest }) =>
       contactsApi.update(id, data),
     onSuccess: (data) => {
       // Invalidate contacts list, detail, and stats
@@ -53,7 +53,7 @@ export function useDeleteContact() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: number) => contactsApi.delete(id),
+    mutationFn: (id: string) => contactsApi.delete(id),
     onSuccess: () => {
       // Invalidate contacts list and stats
       queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'list'] });

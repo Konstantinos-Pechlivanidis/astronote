@@ -14,6 +14,7 @@ export interface Settings {
   senderName?: string | null;
   timezone: string;
   currency: string;
+  baseUrl?: string | null; // Per-tenant base URL override (for public links)
   recentTransactions?: Array<{
     id: string;
     creditsAdded: number;
@@ -58,6 +59,7 @@ export interface UpdateSettingsRequest {
   senderName?: string;
   timezone?: string;
   currency?: string;
+  baseUrl?: string | null; // Optional: Per-tenant base URL override
 }
 
 /**

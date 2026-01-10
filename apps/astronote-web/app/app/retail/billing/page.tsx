@@ -54,31 +54,52 @@ const getTenantStorageKey = () => {
   return 'retail_billing_currency';
 };
 
+const createIdempotencyKey = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 function BillingHeader({
   subscription,
   credits,
+  allowance,
 }: {
-  subscription: { active: boolean; planType: string | null }
+  subscription: {
+    active?: boolean
+    planType?: string | null
+    status?: string | null
+    interval?: string | null
+    currentPeriodEnd?: string | null
+    cancelAtPeriodEnd?: boolean
+    lastBillingError?: string | null
+  }
   credits: number
+  allowance: { includedPerPeriod: number; usedThisPeriod: number; remainingThisPeriod: number }
 }) {
-  const isActive = subscription?.active === true;
+  const status = subscription?.status || (subscription?.active ? 'active' : 'inactive');
+  const isActive = status === 'active';
   const planType = subscription?.planType;
+  const interval = subscription?.interval;
+  const planLabel = planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : 'Plan';
+  const intervalLabel = interval === 'year' ? 'Yearly' : interval === 'month' ? 'Monthly' : null;
+  const statusLabel = status ? status.replace(/_/g, ' ') : 'inactive';
+  const statusTone = isActive
+    ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+    : status === 'past_due' || status === 'unpaid'
+      ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+      : 'bg-red-500/10 text-red-400 border border-red-500/20';
 
   return (
     <RetailCard className="mb-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <h2 className="text-xl font-semibold text-text-primary">Billing & Subscription</h2>
-        <div
-          className={`px-3 py-1 rounded-full text-sm font-medium ${
-            isActive
-              ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-              : 'bg-red-500/10 text-red-400 border border-red-500/20'
-          }`}
-        >
-          {isActive ? `Active ${planType || ''} Plan` : 'Inactive'}
+        <div className={`px-3 py-1 rounded-full text-sm font-medium ${statusTone}`}>
+          {statusLabel}
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <span className="text-sm text-text-secondary">Credits Balance</span>
           <div className="text-2xl font-bold text-text-primary mt-1">
@@ -86,23 +107,38 @@ function BillingHeader({
           </div>
         </div>
         <div>
-          <span className="text-sm text-text-secondary">Subscription Status</span>
-          <div className="text-lg font-medium text-text-primary mt-1">
-            {isActive ? (
-              <span className="text-green-400">Active {planType ? `(${planType})` : ''}</span>
-            ) : (
-              <span className="text-red-400">Inactive</span>
-            )}
+          <span className="text-sm text-text-secondary">Free SMS Remaining</span>
+          <div className="text-2xl font-bold text-text-primary mt-1">
+            {allowance?.remainingThisPeriod?.toLocaleString() || 0}
           </div>
+          <div className="text-xs text-text-tertiary mt-1">
+            {allowance?.includedPerPeriod?.toLocaleString() || 0} per {intervalLabel || 'period'}
+          </div>
+        </div>
+        <div>
+          <span className="text-sm text-text-secondary">Subscription</span>
+          <div className="text-lg font-medium text-text-primary mt-1">
+            {planLabel}{intervalLabel ? ` · ${intervalLabel}` : ''}
+          </div>
+          {subscription?.currentPeriodEnd && (
+            <div className="text-xs text-text-tertiary mt-1">
+              Renews {format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy')}
+              {subscription.cancelAtPeriodEnd ? ' (cancels at period end)' : ''}
+            </div>
+          )}
         </div>
       </div>
       {!isActive && (
         <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
           <p className="text-sm text-yellow-400">
-            <strong>Note:</strong> Credits can be purchased at any time, but can only be{' '}
-            <strong>used</strong> to send campaigns when you have an active subscription. Subscribe
-            to a plan to start sending campaigns.
+            <strong>Subscription required:</strong> You can purchase credits at any time, but you
+            need an active subscription to send campaigns.
           </p>
+        </div>
+      )}
+      {subscription?.lastBillingError && (
+        <div className="mt-3 text-xs text-red-400">
+          Last billing error: {subscription.lastBillingError}
         </div>
       )}
     </RetailCard>
@@ -113,10 +149,42 @@ function SubscriptionCard({
   subscription,
   currency,
 }: {
-  subscription: { active: boolean; planType: string | null }
+  subscription: {
+    active?: boolean
+    planType?: string | null
+    status?: string | null
+    interval?: 'month' | 'year' | null
+    currentPeriodEnd?: string | null
+    cancelAtPeriodEnd?: boolean
+  }
   currency: BillingCurrency
 }) {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const switchKeysRef = useRef<Record<string, string>>({});
+  const cancelKeyRef = useRef<string | null>(null);
+
+  const status = subscription?.status || (subscription?.active ? 'active' : 'inactive');
+  const isActive = status === 'active';
+  const interval = subscription?.interval;
+  const planType = subscription?.planType;
+  const intervalLabel = interval === 'year' ? 'Yearly' : interval === 'month' ? 'Monthly' : null;
+  const planLabel = planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : 'Plan';
+
+  const intervalOptions = [
+    {
+      interval: 'month' as const,
+      planType: 'starter',
+      title: 'Monthly',
+      description: '100 free SMS per billing period',
+    },
+    {
+      interval: 'year' as const,
+      planType: 'pro',
+      title: 'Yearly',
+      description: '500 free SMS per billing period',
+    },
+  ];
 
   const subscribeMutation = useMutation({
     mutationFn: async (planType: string) => {
@@ -139,6 +207,56 @@ function SubscriptionCard({
       } else {
         toast.error(message);
       }
+    },
+  });
+
+  const switchMutation = useMutation({
+    mutationFn: async (interval: 'month' | 'year') => {
+      if (!switchKeysRef.current[interval]) {
+        switchKeysRef.current[interval] = createIdempotencyKey();
+      }
+      const res = await subscriptionsApi.switch({
+        interval,
+        currency,
+        idempotencyKey: switchKeysRef.current[interval],
+      });
+      return res.data;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
+      toast.success(data?.message || 'Subscription updated');
+    },
+    onSettled: (_data, _error, interval) => {
+      if (interval) {
+        delete switchKeysRef.current[interval];
+      }
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.message || 'Failed to update subscription';
+      toast.error(message);
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      if (!cancelKeyRef.current) {
+        cancelKeyRef.current = createIdempotencyKey();
+      }
+      const res = await subscriptionsApi.cancel(cancelKeyRef.current);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
+      toast.success('Subscription cancelled');
+    },
+    onSettled: () => {
+      cancelKeyRef.current = null;
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.message || 'Failed to cancel subscription';
+      toast.error(message);
     },
   });
 
@@ -166,12 +284,9 @@ function SubscriptionCard({
     },
   });
 
-  const isActive = subscription?.active === true;
-  const currentPlan = subscription?.planType;
-
-  const handleSubscribe = (planType: string) => {
-    setSelectedPlan(planType);
-    subscribeMutation.mutate(planType);
+  const handleSubscribe = (plan: string) => {
+    setSelectedPlan(plan);
+    subscribeMutation.mutate(plan);
   };
 
   const handleManageSubscription = () => {
@@ -184,21 +299,46 @@ function SubscriptionCard({
         <div className="flex items-center gap-2 mb-4">
           <CheckCircle className="w-5 h-5 text-green-400" />
           <h3 className="text-lg font-semibold text-text-primary">
-            Current Subscription:{' '}
-            {currentPlan ? currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1) : 'Active'}
+            Current Subscription: {planLabel}{intervalLabel ? ` · ${intervalLabel}` : ''}
           </h3>
         </div>
         <p className="text-sm text-text-secondary mb-4">
-          You have an active subscription. You can manage your subscription, update your plan, or
-          cancel from the customer portal.
+          Status: <span className="text-text-primary capitalize">{status.replace(/_/g, ' ')}</span>
         </p>
-        <div className="flex gap-2">
+        {subscription?.currentPeriodEnd && (
+          <div className="text-xs text-text-tertiary mb-4">
+            Renews {format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy')}
+            {subscription.cancelAtPeriodEnd ? ' (cancels at period end)' : ''}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => switchMutation.mutate('month')}
+            disabled={switchMutation.isPending || interval === 'month'}
+            variant="outline"
+          >
+            Switch to Monthly
+          </Button>
+          <Button
+            onClick={() => switchMutation.mutate('year')}
+            disabled={switchMutation.isPending || interval === 'year'}
+            variant="outline"
+          >
+            Switch to Yearly
+          </Button>
           <Button
             onClick={handleManageSubscription}
             disabled={portalMutation.isPending}
             variant="outline"
           >
-            {portalMutation.isPending ? 'Loading...' : 'Manage Subscription'}
+            {portalMutation.isPending ? 'Loading...' : 'Manage Payment Method'}
+          </Button>
+          <Button
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+            variant="outline"
+          >
+            {cancelMutation.isPending ? 'Cancelling...' : 'Cancel Subscription'}
           </Button>
         </div>
       </RetailCard>
@@ -212,36 +352,34 @@ function SubscriptionCard({
         <h3 className="text-lg font-semibold text-text-primary">Subscribe to a Plan</h3>
       </div>
       <p className="text-sm text-text-secondary mb-6">
-        Choose a subscription plan to start sending campaigns. All plans include monthly credit
-        allocations.
+        Choose a subscription plan to start sending campaigns. Monthly includes 100 free SMS.
+        Yearly includes 500 free SMS.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <RetailCard variant="subtle" hover>
-          <h4 className="font-semibold text-text-primary mb-2">Starter Plan</h4>
-          <p className="text-sm text-text-secondary mb-4">Perfect for small businesses</p>
-          <Button
-            onClick={() => handleSubscribe('starter')}
-            disabled={subscribeMutation.isPending}
-            className="w-full"
-          >
-            {subscribeMutation.isPending && selectedPlan === 'starter'
-              ? 'Processing...'
-              : 'Subscribe to Starter'}
-          </Button>
-        </RetailCard>
-        <RetailCard variant="subtle" hover>
-          <h4 className="font-semibold text-text-primary mb-2">Pro Plan</h4>
-          <p className="text-sm text-text-secondary mb-4">For growing businesses</p>
-          <Button
-            onClick={() => handleSubscribe('pro')}
-            disabled={subscribeMutation.isPending}
-            className="w-full"
-          >
-            {subscribeMutation.isPending && selectedPlan === 'pro'
-              ? 'Processing...'
-              : 'Subscribe to Pro'}
-          </Button>
-        </RetailCard>
+        {intervalOptions.map((option) => (
+          <RetailCard key={option.interval} variant="subtle" hover>
+            <h4 className="font-semibold text-text-primary mb-2">{option.title}</h4>
+            <p className="text-sm text-text-secondary mb-4">{option.description}</p>
+            <Button
+              onClick={() => handleSubscribe(option.planType)}
+              disabled={subscribeMutation.isPending}
+              className="w-full"
+            >
+              {subscribeMutation.isPending && selectedPlan === option.planType
+                ? 'Processing...'
+                : `Subscribe ${option.title}`}
+            </Button>
+          </RetailCard>
+        ))}
+      </div>
+      <div className="mt-4">
+        <Button
+          onClick={handleManageSubscription}
+          disabled={portalMutation.isPending}
+          variant="outline"
+        >
+          {portalMutation.isPending ? 'Loading...' : 'Manage Payment Method'}
+        </Button>
       </div>
     </RetailCard>
   );
@@ -271,6 +409,7 @@ function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
       return res.data;
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
       queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
       if (data.checkoutUrl || data.url) {
         window.location.href = data.checkoutUrl || data.url!;
@@ -576,10 +715,10 @@ export default function RetailBillingPage() {
   const [currencyStorageKey, setCurrencyStorageKey] = useState<string | null>(null);
   const hasStoredSelection = useRef(false);
 
-  const { data: balanceData, isLoading: balanceLoading, error: balanceError } = useQuery({
-    queryKey: ['retail-balance'],
+  const { data: summaryData, isLoading: balanceLoading, error: balanceError } = useQuery({
+    queryKey: ['retail-billing-summary'],
     queryFn: async () => {
-      const res = await billingApi.getBalance();
+      const res = await billingApi.getSummary();
       return res.data;
     },
     staleTime: 60 * 1000, // 1 minute
@@ -599,12 +738,12 @@ export default function RetailBillingPage() {
     }
 
     if (!hasStoredSelection.current) {
-      const fallback = normalizeCurrency(balanceData?.billingCurrency);
+      const fallback = normalizeCurrency(summaryData?.billingCurrency);
       if (fallback) {
         setSelectedCurrency(fallback);
       }
     }
-  }, [currencyStorageKey, balanceData?.billingCurrency]);
+  }, [currencyStorageKey, summaryData?.billingCurrency]);
 
   const { data: packages, isLoading: packagesLoading, error: packagesError } = useQuery({
     queryKey: ['retail-packages', selectedCurrency],
@@ -680,8 +819,13 @@ export default function RetailBillingPage() {
     );
   }
 
-  const subscription = balanceData?.subscription || { active: false, planType: null };
-  const credits = balanceData?.credits || 0;
+  const subscription = summaryData?.subscription || { active: false, planType: null };
+  const credits = summaryData?.credits || 0;
+  const allowance = summaryData?.allowance || {
+    includedPerPeriod: 0,
+    usedThisPeriod: 0,
+    remainingThisPeriod: 0,
+  };
   const availablePackages = Array.isArray(packages)
     ? packages.filter((pkg) => ['credit_topup', 'subscription_package', 'credit_pack'].includes(pkg.type || ''))
     : [];
@@ -695,7 +839,7 @@ export default function RetailBillingPage() {
           actions={currencySelector}
         />
 
-        <BillingHeader subscription={subscription} credits={credits} />
+        <BillingHeader subscription={subscription} credits={credits} allowance={allowance} />
 
         <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <SubscriptionCard subscription={subscription} currency={selectedCurrency} />

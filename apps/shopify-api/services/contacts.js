@@ -7,6 +7,8 @@ import {
 } from '../utils/errors.js';
 import { automationQueue } from '../queue/index.js';
 import { hasActiveAutomation } from './automations.js';
+import { normalizePhoneToE164, isValidPhone } from '../lib/phone.js';
+import crypto from 'crypto';
 
 /**
  * Contacts Service
@@ -15,15 +17,14 @@ import { hasActiveAutomation } from './automations.js';
  */
 
 /**
- * Validate phone number format (E.164)
+ * Validate phone number format (E.164) using libphonenumber-js
  * @param {string} phone - Phone number to validate
  * @returns {boolean} True if valid
  */
 function isValidPhoneE164(phone) {
   if (!phone) return false;
-  // E.164 format: +[country code][number] (max 15 digits)
-  const e164Regex = /^\+[1-9]\d{1,14}$/;
-  return e164Regex.test(phone);
+  // Use libphonenumber-js for robust validation (aligned with Retail)
+  return isValidPhone(phone, 'GR'); // Default to Greece, can be made configurable
 }
 
 /**
@@ -38,19 +39,25 @@ function isValidEmail(email) {
 }
 
 /**
- * Normalize phone number to E.164 format
+ * Normalize phone number to E.164 format using libphonenumber-js
  * @param {string} phone - Phone number to normalize
- * @returns {string} Normalized phone number
+ * @returns {string|null} Normalized phone number or null if invalid
  */
 function normalizePhone(phone) {
-  if (!phone) return phone;
-  // Remove all non-digit characters except +
-  let normalized = phone.replace(/[^\d+]/g, '');
-  // Ensure it starts with +
-  if (!normalized.startsWith('+')) {
-    normalized = `+${normalized}`;
-  }
-  return normalized;
+  if (!phone) return null;
+  // Use libphonenumber-js for robust normalization (aligned with Retail)
+  return normalizePhoneToE164(phone);
+}
+
+/**
+ * Create a random raw token and return its SHA-256 hex hash (for storage)
+ * Aligned with Retail implementation
+ * @returns {Object} { raw, hash }
+ */
+function newUnsubTokenHash() {
+  const raw = crypto.randomBytes(16).toString('hex'); // 32-char raw token
+  const hash = crypto.createHash('sha256').update(raw).digest('hex');
+  return { raw, hash };
 }
 
 /**
@@ -132,6 +139,47 @@ export async function listContacts(storeId, filters = {}) {
   // SMS consent filter
   if (smsConsent && ['opted_in', 'opted_out', 'unknown'].includes(smsConsent)) {
     where.smsConsent = smsConsent;
+    // Also filter by smsConsentStatus for consistency (aligned with Retail)
+    where.smsConsentStatus = smsConsent === 'opted_in' ? 'opted_in' : smsConsent === 'opted_out' ? 'opted_out' : null;
+  }
+
+  // isSubscribed filter (aligned with Retail)
+  const isSubscribedParam = filters.isSubscribed;
+  if (isSubscribedParam === 'true' || isSubscribedParam === true) {
+    where.isSubscribed = true;
+  } else if (isSubscribedParam === 'false' || isSubscribedParam === false) {
+    where.isSubscribed = false;
+  }
+
+  // listId filter (aligned with Retail) - if lists/segments exist
+  const listIdParam = filters.listId;
+  if (listIdParam) {
+    // Note: This assumes SegmentMembership exists. If not, this will need to be implemented.
+    // For now, we'll add the filter structure but it may need segment/list support
+    const memberships = await prisma.segmentMembership.findMany({
+      where: { segmentId: listIdParam },
+      select: { contactId: true },
+    });
+    const contactIds = memberships.map(m => m.contactId);
+    if (contactIds.length === 0) {
+      // Return empty result if no memberships (Retail-aligned shape)
+      return {
+        items: [],
+        contacts: [],
+        total: 0,
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        pagination: {
+          page: parseInt(page),
+          pageSize: parseInt(pageSize),
+          total: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
+        },
+      };
+    }
+    where.id = { in: contactIds };
   }
 
   // Birth date filter
@@ -208,8 +256,34 @@ export async function listContacts(storeId, filters = {}) {
     returned: contacts.length,
   });
 
+  // Transform response to match Retail shape (aligned with Retail)
+  // Map phoneE164 -> phone, birthDate -> birthday for Retail compatibility
+  const transformedContacts = contacts.map(contact => ({
+    id: contact.id,
+    phone: contact.phoneE164, // Map phoneE164 to phone for Retail compatibility
+    phoneE164: contact.phoneE164, // Keep for backward compatibility
+    email: contact.email,
+    firstName: contact.firstName,
+    lastName: contact.lastName,
+    gender: contact.gender,
+    birthday: contact.birthDate, // Map birthDate to birthday for Retail compatibility
+    birthDate: contact.birthDate, // Keep for backward compatibility
+    isSubscribed: contact.isSubscribed ?? true, // Default to true if null
+    smsConsentStatus: contact.smsConsentStatus || (contact.smsConsent === 'opted_in' ? 'opted_in' : contact.smsConsent === 'opted_out' ? 'opted_out' : null),
+    smsConsent: contact.smsConsent, // Keep enum for backward compatibility
+    smsConsentAt: contact.smsConsentAt,
+    tags: contact.tags,
+    createdAt: contact.createdAt,
+    updatedAt: contact.updatedAt,
+  }));
+
+  // Return Retail-aligned shape: { items, total, page, pageSize }
   return {
-    contacts,
+    items: transformedContacts, // Retail uses "items" not "contacts"
+    contacts: transformedContacts, // Keep for backward compatibility
+    total,
+    page: parseInt(page),
+    pageSize: parseInt(pageSize),
     pagination: {
       page: parseInt(page),
       pageSize: parseInt(pageSize),
@@ -234,6 +308,22 @@ export async function getContactById(storeId, contactId) {
     where: {
       id: contactId,
       shopId: storeId,
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phoneE164: true,
+      email: true,
+      gender: true,
+      birthDate: true,
+      smsConsent: true,
+      smsConsentStatus: true, // Include for Retail alignment
+      smsConsentAt: true,
+      isSubscribed: true, // Include for Retail alignment
+      tags: true,
+      createdAt: true,
+      updatedAt: true,
     },
   });
 
@@ -260,13 +350,19 @@ export async function createContact(storeId, contactData) {
     throw new ValidationError('Phone number is required');
   }
 
-  // Normalize phone number
-  const phoneE164 = normalizePhone(contactData.phoneE164);
+  // Normalize phone number using libphonenumber-js (aligned with Retail)
+  // Support both "phone" (Retail) and "phoneE164" (Shopify) field names
+  const phoneInput = contactData.phone || contactData.phoneE164;
+  if (!phoneInput) {
+    throw new ValidationError('Phone number is required');
+  }
 
-  // Validate phone format
-  if (!isValidPhoneE164(phoneE164)) {
+  const phoneE164 = normalizePhone(phoneInput);
+
+  // Validate phone format (normalizePhone returns null if invalid)
+  if (!phoneE164 || !isValidPhoneE164(phoneE164)) {
     throw new ValidationError(
-      'Invalid phone number format. Use E.164 format (e.g., +306977123456)',
+      'Invalid phone number format. Please enter a valid international phone number (e.g., +306912345678).',
     );
   }
 
@@ -310,6 +406,30 @@ export async function createContact(storeId, contactData) {
     );
   }
 
+  // Prepare unsubscribe token hash (aligned with Retail)
+  const { hash: unsubscribeTokenHash } = newUnsubTokenHash();
+
+  // Determine isSubscribed and smsConsentStatus (aligned with Retail)
+  let isSubscribed = true; // Default to subscribed
+  let smsConsentStatus = null;
+  let smsConsentValue = contactData.smsConsent || 'unknown';
+
+  // Map consent to isSubscribed and smsConsentStatus
+  if (smsConsentValue === 'opted_in') {
+    isSubscribed = true;
+    smsConsentStatus = 'opted_in';
+  } else if (smsConsentValue === 'opted_out') {
+    isSubscribed = false;
+    smsConsentStatus = 'opted_out';
+  } else {
+    // unknown - default to subscribed but no explicit consent
+    isSubscribed = true;
+    smsConsentStatus = null;
+  }
+
+  // Support both "birthday" (Retail) and "birthDate" (Shopify) field names
+  const birthdayInput = contactData.birthday || contactData.birthDate;
+
   // Prepare contact data for Prisma
   const prismaData = {
     shopId: storeId,
@@ -327,17 +447,22 @@ export async function createContact(storeId, contactData) {
         ? contactData.email.trim()
         : null,
     gender: contactData.gender || null,
-    smsConsent: contactData.smsConsent || 'unknown',
+    smsConsent: smsConsentValue, // Keep enum for backward compatibility
+    smsConsentStatus, // Add string field (aligned with Retail)
+    smsConsentAt: smsConsentStatus ? new Date() : null,
+    smsConsentSource: 'manual', // Default source
+    isSubscribed, // Add boolean field (aligned with Retail)
+    unsubscribeTokenHash, // Add token hash (aligned with Retail)
     tags: contactData.tags || [],
   };
 
-  // Handle birthDate conversion
-  if (contactData.birthDate) {
+  // Handle birthDate/birthday conversion (support both field names)
+  if (birthdayInput) {
     if (
-      typeof contactData.birthDate === 'string' &&
-      contactData.birthDate.trim()
+      typeof birthdayInput === 'string' &&
+      birthdayInput.trim()
     ) {
-      const birthDate = new Date(contactData.birthDate);
+      const birthDate = new Date(birthdayInput);
       if (!isNaN(birthDate.getTime())) {
         // Validate birth date is not in the future
         if (birthDate > new Date()) {
@@ -347,11 +472,11 @@ export async function createContact(storeId, contactData) {
       } else {
         throw new ValidationError('Invalid birth date format');
       }
-    } else if (contactData.birthDate instanceof Date) {
-      if (contactData.birthDate > new Date()) {
+    } else if (birthdayInput instanceof Date) {
+      if (birthdayInput > new Date()) {
         throw new ValidationError('Birth date cannot be in the future');
       }
-      prismaData.birthDate = contactData.birthDate;
+      prismaData.birthDate = birthdayInput;
     }
   } else {
     prismaData.birthDate = null;
@@ -371,12 +496,48 @@ export async function createContact(storeId, contactData) {
   // Create contact
   const contact = await prisma.contact.create({
     data: prismaData,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phoneE164: true,
+      email: true,
+      gender: true,
+      birthDate: true,
+      smsConsent: true,
+      smsConsentStatus: true,
+      smsConsentAt: true,
+      isSubscribed: true,
+      tags: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   });
 
   logger.info('Contact created successfully', {
     storeId,
     contactId: contact.id,
   });
+
+  // Transform to Retail-aligned shape for return
+  const transformed = {
+    id: contact.id,
+    phone: contact.phoneE164,
+    phoneE164: contact.phoneE164,
+    email: contact.email,
+    firstName: contact.firstName,
+    lastName: contact.lastName,
+    gender: contact.gender,
+    birthday: contact.birthDate,
+    birthDate: contact.birthDate,
+    isSubscribed: contact.isSubscribed ?? true,
+    smsConsentStatus: contact.smsConsentStatus || (contact.smsConsent === 'opted_in' ? 'opted_in' : contact.smsConsent === 'opted_out' ? 'opted_out' : null),
+    smsConsent: contact.smsConsent,
+    smsConsentAt: contact.smsConsentAt,
+    tags: contact.tags,
+    createdAt: contact.createdAt,
+    updatedAt: contact.updatedAt,
+  };
 
   // Trigger welcome automation if contact has opted in and welcome automation is active
   if (contact.smsConsent === 'opted_in') {
@@ -471,12 +632,13 @@ export async function updateContact(storeId, contactId, contactData) {
   // Prepare update data
   const updateData = {};
 
-  // Validate and normalize phone if provided
-  if (contactData.phoneE164) {
-    const phoneE164 = normalizePhone(contactData.phoneE164);
-    if (!isValidPhoneE164(phoneE164)) {
+  // Validate and normalize phone if provided (support both field names)
+  const phoneInput = contactData.phone !== undefined ? contactData.phone : contactData.phoneE164;
+  if (phoneInput) {
+    const phoneE164 = normalizePhone(phoneInput);
+    if (!phoneE164 || !isValidPhoneE164(phoneE164)) {
       throw new ValidationError(
-        'Invalid phone number format. Use E.164 format (e.g., +306977123456)',
+        'Invalid phone number format. Please enter a valid international phone number (e.g., +306912345678).',
       );
     }
 
@@ -534,7 +696,7 @@ export async function updateContact(storeId, contactId, contactData) {
     updateData.gender = contactData.gender;
   }
 
-  // Validate SMS consent if provided
+  // Validate SMS consent if provided (aligned with Retail)
   if (contactData.smsConsent !== undefined) {
     if (
       !['opted_in', 'opted_out', 'unknown'].includes(contactData.smsConsent)
@@ -544,6 +706,36 @@ export async function updateContact(storeId, contactId, contactData) {
       );
     }
     updateData.smsConsent = contactData.smsConsent;
+    
+    // Update isSubscribed and smsConsentStatus based on consent (aligned with Retail)
+    if (contactData.smsConsent === 'opted_in') {
+      updateData.isSubscribed = true;
+      updateData.smsConsentStatus = 'opted_in';
+      updateData.smsConsentAt = new Date();
+      updateData.unsubscribedAt = null;
+    } else if (contactData.smsConsent === 'opted_out') {
+      updateData.isSubscribed = false;
+      updateData.smsConsentStatus = 'opted_out';
+      updateData.unsubscribedAt = new Date();
+    } else {
+      // unknown - keep current state but clear explicit consent
+      updateData.smsConsentStatus = null;
+    }
+  }
+
+  // Support isSubscribed field directly (aligned with Retail)
+  if (contactData.isSubscribed !== undefined) {
+    updateData.isSubscribed = Boolean(contactData.isSubscribed);
+    if (updateData.isSubscribed === false) {
+      updateData.unsubscribedAt = new Date();
+      // If unsubscribing, also update consent
+      if (!updateData.smsConsent) {
+        updateData.smsConsent = 'opted_out';
+        updateData.smsConsentStatus = 'opted_out';
+      }
+    } else {
+      updateData.unsubscribedAt = null;
+    }
   }
 
   // Update other fields
@@ -559,13 +751,15 @@ export async function updateContact(storeId, contactId, contactData) {
         ? contactData.lastName.trim()
         : null;
   }
-  if (contactData.birthDate !== undefined) {
+  // Support both "birthday" (Retail) and "birthDate" (Shopify) field names
+  const birthdayInput = contactData.birthday !== undefined ? contactData.birthday : contactData.birthDate;
+  if (birthdayInput !== undefined) {
     if (
-      contactData.birthDate &&
-      typeof contactData.birthDate === 'string' &&
-      contactData.birthDate.trim()
+      birthdayInput &&
+      typeof birthdayInput === 'string' &&
+      birthdayInput.trim()
     ) {
-      const birthDate = new Date(contactData.birthDate);
+      const birthDate = new Date(birthdayInput);
       if (isNaN(birthDate.getTime())) {
         throw new ValidationError('Invalid birth date format');
       }
@@ -574,17 +768,17 @@ export async function updateContact(storeId, contactId, contactData) {
         throw new ValidationError('Birth date cannot be in the future');
       }
       updateData.birthDate = birthDate;
-    } else if (contactData.birthDate === null) {
+    } else if (birthdayInput === null) {
       updateData.birthDate = null;
-    } else if (!contactData.birthDate) {
+    } else if (!birthdayInput) {
       // Empty string or falsy value
       updateData.birthDate = null;
     } else {
       // Try to parse as Date object if it's already a Date
       const birthDate =
-        contactData.birthDate instanceof Date
-          ? contactData.birthDate
-          : new Date(contactData.birthDate);
+        birthdayInput instanceof Date
+          ? birthdayInput
+          : new Date(birthdayInput);
       if (isNaN(birthDate.getTime())) {
         throw new ValidationError('Invalid birth date format');
       }
@@ -599,8 +793,26 @@ export async function updateContact(storeId, contactId, contactData) {
   // Check if there's anything to update
   if (Object.keys(updateData).length === 0) {
     logger.warn('No fields to update', { storeId, contactId });
-    // Return existing contact if no updates
-    return existing;
+    // Return existing contact if no updates (transform to Retail-aligned shape)
+    const transformed = {
+      id: existing.id,
+      phone: existing.phoneE164,
+      phoneE164: existing.phoneE164,
+      email: existing.email,
+      firstName: existing.firstName,
+      lastName: existing.lastName,
+      gender: existing.gender,
+      birthday: existing.birthDate,
+      birthDate: existing.birthDate,
+      isSubscribed: existing.isSubscribed ?? true,
+      smsConsentStatus: existing.smsConsentStatus || (existing.smsConsent === 'opted_in' ? 'opted_in' : existing.smsConsent === 'opted_out' ? 'opted_out' : null),
+      smsConsent: existing.smsConsent,
+      smsConsentAt: existing.smsConsentAt,
+      tags: existing.tags,
+      createdAt: existing.createdAt,
+      updatedAt: existing.updatedAt,
+    };
+    return transformed;
   }
 
   // Update contact
@@ -617,6 +829,9 @@ export async function updateContact(storeId, contactId, contactData) {
         gender: true,
         birthDate: true,
         smsConsent: true,
+        smsConsentStatus: true,
+        smsConsentAt: true,
+        isSubscribed: true,
         tags: true,
         createdAt: true,
         updatedAt: true,
@@ -625,7 +840,27 @@ export async function updateContact(storeId, contactId, contactData) {
 
     logger.info('Contact updated successfully', { storeId, contactId });
 
-    return contact;
+    // Transform to Retail-aligned shape for return
+    const transformed = {
+      id: contact.id,
+      phone: contact.phoneE164,
+      phoneE164: contact.phoneE164,
+      email: contact.email,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      gender: contact.gender,
+      birthday: contact.birthDate,
+      birthDate: contact.birthDate,
+      isSubscribed: contact.isSubscribed ?? true,
+      smsConsentStatus: contact.smsConsentStatus || (contact.smsConsent === 'opted_in' ? 'opted_in' : contact.smsConsent === 'opted_out' ? 'opted_out' : null),
+      smsConsent: contact.smsConsent,
+      smsConsentAt: contact.smsConsentAt,
+      tags: contact.tags,
+      createdAt: contact.createdAt,
+      updatedAt: contact.updatedAt,
+    };
+
+    return transformed;
   } catch (error) {
     // Handle Prisma-specific errors
     if (error.code === 'P2002') {
@@ -815,13 +1050,24 @@ export async function importContacts(storeId, contactsData) {
 
   for (const contactData of contactsData) {
     try {
-      // Normalize phone
-      const phoneE164 = normalizePhone(contactData.phoneE164);
-
-      if (!isValidPhoneE164(phoneE164)) {
+      // Support both "phone" (Retail) and "phoneE164" (Shopify) field names
+      const phoneInput = contactData.phone || contactData.phoneE164;
+      if (!phoneInput) {
         results.skipped++;
         results.errors.push({
-          phone: contactData.phoneE164,
+          phone: phoneInput || 'N/A',
+          error: 'Phone number is required',
+        });
+        continue;
+      }
+
+      // Normalize phone using libphonenumber-js (aligned with Retail)
+      const phoneE164 = normalizePhone(phoneInput);
+
+      if (!phoneE164 || !isValidPhoneE164(phoneE164)) {
+        results.skipped++;
+        results.errors.push({
+          phone: phoneInput,
           error: 'Invalid phone format',
         });
         continue;
@@ -832,6 +1078,25 @@ export async function importContacts(storeId, contactsData) {
         where: { shopId: storeId, phoneE164 },
       });
 
+      // Support both "birthday" (Retail) and "birthDate" (Shopify) field names
+      const birthdayInput = contactData.birthday || contactData.birthDate;
+      const birthDateValue = birthdayInput ? new Date(birthdayInput) : null;
+
+      // Determine consent and subscription state (aligned with Retail)
+      const smsConsentValue = contactData.smsConsent || 'unknown';
+      let isSubscribed = true;
+      let smsConsentStatus = null;
+      if (smsConsentValue === 'opted_in') {
+        isSubscribed = true;
+        smsConsentStatus = 'opted_in';
+      } else if (smsConsentValue === 'opted_out') {
+        isSubscribed = false;
+        smsConsentStatus = 'opted_out';
+      }
+
+      // Generate unsubscribe token hash for new contacts (aligned with Retail)
+      const { hash: unsubscribeTokenHash } = newUnsubTokenHash();
+
       if (existing) {
         // Update existing contact
         await prisma.contact.update({
@@ -841,10 +1106,11 @@ export async function importContacts(storeId, contactsData) {
             lastName: contactData.lastName || existing.lastName,
             email: contactData.email || existing.email,
             gender: contactData.gender || existing.gender,
-            birthDate: contactData.birthDate
-              ? new Date(contactData.birthDate)
-              : existing.birthDate,
-            smsConsent: contactData.smsConsent || existing.smsConsent,
+            birthDate: birthDateValue || existing.birthDate,
+            smsConsent: smsConsentValue,
+            smsConsentStatus: smsConsentStatus || existing.smsConsentStatus,
+            smsConsentAt: smsConsentStatus ? new Date() : existing.smsConsentAt,
+            isSubscribed: isSubscribed,
             tags: contactData.tags || existing.tags,
           },
         });
@@ -859,10 +1125,13 @@ export async function importContacts(storeId, contactsData) {
             lastName: contactData.lastName || null,
             email: contactData.email || null,
             gender: contactData.gender || null,
-            birthDate: contactData.birthDate
-              ? new Date(contactData.birthDate)
-              : null,
-            smsConsent: contactData.smsConsent || 'unknown',
+            birthDate: birthDateValue,
+            smsConsent: smsConsentValue,
+            smsConsentStatus,
+            smsConsentAt: smsConsentStatus ? new Date() : null,
+            smsConsentSource: 'import',
+            isSubscribed,
+            unsubscribeTokenHash,
             tags: contactData.tags || [],
           },
         });

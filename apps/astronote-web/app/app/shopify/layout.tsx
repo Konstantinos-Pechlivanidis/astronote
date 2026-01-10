@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { ShopifyShell } from '@/src/components/shopify/ShopifyShell';
 import { getShopifySessionToken, isEmbeddedShopifyApp } from '@/src/lib/shopify/auth/session-token';
 import { exchangeShopifyToken, verifyToken } from '@/src/lib/shopify/api/auth';
+import { ShopifyErrorBoundary } from './_components/ErrorBoundary';
 
 /**
  * Shopify App Layout
@@ -186,7 +187,11 @@ export default function ShopifyLayout({ children }: { children: ReactNode }) {
     return null;
   }
 
-  // Render authenticated app with shell
-  return <ShopifyShell>{children}</ShopifyShell>;
+  // Render authenticated app with shell and error boundary
+  return (
+    <ShopifyErrorBoundary>
+      <ShopifyShell>{children}</ShopifyShell>
+    </ShopifyErrorBoundary>
+  );
 }
 

@@ -15,6 +15,7 @@ const shopifyApi: AxiosInstance = axios.create({
   baseURL: SHOPIFY_API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
   timeout: 10000, // 10 seconds
 });
@@ -26,6 +27,22 @@ shopifyApi.interceptors.request.use(
       return config;
     }
 
+    // Check if this is a public endpoint (unsubscribe, webhooks, etc.)
+    // Public endpoints should NOT require tenant headers
+    const isPublicEndpoint = 
+      config.url?.includes('/unsubscribe/') ||
+      config.url?.includes('/webhooks/') ||
+      config.url?.includes('/public/') ||
+      config.url?.includes('/opt-in') ||
+      config.url?.includes('/r/') ||
+      config.url?.includes('/auth/'); // Auth endpoints handle their own auth
+
+    // For public endpoints, skip tenant headers
+    if (isPublicEndpoint) {
+      return config;
+    }
+
+    // For protected endpoints, require token and shop domain
     // Get JWT token from localStorage
     const token = localStorage.getItem('shopify_token');
     if (!token) {
@@ -65,8 +82,13 @@ shopifyApi.interceptors.request.use(
       return Promise.reject(error);
     }
 
-    // Always attach X-Shopify-Shop-Domain header
+    // Always attach X-Shopify-Shop-Domain header for protected endpoints
     config.headers['X-Shopify-Shop-Domain'] = shopDomain;
+
+    // Ensure Accept header is set (may be overridden by request options)
+    if (!config.headers['Accept']) {
+      config.headers['Accept'] = 'application/json';
+    }
 
     // DEV-only: Guard to detect missing header early
     if (process.env.NODE_ENV === 'development') {
@@ -91,6 +113,13 @@ shopifyApi.interceptors.response.use(
     // Extract data for easier access
     if (response.data?.success && response.data.data !== undefined) {
       return response.data.data;
+    }
+    // Handle { success: false } responses gracefully
+    if (response.data?.success === false) {
+      const error = new Error(response.data?.message || 'Request failed');
+      (error as any).code = response.data?.code || response.data?.error || 'API_ERROR';
+      (error as any).response = response;
+      return Promise.reject(error);
     }
     return response.data;
   },

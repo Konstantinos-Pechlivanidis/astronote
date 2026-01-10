@@ -21,7 +21,7 @@ import { format } from 'date-fns';
 export default function ContactDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const id = parseInt(params.id as string);
+  const id = params.id as string;
 
   const { data: contact, isLoading, error } = useContact(id);
   const updateContact = useUpdateContact();

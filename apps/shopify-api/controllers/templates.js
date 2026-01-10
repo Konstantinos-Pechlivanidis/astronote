@@ -3,119 +3,87 @@ import { logger } from '../utils/logger.js';
 import { getStoreId } from '../middlewares/store-resolution.js';
 import { sendSuccess, sendPaginated } from '../utils/response.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
+import * as templatesService from '../services/templates.js';
 
 /**
- * Get all public templates with optional category filter
+ * Get all templates with optional filters (tenant-scoped and eShop type-scoped)
+ * Aligned with Retail: GET /templates with tenant scoping
  */
 export async function getAllTemplates(req, res, next) {
   try {
-    const { category, search, limit = 50, offset = 0 } = req.query;
+    // Get storeId (required for tenant scoping)
+    const shopId = getStoreId(req);
 
-    // Build where clause for filtering
-    const where = {
-      isPublic: true,
-    };
+    // Get filters
+    const { 
+      eshopType, // Required or derived from shop settings
+      category, 
+      search, 
+      language = 'en', // Default to English (aligned with Retail)
+      page, 
+      pageSize,
+      limit, // Backward compatibility
+      offset, // Backward compatibility
+    } = req.query;
 
-    if (category) {
-      where.category = category;
+    // Validate language parameter (ENGLISH-ONLY for Shopify)
+    // Shopify templates are English-only, so only 'en' is allowed
+    if (language && language !== 'en') {
+      return res.status(400).json({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'Shopify templates are English-only. Language parameter must be "en" or omitted.',
+      });
     }
+    // Force English-only
+    const effectiveLanguage = 'en';
 
-    if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { content: { contains: search, mode: 'insensitive' } },
-        { tags: { has: search } },
-      ];
-    }
+    // Call service with tenant scoping
+    const result = await templatesService.listTemplates(shopId, {
+      eshopType,
+      category,
+      search,
+      language: effectiveLanguage, // Force English-only
+      page: page ? parseInt(page) : undefined,
+      pageSize: pageSize ? parseInt(pageSize) : undefined,
+      limit: limit ? parseInt(limit) : undefined,
+      offset: offset ? parseInt(offset) : undefined,
+    });
 
-    // Get storeId for usage tracking (optional)
-    let shopId = null;
-    try {
-      shopId = getStoreId(req);
-    } catch (error) {
-      // Not authenticated or no store context - templates still available
-      shopId = null;
-    }
-
-    // Get templates with pagination
-    const [templates, total] = await Promise.all([
-      prisma.template.findMany({
-        where,
-        select: {
-          id: true,
-          title: true,
-          category: true,
-          content: true,
-          previewImage: true,
-          tags: true,
-          conversionRate: true,
-          productViewsIncrease: true,
-          clickThroughRate: true,
-          averageOrderValue: true,
-          customerRetention: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { createdAt: 'desc' },
-        take: parseInt(limit),
-        skip: parseInt(offset),
-      }),
-      prisma.template.count({ where }),
-    ]);
-
-    // Get usage counts for each template if shopId is available
+    // Get usage counts for each template
+    const templateIds = result.items.map(t => t.id);
+    const usages = await prisma.templateUsage.findMany({
+      where: {
+        shopId,
+        templateId: { in: templateIds },
+      },
+      select: {
+        templateId: true,
+        usedCount: true,
+      },
+    });
     const usageCounts = {};
-    if (shopId) {
-      const templateIds = templates.map(t => t.id);
-      const usages = await prisma.templateUsage.findMany({
-        where: {
-          shopId,
-          templateId: { in: templateIds },
-        },
-        select: {
-          templateId: true,
-          usedCount: true,
-        },
-      });
-      usages.forEach(usage => {
-        usageCounts[usage.templateId] = usage.usedCount;
-      });
-    }
+    usages.forEach(usage => {
+      usageCounts[usage.templateId] = usage.usedCount;
+    });
 
     // Add usage counts to templates
-    const templatesWithUsage = templates.map(template => ({
+    const templatesWithUsage = result.items.map(template => ({
       ...template,
       useCount: usageCounts[template.id] || 0,
     }));
 
-    // Get unique categories for filter options
-    const categories = await prisma.template.findMany({
-      where: { isPublic: true },
-      select: { category: true },
-      distinct: ['category'],
+    // Return Retail-aligned shape: { items, total, page, pageSize }
+    // Also include templates and pagination for backward compatibility
+    return res.json({
+      items: templatesWithUsage, // Retail-aligned field name
+      templates: templatesWithUsage, // Backward compatibility
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      pagination: result.pagination, // Backward compatibility
+      categories: result.categories,
     });
-
-    // Convert offset/limit to page/pageSize for standardization
-    const page = Math.floor(parseInt(offset) / parseInt(limit)) + 1;
-    const pageSize = parseInt(limit);
-    const totalPages = Math.ceil(total / pageSize);
-
-    return sendPaginated(
-      res,
-      templatesWithUsage,
-      {
-        page,
-        pageSize,
-        total,
-        totalPages,
-        hasNextPage: parseInt(offset) + parseInt(limit) < total,
-        hasPrevPage: parseInt(offset) > 0,
-      },
-      {
-        templates: templatesWithUsage, // Include templates array with usage counts
-        categories: categories.map(c => c.category),
-      },
-    );
   } catch (error) {
     logger.error('Failed to fetch templates', {
       error: error.message,
@@ -130,37 +98,15 @@ export async function getAllTemplates(req, res, next) {
 }
 
 /**
- * Get a single template by ID
+ * Get a single template by ID (tenant-scoped)
+ * Aligned with Retail: GET /templates/:id with tenant scoping
  */
 export async function getTemplateById(req, res, next) {
   try {
+    const shopId = getStoreId(req);
     const { id } = req.params;
 
-    const template = await prisma.template.findFirst({
-      where: {
-        id,
-        isPublic: true,
-      },
-      select: {
-        id: true,
-        title: true,
-        category: true,
-        content: true,
-        previewImage: true,
-        tags: true,
-        conversionRate: true,
-        productViewsIncrease: true,
-        clickThroughRate: true,
-        averageOrderValue: true,
-        customerRetention: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    if (!template) {
-      throw new NotFoundError('Template');
-    }
+    const template = await templatesService.getTemplateById(shopId, id);
 
     return sendSuccess(res, template);
   } catch (error) {
@@ -177,12 +123,32 @@ export async function getTemplateById(req, res, next) {
 }
 
 /**
- * Get template categories
+ * Get template categories (tenant-scoped and eShop type-scoped)
  */
 export async function getTemplateCategories(req, res, next) {
   try {
+    const shopId = getStoreId(req);
+    const { eshopType } = req.query;
+
+    // Build where clause (tenant-scoped)
+    const where = { shopId };
+
+    // eShop type filter (if provided)
+    if (eshopType) {
+      where.eshopType = eshopType;
+    } else {
+      // Try to get from shop settings
+      const shop = await prisma.shop.findUnique({
+        where: { id: shopId },
+        select: { eshopType: true },
+      });
+      if (shop?.eshopType) {
+        where.eshopType = shop.eshopType;
+      }
+    }
+
     const categories = await prisma.template.findMany({
-      where: { isPublic: true },
+      where,
       select: { category: true },
       distinct: ['category'],
       orderBy: { category: 'asc' },
@@ -273,9 +239,56 @@ export async function trackTemplateUsage(req, res, next) {
   }
 }
 
+/**
+ * Ensure default templates exist for shop and eShop type
+ * Idempotent endpoint that creates missing templates and repairs existing ones
+ * POST /api/templates/ensure-defaults?eshopType=...
+ */
+export async function ensureDefaultTemplates(req, res, next) {
+  try {
+    const shopId = getStoreId(req);
+    const { eshopType } = req.query;
+
+    // Validate eshopType
+    if (!eshopType) {
+      return res.status(400).json({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: 'eshopType query parameter is required',
+      });
+    }
+
+    // Call service to ensure defaults
+    const result = await templatesService.ensureDefaultTemplates(shopId, eshopType);
+
+    logger.info('Default templates ensured', {
+      shopId,
+      eshopType,
+      result,
+    });
+
+    return sendSuccess(res, {
+      ...result,
+      message: `Default templates ensured for ${eshopType} (English-only)`,
+    }, 'Default templates ensured');
+  } catch (error) {
+    logger.error('Failed to ensure default templates', {
+      error: error.message,
+      stack: error.stack,
+      shopId: getStoreId(req),
+      eshopType: req.query.eshopType,
+      requestId: req.id,
+      path: req.path,
+      method: req.method,
+    });
+    next(error);
+  }
+}
+
 export default {
   getAllTemplates,
   getTemplateById,
   getTemplateCategories,
   trackTemplateUsage,
+  ensureDefaultTemplates,
 };

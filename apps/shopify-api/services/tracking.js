@@ -52,23 +52,29 @@ export async function trackMessageStatus(
   }
 
   // ✅ Security: Update message status (shopId already validated if provided)
+  // Note: MessageLog doesn't have deliveredAt/sentAt fields - store in meta instead
   const updated = await prisma.messageLog.update({
     where: { id: messageId },
     data: {
       status,
-      deliveredAt: status === 'delivered' ? new Date() : message.deliveredAt,
-      failedAt: status === 'failed' ? new Date() : message.failedAt,
-      meta: {
-        ...message.meta,
-        ...metadata,
-        statusHistory: [
-          ...(message.meta?.statusHistory || []),
-          {
-            status,
-            timestamp: new Date().toISOString(),
-            ...metadata,
-          },
-        ],
+      error: status === 'failed' ? (metadata?.error || message.error) : message.error,
+      payload: {
+        ...(message.payload || {}),
+        meta: {
+          ...(message.payload?.meta || {}),
+          ...metadata,
+          failedAt: status === 'failed' ? new Date().toISOString() : (message.payload?.meta?.failedAt || null),
+          deliveredAt: status === 'delivered' ? new Date().toISOString() : (message.payload?.meta?.deliveredAt || null),
+          sentAt: message.payload?.meta?.sentAt || (status === 'sent' ? new Date().toISOString() : null),
+          statusHistory: [
+            ...(message.payload?.meta?.statusHistory || []),
+            {
+              status,
+              timestamp: new Date().toISOString(),
+              ...metadata,
+            },
+          ],
+        },
       },
     },
   });
@@ -192,13 +198,13 @@ export async function getMessageTracking(storeId, messageId) {
     status: message.status,
     direction: message.direction,
     createdAt: message.createdAt,
-    sentAt: message.sentAt,
-    deliveredAt: message.deliveredAt,
-    failedAt: message.failedAt,
+    sentAt: message.payload?.meta?.sentAt || null,
+    deliveredAt: message.payload?.meta?.deliveredAt || null,
+    failedAt: message.payload?.meta?.failedAt || null,
     campaign: message.campaign,
-    statusHistory: message.meta?.statusHistory || [],
-    errorCode: message.meta?.errorCode,
-    errorMessage: message.meta?.errorMessage,
+    statusHistory: message.payload?.meta?.statusHistory || [],
+    errorCode: message.payload?.meta?.errorCode,
+    errorMessage: message.payload?.meta?.errorMessage,
   };
 }
 
@@ -277,8 +283,7 @@ export async function getRecentActivity(storeId, limit = 20) {
       status: true,
       direction: true,
       createdAt: true,
-      sentAt: true,
-      deliveredAt: true,
+      payload: true,
       campaign: {
         select: {
           id: true,
@@ -326,8 +331,8 @@ export async function getFailedMessages(storeId, filters = {}) {
         phoneE164: true,
         status: true,
         createdAt: true,
-        failedAt: true,
-        meta: true,
+        error: true,
+        payload: true,
         campaign: {
           select: {
             id: true,

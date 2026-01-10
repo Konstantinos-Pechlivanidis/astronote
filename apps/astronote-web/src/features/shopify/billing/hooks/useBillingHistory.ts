@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { billingApi } from '@/src/lib/shopify/api/billing';
+import { billingApi } from '@/src/lib/shopifyBillingApi';
 
 /**
  * React Query hook for transaction history
@@ -15,4 +15,3 @@ export function useBillingHistory(params: { page?: number; pageSize?: number }) 
     placeholderData: (previousData) => previousData,
   });
 }
-

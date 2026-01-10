@@ -105,7 +105,7 @@ export async function deliveryReport(req, res) {
       // Find CampaignRecipient by providerMessageId (primary lookup for bulk SMS)
       const recipient = await prisma.campaignRecipient.findFirst({
         where: { mittoMessageId: providerId },
-        select: { id: true, campaignId: true, status: true, shopId: true },
+        select: { id: true, campaignId: true, status: true },
         include: {
           campaign: {
             select: { shopId: true },
@@ -137,17 +137,18 @@ export async function deliveryReport(req, res) {
           updatedAt: new Date(),
         };
 
-        if (newStatus === 'sent') {
-          updateData.status = 'sent';
-          updateData.deliveredAt = doneAt;
-          if (!recipient.sentAt) {
-            updateData.sentAt = doneAt;
-          }
-          updateData.error = null;
-        } else if (newStatus === 'failed') {
-          updateData.status = 'failed';
-          updateData.error = errorDesc || 'Delivery failed';
+      if (newStatus === 'sent') {
+        updateData.status = 'sent';
+        updateData.deliveredAt = doneAt;
+        if (!recipient.sentAt) {
+          updateData.sentAt = doneAt;
         }
+        updateData.error = null;
+      } else if (newStatus === 'failed') {
+        updateData.status = 'failed';
+        updateData.failedAt = doneAt; // Aligned with Retail: track when message failed
+        updateData.error = errorDesc || 'Delivery failed';
+      }
 
         await prisma.campaignRecipient.update({
           where: { id: recipient.id },

@@ -69,16 +69,35 @@ export async function sendBulkSMSWithCredits(messages) {
     };
   }
 
-  // 2. Check available balance before sending (balance minus active reservations)
-  // For campaigns, credits are already reserved, so this check ensures we have enough
-  // even with reservations in place
-  const availableBalance = await getAvailableBalance(shopId);
+  // 2. Check available balance and allowance before sending
+  // For campaigns, credits are already reserved; allowance is consumed first
+  const [availableBalance, shop] = await Promise.all([
+    getAvailableBalance(shopId),
+    prisma.shop.findUnique({
+      where: { id: shopId },
+      select: {
+        includedSmsPerPeriod: true,
+        usedSmsThisPeriod: true,
+      },
+    }),
+  ]);
   const requiredCredits = messages.length;
+  const remainingAllowance = shop?.includedSmsPerPeriod
+    ? Math.max(0, shop.includedSmsPerPeriod - (shop.usedSmsThisPeriod || 0))
+    : 0;
+  const totalAvailable = remainingAllowance + availableBalance;
 
-  if (availableBalance < requiredCredits) {
+  if (totalAvailable < requiredCredits) {
     logger.warn(
-      { shopId, availableBalance, requiredCredits, messageCount: messages.length },
-      'Insufficient available credits for bulk SMS send (including reservations)',
+      {
+        shopId,
+        availableBalance,
+        remainingAllowance,
+        totalAvailable,
+        requiredCredits,
+        messageCount: messages.length,
+      },
+      'Insufficient allowance + credits for bulk SMS send',
     );
     return {
       bulkId: null,
@@ -87,7 +106,9 @@ export async function sendBulkSMSWithCredits(messages) {
         sent: false,
         reason: 'insufficient_credits',
         availableBalance,
-        error: 'Not enough credits to send SMS. Please purchase credits.',
+        remainingAllowance,
+        totalAvailable,
+        error: 'Not enough allowance or credits to send SMS. Please purchase credits.',
       })),
       summary: {
         total: messages.length,
@@ -272,33 +293,63 @@ export async function sendBulkSMSWithCredits(messages) {
     };
   });
 
-  // 7. Debit credits only for successful sends (P0: with idempotency key)
+  // 7. Track allowance usage first, then debit credits for successful sends (P0: with idempotency key)
   const successfulCount = results.filter(r => r.sent).length;
   if (successfulCount > 0) {
     try {
-      // P0: Generate idempotency key from bulkId to prevent double debit
-      const { generateIdempotencyKey } = await import('./idempotency.js');
-      const bulkId = mittoResult.bulkId || 'unknown';
-      const idempotencyKey = generateIdempotencyKey(
-        shopId,
-        'debit',
-        bulkId,
-        successfulCount.toString(),
-      );
-
-      await debit(shopId, successfulCount, {
-        reason: `sms:send:campaign:${messages[0]?.meta?.campaignId || 'unknown'}`,
-        campaignId: messages[0]?.meta?.campaignId || null,
-        idempotencyKey, // P0: Prevent double debit on retry
+      // Get current allowance status
+      const shop = await prisma.shop.findUnique({
+        where: { id: shopId },
+        select: {
+          includedSmsPerPeriod: true,
+          usedSmsThisPeriod: true,
+        },
       });
-      logger.info(
-        { shopId, successfulCount, campaignId: messages[0]?.meta?.campaignId },
-        'Credits debited for successful bulk SMS sends',
-      );
+
+      const remainingAllowance = shop?.includedSmsPerPeriod
+        ? Math.max(0, shop.includedSmsPerPeriod - (shop.usedSmsThisPeriod || 0))
+        : 0;
+
+      // Use allowance first, then credits
+      const allowanceUsed = Math.min(successfulCount, remainingAllowance);
+      const creditsToDebit = Math.max(0, successfulCount - allowanceUsed);
+
+      // Track allowance usage
+      if (allowanceUsed > 0) {
+        const { trackSmsUsage } = await import('./subscription.js');
+        await trackSmsUsage(shopId, allowanceUsed);
+        logger.info(
+          { shopId, allowanceUsed, remainingAfter: remainingAllowance - allowanceUsed },
+          'Allowance tracked for successful bulk SMS sends',
+        );
+      }
+
+      // Debit credits only for the portion not covered by allowance
+      if (creditsToDebit > 0) {
+        // P0: Generate idempotency key from bulkId to prevent double debit
+        const { generateIdempotencyKey } = await import('./idempotency.js');
+        const bulkId = mittoResult.bulkId || 'unknown';
+        const idempotencyKey = generateIdempotencyKey(
+          shopId,
+          'debit',
+          bulkId,
+          successfulCount.toString(),
+        );
+
+        await debit(shopId, creditsToDebit, {
+          reason: `sms:send:campaign:${messages[0]?.meta?.campaignId || 'unknown'}`,
+          campaignId: messages[0]?.meta?.campaignId || null,
+          idempotencyKey, // P0: Prevent double debit on retry
+        });
+        logger.info(
+          { shopId, creditsToDebit, campaignId: messages[0]?.meta?.campaignId },
+          'Credits debited for successful bulk SMS sends (after allowance)',
+        );
+      }
     } catch (debitError) {
       logger.error(
         { shopId, successfulCount, error: debitError.message },
-        'Failed to debit credits after successful send',
+        'Failed to track allowance or debit credits after successful send',
       );
       // Don't throw - credits will be tracked manually if needed
     }
@@ -327,4 +378,3 @@ export async function sendBulkSMSWithCredits(messages) {
 }
 
 export default { sendBulkSMSWithCredits };
-

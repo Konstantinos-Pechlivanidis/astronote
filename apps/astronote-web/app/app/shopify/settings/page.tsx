@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSettings } from '@/src/features/shopify/settings/hooks/useSettings';
 import { useAccountInfo } from '@/src/features/shopify/settings/hooks/useAccountInfo';
 import { useUpdateSettings } from '@/src/features/shopify/settings/hooks/useUpdateSettings';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
@@ -32,6 +33,7 @@ export default function SettingsPage() {
     senderId: '',
     timezone: 'UTC',
     currency: 'EUR',
+    baseUrl: '', // Public base URL override
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
@@ -52,6 +54,7 @@ export default function SettingsPage() {
         senderId: (settings as any).senderId || '',
         timezone: (settings as any).timezone || 'UTC',
         currency: (settings as any).currency || 'EUR',
+        baseUrl: (settings as any).baseUrl || '', // Load baseUrl from settings
       });
     }
   }, [settings]);
@@ -78,6 +81,24 @@ export default function SettingsPage() {
       }
     }
 
+    // Validate baseUrl if provided
+    if (formData.baseUrl && formData.baseUrl.trim()) {
+      try {
+        const url = new URL(formData.baseUrl.trim());
+        // Validate protocol (http/https only)
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          newErrors.baseUrl = 'Base URL must use http or https protocol';
+        }
+        // Validate hostname (prevent injection)
+        const hostnameRegex = /^[a-zA-Z0-9.-]+(:\d+)?$/;
+        if (!hostnameRegex.test(url.hostname) || url.hostname.length > 255) {
+          newErrors.baseUrl = 'Invalid base URL hostname format';
+        }
+      } catch (error) {
+        newErrors.baseUrl = 'Invalid base URL format. Must be a valid URL (e.g., https://example.com)';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -91,7 +112,8 @@ export default function SettingsPage() {
     const hasChanges =
       formData.senderId !== ((settings as any)?.senderId || '') ||
       formData.timezone !== ((settings as any)?.timezone || 'UTC') ||
-      formData.currency !== ((settings as any)?.currency || 'EUR');
+      formData.currency !== ((settings as any)?.currency || 'EUR') ||
+      formData.baseUrl !== ((settings as any)?.baseUrl || '');
 
     if (!hasChanges) {
       return;
@@ -107,6 +129,9 @@ export default function SettingsPage() {
       }
       if (formData.currency !== ((settings as any)?.currency || 'EUR')) {
         updateData.currency = formData.currency;
+      }
+      if (formData.baseUrl !== ((settings as any)?.baseUrl || '')) {
+        (updateData as any).baseUrl = formData.baseUrl || null; // Allow clearing baseUrl
       }
 
       await updateSettings.mutateAsync(updateData);
@@ -142,9 +167,9 @@ export default function SettingsPage() {
   const hasError = settingsError || accountError;
 
   return (
-    <div>
-      {/* Header */}
-      <RetailPageHeader
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
         title="Settings"
         description="Manage your account and SMS settings"
       />
@@ -321,6 +346,35 @@ export default function SettingsPage() {
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Public Links Configuration Section */}
+                  <div className="space-y-4 pt-4 border-t border-border">
+                    <div>
+                      <h3 className="text-lg font-semibold text-text-primary mb-1">Public Links Configuration</h3>
+                      <p className="text-sm text-text-secondary">
+                        Base URL used for generating unsubscribe links and short links. Leave empty to use default.
+                      </p>
+                    </div>
+                    <div>
+                      <label htmlFor="baseUrl" className="mb-2 block text-sm font-medium text-text-secondary">
+                        Base URL
+                      </label>
+                      <Input
+                        id="baseUrl"
+                        type="url"
+                        value={formData.baseUrl}
+                        onChange={(e) => handleChange('baseUrl', e.target.value)}
+                        placeholder="https://example.com (optional)"
+                        className={errors.baseUrl ? 'border-red-400' : ''}
+                      />
+                      {errors.baseUrl && (
+                        <p className="mt-1 text-sm text-red-400">{errors.baseUrl}</p>
+                      )}
+                      <p className="mt-1 text-xs text-text-tertiary">
+                        Used for unsubscribe links and short links. Must be a valid URL (http:// or https://).
+                      </p>
                     </div>
                   </div>
 
@@ -602,6 +656,7 @@ export default function SettingsPage() {
           </main>
         </div>
       )}
-    </div>
+      </div>
+    </RetailPageLayout>
   );
 }

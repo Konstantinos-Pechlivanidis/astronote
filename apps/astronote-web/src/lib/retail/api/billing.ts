@@ -1,16 +1,43 @@
 import api from './axios';
 import { endpoints } from './endpoints';
 
+export interface SubscriptionSummary {
+  id?: number
+  planType?: string | null
+  status?: string | null
+  active?: boolean
+  billingCurrency?: string
+  interval?: 'month' | 'year' | null
+  currentPeriodStart?: string | null
+  currentPeriodEnd?: string | null
+  cancelAtPeriodEnd?: boolean
+  includedSmsPerPeriod?: number
+  usedSmsThisPeriod?: number
+  remainingSmsThisPeriod?: number
+  lastBillingError?: string | null
+}
+
+export interface AllowanceSummary {
+  includedPerPeriod: number
+  usedThisPeriod: number
+  remainingThisPeriod: number
+  currentPeriodStart?: string | null
+  currentPeriodEnd?: string | null
+  interval?: 'month' | 'year' | null
+}
+
 export interface BalanceResponse {
   balance: number
   billingCurrency?: string
-  subscription?: {
-    id: number
-    planType: string
-    status: string
-    active: boolean
-    billingCurrency?: string
-  }
+  subscription?: SubscriptionSummary
+  allowance?: AllowanceSummary
+}
+
+export interface BillingSummaryResponse {
+  credits: { balance: number }
+  subscription?: SubscriptionSummary
+  allowance?: AllowanceSummary
+  billingCurrency?: string
 }
 
 export interface Package {
@@ -73,6 +100,33 @@ export function normalizeBalanceResponse(data: BalanceResponse | null) {
   return {
     credits: data.balance || 0,
     subscription: data.subscription || { active: false, planType: null },
+    allowance: data.allowance || {
+      includedPerPeriod: 0,
+      usedThisPeriod: 0,
+      remainingThisPeriod: 0,
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      interval: null,
+    },
+    billingCurrency: data.billingCurrency || data.subscription?.billingCurrency || 'EUR',
+    _raw: data,
+  };
+}
+
+export function normalizeSummaryResponse(data: BillingSummaryResponse | null) {
+  if (!data) return null;
+
+  return {
+    credits: data.credits?.balance || 0,
+    subscription: data.subscription || { active: false, planType: null },
+    allowance: data.allowance || {
+      includedPerPeriod: 0,
+      usedThisPeriod: 0,
+      remainingThisPeriod: 0,
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      interval: null,
+    },
     billingCurrency: data.billingCurrency || data.subscription?.billingCurrency || 'EUR',
     _raw: data,
   };
@@ -118,6 +172,17 @@ export const billingApi = {
     return {
       ...res,
       data: normalizeBalanceResponse(res.data),
+    };
+  },
+
+  /**
+   * Get billing summary (subscription + allowance + credits)
+   */
+  getSummary: async () => {
+    const res = await api.get<BillingSummaryResponse>(endpoints.billing.summary);
+    return {
+      ...res,
+      data: normalizeSummaryResponse(res.data),
     };
   },
 

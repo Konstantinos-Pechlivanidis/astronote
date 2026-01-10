@@ -105,8 +105,36 @@ export async function updateSettings(storeId, settingsData) {
 
   let settings;
 
+  // Validate baseUrl if provided
+  if (settingsData.baseUrl !== undefined) {
+    if (settingsData.baseUrl) {
+      // Validate URL format and prevent injection
+      try {
+        const url = new URL(settingsData.baseUrl);
+        // Validate protocol (http/https only)
+        if (!['http:', 'https:'].includes(url.protocol)) {
+          throw new ValidationError('baseUrl must use http or https protocol');
+        }
+        // Validate hostname (prevent injection)
+        const hostnameRegex = /^[a-zA-Z0-9.-]+(:\d+)?$/;
+        if (!hostnameRegex.test(url.hostname) || url.hostname.length > 255) {
+          throw new ValidationError('Invalid baseUrl hostname format');
+        }
+        // Normalize URL (remove trailing slashes)
+        updateData.baseUrl = settingsData.baseUrl.trim().replace(/\/+$/, '');
+      } catch (error) {
+        if (error instanceof ValidationError) {
+          throw error;
+        }
+        throw new ValidationError('Invalid baseUrl format. Must be a valid URL (e.g., https://example.com)');
+      }
+    } else {
+      // Clear baseUrl if empty string provided
+      updateData.baseUrl = null;
+    }
+  }
+
   // Prepare update data - only include fields that are provided
-  const updateData = {};
   if (settingsData.senderNumber !== undefined)
     updateData.senderNumber = settingsData.senderNumber;
   if (settingsData.senderName !== undefined)
@@ -134,6 +162,7 @@ export async function updateSettings(storeId, settingsData) {
         currency: settingsData.currency
           ? settingsData.currency.toUpperCase()
           : 'EUR',
+        baseUrl: updateData.baseUrl !== undefined ? updateData.baseUrl : null,
       },
     });
   }

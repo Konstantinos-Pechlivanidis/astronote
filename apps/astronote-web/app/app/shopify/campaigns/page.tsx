@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useCampaigns } from '@/src/features/shopify/campaigns/hooks/useCampaigns';
 import { useCampaignStats } from '@/src/features/shopify/campaigns/hooks/useCampaignStats';
 import { useDeleteCampaign, useEnqueueCampaign } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
+import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailDataTable } from '@/src/components/retail/RetailDataTable';
@@ -96,6 +98,8 @@ function CampaignsToolbar({
             <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="scheduled">Scheduled</SelectItem>
             <SelectItem value="sending">Sending</SelectItem>
+            <SelectItem value="paused">Paused</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
             <SelectItem value="sent">Sent</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
             <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -121,6 +125,7 @@ export default function CampaignsPage() {
   // Fetch campaigns
   const {
     data: campaignsData,
+    isLoading: campaignsLoading,
     error: campaignsError,
     refetch: refetchCampaigns,
   } = useCampaigns({
@@ -134,6 +139,7 @@ export default function CampaignsPage() {
 
   // Fetch stats
   const { data: statsData, isLoading: statsLoading } = useCampaignStats();
+  const { data: subscriptionData } = useSubscriptionStatus();
 
   // Mutations
   const deleteCampaign = useDeleteCampaign();
@@ -148,6 +154,7 @@ export default function CampaignsPage() {
     hasNextPage: false,
     hasPrevPage: false,
   }, [campaignsData?.pagination]);
+  const isSubscriptionActive = subscriptionData?.status === 'active' || subscriptionData?.active === true;
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -185,10 +192,16 @@ export default function CampaignsPage() {
     },
     {
       key: 'recipients',
-      header: 'Recipients',
+      header: 'Messages',
       render: (campaign: Campaign) => (
-        <div className="text-sm text-text-primary">
-          {campaign.recipientCount || 0} recipients
+        <div className="text-sm text-text-primary flex items-center gap-2 tabular-nums">
+          <span className="font-medium text-green-500">
+            {(campaign.sentCount ?? 0).toLocaleString()}
+          </span>
+          <span className="text-text-secondary">/</span>
+          <span className="text-text-primary">
+            {(campaign.recipientCount ?? campaign.totalRecipients ?? 0).toLocaleString()}
+          </span>
         </div>
       ),
     },
@@ -219,14 +232,20 @@ export default function CampaignsPage() {
       header: 'Actions',
       render: (campaign: Campaign) => {
         const canSend = ['draft', 'scheduled', 'cancelled'].includes(campaign.status);
+        const sendDisabled = !isSubscriptionActive || enqueueCampaign.isPending;
         return (
           <div className="flex items-center gap-2">
             {canSend && (
               <Button
                 variant="ghost"
                 size="sm"
+                disabled={sendDisabled}
+                title={!isSubscriptionActive ? 'Active subscription required to send campaigns' : 'Send campaign'}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (!isSubscriptionActive) {
+                    return;
+                  }
                   setSendTarget({ id: campaign.id, name: campaign.name });
                 }}
                 className="h-8"
@@ -260,8 +279,24 @@ export default function CampaignsPage() {
             <h3 className="text-base font-semibold text-text-primary">{campaign.name}</h3>
             <StatusBadge status={campaign.status} />
           </div>
-          <div className="text-sm text-text-secondary">
-            {campaign.recipientCount || 0} recipients
+          <div className="flex flex-wrap gap-2 text-sm">
+            <span className="text-text-secondary">
+              Recipients: <span className="text-text-primary font-medium">
+                {(campaign.recipientCount ?? campaign.totalRecipients ?? 0).toLocaleString()}
+              </span>
+            </span>
+            {(campaign.sentCount ?? 0) > 0 && (
+              <span className="text-text-secondary">
+                Sent: <span className="text-green-400 font-medium">
+                  {(campaign.sentCount ?? 0).toLocaleString()}
+                </span>
+              </span>
+            )}
+            {(campaign.failedCount ?? 0) > 0 && (
+              <span className="text-red-400">
+                Failed: {(campaign.failedCount ?? 0).toLocaleString()}
+              </span>
+            )}
           </div>
           <div className="flex flex-col gap-1 text-xs text-text-secondary">
             {campaign.scheduleAt && (
@@ -277,25 +312,26 @@ export default function CampaignsPage() {
   );
 
   return (
-    <div>
-      <RetailPageHeader
-        title="Campaigns"
-        description="Create and manage your SMS campaigns"
-        actions={
-          <Link href="/app/shopify/campaigns/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Campaign
-            </Button>
-          </Link>
-        }
-      />
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
+          title="Campaigns"
+          description="Create and manage your SMS campaigns"
+          actions={
+            <Link href="/app/shopify/campaigns/new">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                New Campaign
+              </Button>
+            </Link>
+          }
+        />
 
-      {/* Stats Cards */}
-      {!statsLoading && statsData && <StatsCards stats={statsData} />}
+        {/* Stats Cards */}
+        {!statsLoading && statsData && <StatsCards stats={statsData} />}
 
-      {/* Toolbar */}
-      <div className="mt-6">
+        {/* Toolbar */}
+        <div>
         <CampaignsToolbar
           search={search}
           onSearchChange={setSearch}
@@ -304,9 +340,9 @@ export default function CampaignsPage() {
         />
       </div>
 
-      {/* Campaigns Table */}
-      <div className="mt-6">
-        <RetailDataTable
+        {/* Campaigns Table */}
+        <div>
+          <RetailDataTable
           columns={columns}
           data={campaigns}
           keyExtractor={(campaign) => campaign.id}
@@ -330,13 +366,13 @@ export default function CampaignsPage() {
           error={campaignsError ? 'Failed to load campaigns' : undefined}
           onRetry={refetchCampaigns}
           mobileCardRender={mobileCardRender}
-          onRowClick={(campaign) => router.push(`/app/shopify/campaigns/${campaign.id}`)}
-        />
-      </div>
+            onRowClick={(campaign) => router.push(`/app/shopify/campaigns/${campaign.id}`)}
+          />
+        </div>
 
-      {/* Pagination */}
-      {campaigns.length > 0 && (
-        <div className="mt-6 flex items-center justify-between">
+        {/* Pagination */}
+        {campaigns.length > 0 && (
+          <div className="flex items-center justify-between">
           <div className="text-sm text-text-secondary">
             Showing {(pagination.page - 1) * pagination.pageSize + 1} to{' '}
             {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
@@ -377,16 +413,17 @@ export default function CampaignsPage() {
         variant="danger"
       />
 
-      {/* Send Confirmation Dialog */}
-      <ConfirmDialog
-        open={!!sendTarget}
-        onClose={() => setSendTarget(null)}
-        onConfirm={handleSend}
-        title="Send Campaign"
-        message={`Are you sure you want to send "${sendTarget?.name}"? This will start sending SMS messages immediately.`}
-        confirmText="Send"
-        cancelText="Cancel"
-      />
-    </div>
+        {/* Send Confirmation Dialog */}
+        <ConfirmDialog
+          open={!!sendTarget}
+          onClose={() => setSendTarget(null)}
+          onConfirm={handleSend}
+          title="Send Campaign"
+          message={`Are you sure you want to send "${sendTarget?.name}"? This will start sending SMS messages immediately.`}
+          confirmText="Send"
+          cancelText="Cancel"
+        />
+      </div>
+    </RetailPageLayout>
   );
 }

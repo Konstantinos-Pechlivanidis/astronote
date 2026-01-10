@@ -225,15 +225,15 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
       );
     }
 
-    // Activate subscription (sets planType and subscriptionStatus)
+    // Activate subscription (sets planType, subscriptionStatus, and allowance tracking)
     logger.info(
       { shopId, planType, subscriptionId },
       'Activating subscription',
     );
-    await activateSubscription(shopId, customerId, subscriptionId, planType);
+    await activateSubscription(shopId, customerId, subscriptionId, planType, stripeSubscription);
     logger.info(
       { shopId, planType, subscriptionId },
-      'Subscription activated successfully',
+      'Subscription activated successfully with allowance tracking',
     );
 
     // Allocate free credits (idempotent)
@@ -557,6 +557,12 @@ async function handleInvoicePaymentSucceeded(invoice) {
     return;
   }
 
+  // Clear last billing error on successful payment
+  await prisma.shop.update({
+    where: { id: shop.id },
+    data: { lastBillingError: null },
+  });
+
   if (shop.subscriptionStatus !== 'active') {
     logger.warn(
       {
@@ -586,6 +592,46 @@ async function handleInvoicePaymentSucceeded(invoice) {
       { subscriptionId, err: err.message },
       'Failed to retrieve subscription from Stripe',
     );
+  }
+
+  // Reset allowance for new billing period (idempotent)
+  if (stripeSubscription) {
+    const { resetAllowanceForNewPeriod } = await import('../services/subscription.js');
+    try {
+      const resetResult = await resetAllowanceForNewPeriod(shop.id, stripeSubscription);
+      if (resetResult.reset) {
+        logger.info(
+          {
+            shopId: shop.id,
+            planType: shop.planType,
+            invoiceId: invoice.id,
+            includedSms: resetResult.includedSms,
+            periodStart: resetResult.periodStart,
+            periodEnd: resetResult.periodEnd,
+          },
+          'Allowance reset for new billing period',
+        );
+      } else {
+        logger.info(
+          {
+            shopId: shop.id,
+            invoiceId: invoice.id,
+            reason: resetResult.reason,
+          },
+          'Allowance not reset (already reset or other reason)',
+        );
+      }
+    } catch (resetErr) {
+      logger.error(
+        {
+          shopId: shop.id,
+          invoiceId: invoice.id,
+          err: resetErr.message,
+        },
+        'Failed to reset allowance for new period',
+      );
+      // Continue with credit allocation even if reset fails
+    }
   }
 
   // Allocate free credits for this billing cycle (idempotent)
@@ -691,6 +737,18 @@ async function handleInvoicePaymentFailed(invoice) {
     },
     'Invoice payment failed - subscription may be past_due',
   );
+
+  // Store last billing error for UI visibility
+  const errorMessage =
+    invoice.last_payment_error?.message ||
+    invoice.status ||
+    'Invoice payment failed';
+  await prisma.shop.update({
+    where: { id: shop.id },
+    data: {
+      lastBillingError: String(errorMessage).slice(0, 255),
+    },
+  });
 }
 
 /**
@@ -748,28 +806,21 @@ async function handleSubscriptionUpdated(subscription) {
   let newStatus = shop.subscriptionStatus;
   if (subscription.status === 'active') {
     newStatus = 'active';
-  } else if (
-    subscription.status === 'past_due' ||
-    subscription.status === 'unpaid'
-  ) {
-    // Keep as active for now - Stripe will retry
-    logger.warn(
-      {
-        shopId: shop.id,
-        subscriptionStatus: subscription.status,
-      },
-      'Subscription is past_due or unpaid - keeping active status',
-    );
+  } else if (subscription.status === 'trialing') {
+    newStatus = 'trialing';
+  } else if (subscription.status === 'past_due') {
+    newStatus = 'past_due';
+  } else if (subscription.status === 'unpaid') {
+    newStatus = 'unpaid';
+  } else if (subscription.status === 'incomplete') {
+    newStatus = 'incomplete';
+  } else if (subscription.status === 'paused') {
+    newStatus = 'paused';
   } else if (
     subscription.status === 'canceled' ||
     subscription.status === 'incomplete_expired'
   ) {
     newStatus = 'cancelled';
-  } else if (
-    subscription.status === 'incomplete' ||
-    subscription.status === 'trialing'
-  ) {
-    // Keep current status
   }
 
   // Extract planType from subscription metadata or price ID
@@ -784,20 +835,86 @@ async function handleSubscriptionUpdated(subscription) {
     // Fallback: determine planType from price ID
     const priceId = subscription.items?.data?.[0]?.price?.id;
     if (priceId) {
-      const starterPriceId = process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR;
-      const proPriceId = process.env.STRIPE_PRICE_ID_SUB_PRO_EUR;
-      if (priceId === starterPriceId) {
+      const starterPriceIds = [
+        process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR,
+        process.env.STRIPE_PRICE_ID_SUB_STARTER_USD,
+      ].filter(Boolean);
+      const proPriceIds = [
+        process.env.STRIPE_PRICE_ID_SUB_PRO_EUR,
+        process.env.STRIPE_PRICE_ID_SUB_PRO_USD,
+      ].filter(Boolean);
+      if (starterPriceIds.includes(priceId)) {
         newPlanType = 'starter';
-      } else if (priceId === proPriceId) {
+      } else if (proPriceIds.includes(priceId)) {
         newPlanType = 'pro';
       }
     }
   }
 
+  // Extract interval from subscription
+  let interval = null;
+  if (subscription.items?.data?.[0]?.price?.recurring) {
+    interval = subscription.items.data[0].price.recurring.interval; // 'month' or 'year'
+  }
+
+  // Extract cancelAtPeriodEnd
+  const cancelAtPeriodEnd = subscription.cancel_at_period_end || false;
+
+  // Extract period dates
+  const currentPeriodStart = subscription.current_period_start
+    ? new Date(subscription.current_period_start * 1000)
+    : null;
+  const currentPeriodEnd = subscription.current_period_end
+    ? new Date(subscription.current_period_end * 1000)
+    : null;
+
+  // Check if period changed (new billing cycle)
+  const shopWithPeriod = await prisma.shop.findUnique({
+    where: { id: shop.id },
+    select: {
+      currentPeriodStart: true,
+      subscriptionInterval: true,
+    },
+  });
+
+  const periodChanged =
+    currentPeriodStart &&
+    shopWithPeriod?.currentPeriodStart &&
+    currentPeriodStart.getTime() !== shopWithPeriod.currentPeriodStart.getTime();
+
   const statusChanged = shop.subscriptionStatus !== newStatus;
   const planTypeChanged = newPlanType && shop.planType !== newPlanType;
+  const intervalChanged = interval && shopWithPeriod?.subscriptionInterval !== interval;
 
-  if (statusChanged || planTypeChanged) {
+  // Reset allowance if period changed (new billing cycle)
+  if (periodChanged && stripeSubscription) {
+    const { resetAllowanceForNewPeriod } = await import('../services/subscription.js');
+    try {
+      const resetResult = await resetAllowanceForNewPeriod(shop.id, stripeSubscription);
+      if (resetResult.reset) {
+        logger.info(
+          {
+            shopId: shop.id,
+            planType: shop.planType,
+            includedSms: resetResult.includedSms,
+            periodStart: resetResult.periodStart,
+            periodEnd: resetResult.periodEnd,
+          },
+          'Allowance reset for new billing period (subscription updated)',
+        );
+      }
+    } catch (resetErr) {
+      logger.error(
+        {
+          shopId: shop.id,
+          err: resetErr.message,
+        },
+        'Failed to reset allowance for new period (subscription updated)',
+      );
+    }
+  }
+
+  if (statusChanged || planTypeChanged || intervalChanged || periodChanged) {
     logger.info(
       {
         shopId: shop.id,
@@ -805,15 +922,25 @@ async function handleSubscriptionUpdated(subscription) {
         newStatus,
         oldPlanType: shop.planType,
         newPlanType,
+        oldInterval: shopWithPeriod?.subscriptionInterval,
+        newInterval: interval,
+        periodChanged,
       },
-      'Updating subscription status and/or planType',
+      'Updating subscription status, planType, interval, and/or period',
     );
 
     await prisma.shop.update({
       where: { id: shop.id },
       data: {
         ...(statusChanged && { subscriptionStatus: newStatus }),
+        ...(statusChanged && newStatus === 'active' && { lastBillingError: null }),
         ...(planTypeChanged && { planType: newPlanType }),
+        ...(intervalChanged && { subscriptionInterval: interval }),
+        ...(periodChanged && {
+          currentPeriodStart,
+          currentPeriodEnd,
+        }),
+        cancelAtPeriodEnd,
       },
     });
 
@@ -824,8 +951,10 @@ async function handleSubscriptionUpdated(subscription) {
         newStatus,
         oldPlanType: shop.planType,
         newPlanType,
+        interval,
+        periodChanged,
       },
-      'Subscription status and/or planType updated',
+      'Subscription updated',
     );
   } else {
     logger.debug(
@@ -833,8 +962,9 @@ async function handleSubscriptionUpdated(subscription) {
         shopId: shop.id,
         status: shop.subscriptionStatus,
         planType: shop.planType,
+        interval: shopWithPeriod?.subscriptionInterval,
       },
-      'Subscription status and planType unchanged',
+      'Subscription unchanged',
     );
   }
 }

@@ -16,7 +16,7 @@ const { getRedisClient } = require('../../api/src/lib/redis');
 const prisma = require('../../api/src/lib/prisma');
 const { sendSingle } = require('../../api/src/services/mitto.service');
 const { sendBulkSMSWithCredits } = require('../../api/src/services/smsBulk.service');
-const { debit } = require('../../api/src/services/wallet.service');
+const { consumeMessageBilling, isSubscriptionActive } = require('../../api/src/services/subscription.service');
 const { generateUnsubscribeToken } = require('../../api/src/services/token.service');
 const { shortenUrl, shortenUrlsInText } = require('../../api/src/services/urlShortener.service');
 const crypto = require('crypto');
@@ -191,6 +191,22 @@ async function processIndividualJob(messageId, job) {
     if (!msg) return;
 
     try {
+      const subscriptionActive = await isSubscriptionActive(msg.campaign.ownerId);
+      if (!subscriptionActive) {
+        await prisma.campaignMessage.update({
+          where: { id: msg.id },
+          data: {
+            failedAt: new Date(),
+            status: 'failed',
+            error: 'Active subscription required to send SMS',
+            billingStatus: 'failed',
+            billingError: 'SUBSCRIPTION_REQUIRED',
+          }
+        });
+        logger.warn({ messageId: msg.id, ownerId: msg.campaign.ownerId }, 'Inactive subscription - individual SMS blocked');
+        return;
+      }
+
       // Ensure unsubscribe link and offer link are present (safety check - should already be added in enqueue)
       let finalText = await shortenUrlsInText(msg.text); // Shorten any URLs in message
       let needsUnsubscribeLink = !finalText.includes('/unsubscribe/');
@@ -234,23 +250,36 @@ async function processIndividualJob(messageId, job) {
       // Response format: { messageId, trafficAccountId, rawResponse }
       const providerId = resp?.messageId || null;
 
-      // Only debit credits AFTER successful send (when we have messageId)
+      let billingStatus = null;
+      let billingError = null;
+      let billedAt = null;
+
+      // Only consume allowance/credits AFTER successful send (when we have messageId)
       if (providerId) {
         try {
-          await debit(msg.campaign.ownerId, 1, {
+          const billingResult = await consumeMessageBilling(msg.campaign.ownerId, 1, {
             reason: `sms:send:campaign:${msg.campaign.id}`,
             campaignId: msg.campaign.id,
             messageId: msg.id,
             meta: { providerMessageId: providerId }
           });
-          logger.debug({ messageId: msg.id, ownerId: msg.campaign.ownerId }, 'Credits debited after successful send');
-        } catch (debitErr) {
+          billingStatus = billingResult.billingStatus || 'paid';
+          billedAt = billingResult.billedAt || new Date();
+          logger.debug({
+            messageId: msg.id,
+            ownerId: msg.campaign.ownerId,
+            usedAllowance: billingResult.usedAllowance,
+            debitedCredits: billingResult.debitedCredits,
+          }, 'Billing applied after successful send');
+        } catch (billingErr) {
           // Log error but don't fail the message - it was already sent
-          logger.error({ 
-            messageId: msg.id, 
-            ownerId: msg.campaign.ownerId, 
-            err: debitErr.message 
-          }, 'Failed to debit credits after successful send');
+          billingStatus = 'failed';
+          billingError = billingErr.message;
+          logger.error({
+            messageId: msg.id,
+            ownerId: msg.campaign.ownerId,
+            err: billingErr.message
+          }, 'Failed to bill after successful send');
         }
       }
 
@@ -259,7 +288,10 @@ async function processIndividualJob(messageId, job) {
         data: {
           providerMessageId: providerId,
           sentAt: new Date(),
-          status: 'sent'
+          status: 'sent',
+          billingStatus: billingStatus || undefined,
+          billingError: billingError || null,
+          billedAt: billedAt || undefined,
         }
       });
 

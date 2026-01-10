@@ -7,6 +7,7 @@ const {
   getSubscriptionStatus,
   getPlanConfig,
   calculateTopupPrice,
+  getIntervalForPlan,
 } = require('../services/subscription.service');
 const { resolveBillingCurrency } = require('../billing/currency');
 const { CONFIG_ERROR_CODE, getPackagePriceId } = require('../billing/stripePrices');
@@ -110,7 +111,15 @@ r.get('/billing/balance', requireAuth, async (req, res, next) => {
         allowCreate: false,
       });
     }
-    res.json({ balance, subscription, billingCurrency: subscription?.billingCurrency || 'EUR' });
+    const allowance = {
+      includedPerPeriod: subscription?.includedSmsPerPeriod || 0,
+      usedThisPeriod: subscription?.usedSmsThisPeriod || 0,
+      remainingThisPeriod: subscription?.remainingSmsThisPeriod || 0,
+      currentPeriodStart: subscription?.currentPeriodStart || null,
+      currentPeriodEnd: subscription?.currentPeriodEnd || null,
+      interval: subscription?.interval || null,
+    };
+    res.json({ balance, subscription, allowance, billingCurrency: subscription?.billingCurrency || 'EUR' });
   } catch (e) { next(e); }
 });
 
@@ -129,7 +138,44 @@ r.get('/billing/wallet', requireAuth, async (req, res, next) => {
         allowCreate: false,
       });
     }
-    res.json({ balance, subscription, billingCurrency: subscription?.billingCurrency || 'EUR' });
+    const allowance = {
+      includedPerPeriod: subscription?.includedSmsPerPeriod || 0,
+      usedThisPeriod: subscription?.usedSmsThisPeriod || 0,
+      remainingThisPeriod: subscription?.remainingSmsThisPeriod || 0,
+      currentPeriodStart: subscription?.currentPeriodStart || null,
+      currentPeriodEnd: subscription?.currentPeriodEnd || null,
+      interval: subscription?.interval || null,
+    };
+    res.json({ balance, subscription, allowance, billingCurrency: subscription?.billingCurrency || 'EUR' });
+  } catch (e) { next(e); }
+});
+
+/**
+ * GET /billing/summary
+ * Returns subscription summary, allowance, and credits balance
+ */
+r.get('/billing/summary', requireAuth, async (req, res, next) => {
+  try {
+    const [balance, subscription] = await Promise.all([
+      getBalance(req.user.id),
+      getSubscriptionStatus(req.user.id),
+    ]);
+
+    const allowance = {
+      includedPerPeriod: subscription?.includedSmsPerPeriod || 0,
+      usedThisPeriod: subscription?.usedSmsThisPeriod || 0,
+      remainingThisPeriod: subscription?.remainingSmsThisPeriod || 0,
+      currentPeriodStart: subscription?.currentPeriodStart || null,
+      currentPeriodEnd: subscription?.currentPeriodEnd || null,
+      interval: subscription?.interval || null,
+    };
+
+    res.json({
+      credits: { balance },
+      subscription,
+      allowance,
+      billingCurrency: subscription?.billingCurrency || 'EUR',
+    });
   } catch (e) { next(e); }
 });
 
@@ -766,6 +812,161 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
 });
 
 /**
+ * POST /api/subscriptions/switch
+ * Switch subscription interval (month/year) or plan
+ * Body: { interval?: 'month'|'year', planType?: 'starter'|'pro', currency?: 'EUR'|'USD' }
+ */
+r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
+  try {
+    const requestedPlan = req.body?.planType || req.body?.plan;
+    const requestedInterval = req.body?.interval;
+    const normalizedInterval = requestedInterval === 'month' || requestedInterval === 'year'
+      ? requestedInterval
+      : null;
+    const intervalToPlan = {
+      month: 'starter',
+      year: 'pro',
+    };
+
+    let planType = requestedPlan;
+    if (!planType && normalizedInterval) {
+      planType = intervalToPlan[normalizedInterval];
+    }
+
+    if (!planType || !['starter', 'pro'].includes(planType)) {
+      return res.status(400).json({
+        message: 'Plan type must be "starter" or "pro"',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const subscription = await getSubscriptionStatus(req.user.id);
+
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      return res.status(400).json({
+        message: 'No active subscription found. Please subscribe first.',
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
+    }
+
+    const expectedInterval = getIntervalForPlan(planType);
+    if (normalizedInterval && expectedInterval && normalizedInterval !== expectedInterval) {
+      return res.status(400).json({
+        message: `Interval ${normalizedInterval} is not available for ${planType} plan`,
+        code: 'INVALID_INTERVAL',
+      });
+    }
+
+    const currentInterval = subscription.interval || expectedInterval;
+    if (subscription.planType === planType && (!normalizedInterval || currentInterval === normalizedInterval)) {
+      return res.json({
+        ok: true,
+        message: 'Subscription already on requested plan',
+        planType,
+        alreadyUpdated: true,
+      });
+    }
+
+    const stripe = require('../services/stripe.service').stripe;
+    if (!stripe) {
+      return res.status(503).json({
+        message: 'Payment processing unavailable',
+        code: 'STRIPE_NOT_CONFIGURED',
+      });
+    }
+
+    let stripeSubscription = null;
+    try {
+      stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+      const stripeMetadata = stripeSubscription.metadata || {};
+      const stripePlanType = stripeMetadata.planType;
+
+      if (stripePlanType === planType && subscription.planType === planType) {
+        return res.json({
+          ok: true,
+          message: `Subscription is already on the ${planType} plan`,
+          planType,
+          alreadyUpdated: true,
+        });
+      }
+    } catch (err) {
+      logger.warn({
+        subscriptionId: subscription.stripeSubscriptionId,
+        err: err.message,
+      }, 'Failed to retrieve subscription from Stripe for idempotency check');
+    }
+
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.body?.currency,
+    });
+
+    const { updateSubscription } = require('../services/stripe.service');
+    await updateSubscription(subscription.stripeSubscriptionId, planType, currency);
+
+    let stripeCustomerId = subscription.stripeCustomerId;
+    const resolvedCustomerId =
+      typeof stripeSubscription?.customer === 'string'
+        ? stripeSubscription.customer
+        : stripeSubscription?.customer?.id;
+    if (isValidStripeCustomerId(resolvedCustomerId)) {
+      stripeCustomerId = resolvedCustomerId;
+      if (stripeCustomerId !== subscription.stripeCustomerId) {
+        await prisma.user.update({
+          where: { id: req.user.id },
+          data: { stripeCustomerId },
+        });
+      }
+    }
+
+    if (!isValidStripeCustomerId(stripeCustomerId)) {
+      return res.status(400).json({
+        message: 'Missing valid Stripe customer mapping for subscription update',
+        code: 'MISSING_CUSTOMER_ID',
+      });
+    }
+
+    const { activateSubscription } = require('../services/subscription.service');
+    await activateSubscription(
+      req.user.id,
+      stripeCustomerId,
+      subscription.stripeSubscriptionId,
+      planType,
+      { interval: normalizedInterval || expectedInterval },
+    );
+
+    logger.info({
+      userId: req.user.id,
+      oldPlan: subscription.planType,
+      newPlan: planType,
+      subscriptionId: subscription.stripeSubscriptionId,
+    }, 'Subscription plan updated');
+
+    res.json({
+      ok: true,
+      message: `Subscription updated to ${planType} plan successfully`,
+      planType,
+      interval: normalizedInterval || expectedInterval,
+      currency,
+    });
+  } catch (e) {
+    if (e.message?.includes('Stripe is not configured')) {
+      return res.status(503).json({
+        message: 'Payment processing unavailable',
+        code: 'STRIPE_NOT_CONFIGURED',
+      });
+    }
+    if (e?.code === CONFIG_ERROR_CODE || e.message?.includes('Stripe price ID not found')) {
+      return res.status(500).json({
+        message: e.message,
+        code: CONFIG_ERROR_CODE,
+      });
+    }
+    next(e);
+  }
+});
+
+/**
  * POST /api/subscriptions/cancel
  * Cancel subscription (via Stripe API)
  * Immediately updates local DB to avoid race conditions with webhook
@@ -1016,7 +1217,7 @@ r.post('/subscriptions/verify-session', requireAuth, async (req, res, next) => {
     const { getCheckoutSession } = require('../services/stripe.service');
     const {
       activateSubscription,
-      allocateFreeCredits,
+      resetAllowanceForPeriod,
     } = require('../services/subscription.service');
 
     // Retrieve session from Stripe
@@ -1089,9 +1290,8 @@ r.post('/subscriptions/verify-session', requireAuth, async (req, res, next) => {
         currentPlanType: currentSubscription.planType,
       }, 'Subscription already active, skipping activation (idempotency)');
 
-      // Still try to allocate credits (idempotent check inside allocateFreeCredits)
-      // This ensures credits are allocated even if webhook failed at that step
-      const result = await allocateFreeCredits(req.user.id, planType, `sub_${subscriptionId}`, stripeSubscription);
+      // Still try to reset allowance (idempotent check inside resetAllowanceForPeriod)
+      const result = await resetAllowanceForPeriod(req.user.id, planType, `sub_${subscriptionId}`, stripeSubscription);
 
       return res.json({
         ok: true,
@@ -1101,9 +1301,14 @@ r.post('/subscriptions/verify-session', requireAuth, async (req, res, next) => {
           subscriptionId,
           customerId,
         },
+        allowance: {
+          reset: result.allocated,
+          includedPerPeriod: result.includedSmsPerPeriod || 0,
+          reason: result.reason || 'already_processed',
+        },
         credits: {
           allocated: result.allocated,
-          credits: result.credits || 0,
+          credits: result.includedSmsPerPeriod || 0,
           reason: result.reason || 'already_processed',
         },
       });
@@ -1118,8 +1323,8 @@ r.post('/subscriptions/verify-session', requireAuth, async (req, res, next) => {
     }, 'Activating subscription via manual verification');
     await activateSubscription(req.user.id, customerId, subscriptionId, planType);
 
-    // Allocate free credits
-    const result = await allocateFreeCredits(req.user.id, planType, `sub_${subscriptionId}`, stripeSubscription);
+    // Reset allowance for this billing period
+    const result = await resetAllowanceForPeriod(req.user.id, planType, `sub_${subscriptionId}`, stripeSubscription);
 
     res.json({
       ok: true,
@@ -1129,9 +1334,14 @@ r.post('/subscriptions/verify-session', requireAuth, async (req, res, next) => {
         subscriptionId,
         customerId,
       },
+      allowance: {
+        reset: result.allocated,
+        includedPerPeriod: result.includedSmsPerPeriod || 0,
+        reason: result.reason,
+      },
       credits: {
         allocated: result.allocated,
-        credits: result.credits || 0,
+        credits: result.includedSmsPerPeriod || 0,
         reason: result.reason,
       },
     });
@@ -1188,7 +1398,7 @@ r.post('/billing/verify-payment', requireAuth, async (req, res, next) => {
       // Call subscription verify-session logic inline
       const {
         activateSubscription,
-        allocateFreeCredits,
+        resetAllowanceForPeriod,
       } = require('../services/subscription.service');
 
       const planType = metadata.planType;
@@ -1229,7 +1439,7 @@ r.post('/billing/verify-payment', requireAuth, async (req, res, next) => {
 
       const currentSubscription = await getSubscriptionStatus(req.user.id);
       if (currentSubscription.active && currentSubscription.stripeSubscriptionId === subscriptionId) {
-        const result = await allocateFreeCredits(req.user.id, planType, `sub_${subscriptionId}`, stripeSubscription);
+        const result = await resetAllowanceForPeriod(req.user.id, planType, `sub_${subscriptionId}`, stripeSubscription);
         return res.json({
           ok: true,
           paymentType: 'subscription',
@@ -1239,16 +1449,21 @@ r.post('/billing/verify-payment', requireAuth, async (req, res, next) => {
             subscriptionId,
             customerId,
           },
+          allowance: {
+            reset: result.allocated,
+            includedPerPeriod: result.includedSmsPerPeriod || 0,
+            reason: result.reason || 'already_processed',
+          },
           credits: {
             allocated: result.allocated,
-            credits: result.credits || 0,
+            credits: result.includedSmsPerPeriod || 0,
             reason: result.reason || 'already_processed',
           },
         });
       }
 
       await activateSubscription(req.user.id, customerId, subscriptionId, planType);
-      const result = await allocateFreeCredits(req.user.id, planType, `sub_${subscriptionId}`, stripeSubscription);
+      const result = await resetAllowanceForPeriod(req.user.id, planType, `sub_${subscriptionId}`, stripeSubscription);
 
       return res.json({
         ok: true,
@@ -1259,9 +1474,14 @@ r.post('/billing/verify-payment', requireAuth, async (req, res, next) => {
           subscriptionId,
           customerId,
         },
+        allowance: {
+          reset: result.allocated,
+          includedPerPeriod: result.includedSmsPerPeriod || 0,
+          reason: result.reason,
+        },
         credits: {
           allocated: result.allocated,
-          credits: result.credits || 0,
+          credits: result.includedSmsPerPeriod || 0,
           reason: result.reason,
         },
       });

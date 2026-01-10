@@ -6,6 +6,7 @@ import {
   activateSubscription,
   deactivateSubscription,
   allocateFreeCredits,
+  getPlanConfig,
 } from '../services/subscription.js';
 import { SubscriptionPlanType } from '../utils/prismaEnums.js';
 import {
@@ -14,6 +15,7 @@ import {
   cancelSubscription,
   getCheckoutSession,
 } from '../services/stripe.js';
+import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
 
 const stripe = process.env.STRIPE_SECRET_KEY
@@ -32,7 +34,19 @@ export async function getStatus(req, res, next) {
 
     const subscription = await getSubscriptionStatus(shopId);
 
-    return sendSuccess(res, subscription, 'Subscription status retrieved');
+    // Add plan config to response (aligned with Retail)
+    const plan = subscription.planType
+      ? getPlanConfig(subscription.planType)
+      : null;
+
+    return sendSuccess(
+      res,
+      {
+        ...subscription,
+        plan, // Include plan config
+      },
+      'Subscription status retrieved',
+    );
   } catch (error) {
     logger.error('Get subscription status error', {
       error: error.message,
@@ -75,6 +89,30 @@ export async function subscribe(req, res, next) {
       );
     }
 
+    // Get currency from request or shop settings (aligned with Retail)
+    const requestedCurrency = req.body?.currency;
+    const validCurrencies = ['EUR', 'USD'];
+    let currency = 'EUR';
+
+    if (
+      requestedCurrency &&
+      validCurrencies.includes(requestedCurrency.toUpperCase())
+    ) {
+      currency = requestedCurrency.toUpperCase();
+    } else {
+      // Get shop currency
+      const shop = await prisma.shop.findUnique({
+        where: { id: shopId },
+        select: { currency: true },
+      });
+      if (
+        shop?.currency &&
+        validCurrencies.includes(shop.currency.toUpperCase())
+      ) {
+        currency = shop.currency.toUpperCase();
+      }
+    }
+
     const { buildFrontendUrl } = await import('../utils/frontendUrl.js');
     const baseUrl = buildFrontendUrl(
       '/app/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription',
@@ -86,7 +124,7 @@ export async function subscribe(req, res, next) {
       shopId,
       shopDomain,
       planType,
-      currency: 'EUR',
+      currency, // Use resolved currency
       successUrl,
       cancelUrl,
     });
@@ -97,6 +135,7 @@ export async function subscribe(req, res, next) {
         checkoutUrl: session.url,
         sessionId: session.id,
         planType,
+        currency, // Include currency in response (aligned with Retail)
       },
       'Subscription checkout session created',
       201,
@@ -131,6 +170,65 @@ export async function subscribe(req, res, next) {
     }
 
     logger.error('Subscribe error', {
+      error: error.message,
+      shopId: getStoreId(req),
+    });
+    next(error);
+  }
+}
+
+/**
+ * POST /api/subscriptions/switch
+ * Switch subscription interval (monthly/yearly) or plan
+ * Body: { interval?: 'month' | 'year', planType?: 'starter' | 'pro' }
+ */
+export async function switchInterval(req, res, next) {
+  try {
+    const shopId = getStoreId(req);
+    const { interval, planType } = req.body;
+
+    if (!interval && !planType) {
+      return sendError(
+        res,
+        400,
+        'VALIDATION_ERROR',
+        'Either interval or planType must be provided',
+      );
+    }
+
+    const subscription = await getSubscriptionStatus(shopId);
+
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      return sendError(
+        res,
+        400,
+        'NO_ACTIVE_SUBSCRIPTION',
+        'No active subscription found. Please subscribe first.',
+      );
+    }
+
+    // Switch interval if provided
+    if (interval) {
+      const { switchSubscriptionInterval } = await import('../services/subscription.js');
+      await switchSubscriptionInterval(shopId, interval);
+    }
+
+    // Update plan if provided
+    if (planType) {
+      await update(req, res, next);
+      return; // update() already sends response
+    }
+
+    // If only interval was provided, return success
+    return sendSuccess(
+      res,
+      {
+        interval,
+      },
+      `Subscription interval switched to ${interval} successfully`,
+    );
+  } catch (error) {
+    logger.error('Switch subscription interval error', {
       error: error.message,
       shopId: getStoreId(req),
     });
@@ -223,7 +321,35 @@ export async function update(req, res, next) {
       // Continue with update anyway
     }
 
-    await updateSubscription(subscription.stripeSubscriptionId, planType);
+    // Get currency from request or shop settings (aligned with Retail)
+    const requestedCurrency = req.body?.currency;
+    const validCurrencies = ['EUR', 'USD'];
+    let currency = 'EUR';
+
+    if (
+      requestedCurrency &&
+      validCurrencies.includes(requestedCurrency.toUpperCase())
+    ) {
+      currency = requestedCurrency.toUpperCase();
+    } else {
+      // Get shop currency
+      const shop = await prisma.shop.findUnique({
+        where: { id: shopId },
+        select: { currency: true },
+      });
+      if (
+        shop?.currency &&
+        validCurrencies.includes(shop.currency.toUpperCase())
+      ) {
+        currency = shop.currency.toUpperCase();
+      }
+    }
+
+    await updateSubscription(
+      subscription.stripeSubscriptionId,
+      planType,
+      currency, // Pass currency to update (aligned with Retail)
+    );
 
     // Update local DB immediately (idempotent - activateSubscription checks current state)
     await activateSubscription(
@@ -247,6 +373,7 @@ export async function update(req, res, next) {
       res,
       {
         planType,
+        currency, // Include currency in response (aligned with Retail)
       },
       `Subscription updated to ${planType} plan successfully`,
     );
@@ -453,15 +580,101 @@ export async function verifySession(req, res, next) {
  * Get Stripe Customer Portal URL
  */
 export async function getPortal(req, res, next) {
+  const requestId =
+    req.id ||
+    req.headers['x-request-id'] ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   try {
     const shopId = getStoreId(req);
+    const shopDomain = req.ctx?.store?.shopDomain;
     const subscription = await getSubscriptionStatus(shopId);
-    if (!subscription.stripeCustomerId) {
+
+    // Resolve or create Stripe customer (aligned with Retail)
+    let stripeCustomerId = subscription.stripeCustomerId;
+
+    // Check if customer ID is valid
+    const isValidStripeCustomerId = (value) =>
+      typeof value === 'string' && value.startsWith('cus_');
+
+    if (!isValidStripeCustomerId(stripeCustomerId)) {
+      // Try to resolve from subscription if available
+      if (subscription.stripeSubscriptionId && stripe) {
+        try {
+          const stripeSubscription = await stripe.subscriptions.retrieve(
+            subscription.stripeSubscriptionId,
+          );
+          const resolvedCustomerId =
+            typeof stripeSubscription.customer === 'string'
+              ? stripeSubscription.customer
+              : stripeSubscription.customer?.id;
+          if (isValidStripeCustomerId(resolvedCustomerId)) {
+            stripeCustomerId = resolvedCustomerId;
+            // Update shop record
+            await prisma.shop.update({
+              where: { id: shopId },
+              data: { stripeCustomerId },
+            });
+          }
+        } catch (err) {
+          logger.warn({
+            requestId,
+            shopId,
+            stripeSubscriptionId: subscription.stripeSubscriptionId,
+            err: err.message,
+          }, 'Failed to resolve Stripe customer from subscription');
+        }
+      }
+
+      // Create customer if still missing (aligned with Retail)
+      if (!isValidStripeCustomerId(stripeCustomerId)) {
+        if (!stripe) {
+          return sendError(
+            res,
+            503,
+            'STRIPE_NOT_CONFIGURED',
+            'Payment processing unavailable',
+            { requestId },
+          );
+        }
+
+        const shop = await prisma.shop.findUnique({
+          where: { id: shopId },
+          select: { shopName: true, currency: true },
+        });
+
+        const customer = await stripe.customers.create({
+          email: `${shopDomain}@astronote.com`,
+          name: shop?.shopName || shopDomain,
+          metadata: {
+            shopId: String(shopId),
+            shopDomain: shopDomain || '',
+            billingCurrency: shop?.currency || 'EUR',
+          },
+        });
+
+        stripeCustomerId = customer.id;
+
+        // Update shop record
+        await prisma.shop.update({
+          where: { id: shopId },
+          data: { stripeCustomerId },
+        });
+
+        logger.info({
+          requestId,
+          shopId,
+          customerId: stripeCustomerId,
+        }, 'Created Stripe customer for portal access');
+      }
+    }
+
+    if (!isValidStripeCustomerId(stripeCustomerId)) {
       return sendError(
         res,
         400,
         'MISSING_CUSTOMER_ID',
-        'No payment account found',
+        'No payment account found. Please subscribe to a plan first.',
+        { requestId },
       );
     }
 
@@ -469,17 +682,31 @@ export async function getPortal(req, res, next) {
     const { buildFrontendUrl } = await import('../utils/frontendUrl.js');
     const returnUrl = buildFrontendUrl('/app/billing');
 
-    const portalUrl = await getCustomerPortalUrl(
-      subscription.stripeCustomerId,
-      returnUrl,
-    );
+    const portalUrl = await getCustomerPortalUrl(stripeCustomerId, returnUrl);
 
     return sendSuccess(res, { portalUrl });
   } catch (error) {
+    if (error.message?.includes('Stripe is not configured')) {
+      return sendError(
+        res,
+        503,
+        'STRIPE_NOT_CONFIGURED',
+        'Payment processing unavailable',
+        { requestId },
+      );
+    }
     logger.error('Get portal error', {
+      requestId,
       error: error.message,
       shopId: getStoreId(req),
+      stack: error.stack,
     });
-    next(error);
+    return sendError(
+      res,
+      502,
+      'STRIPE_PORTAL_ERROR',
+      'Failed to create customer portal session',
+      { requestId },
+    );
   }
 }

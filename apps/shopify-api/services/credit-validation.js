@@ -1,5 +1,10 @@
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
+import { debit } from './wallet.js';
+import { SubscriptionStatus } from '../utils/prismaEnums.js';
+import { SubscriptionRequiredError } from '../utils/errors.js';
+
+export { SubscriptionRequiredError };
 
 /**
  * Credit Validation Service
@@ -37,49 +42,121 @@ export async function validateAndConsumeCredits(storeId, messageCount) {
       // Lock the store row for update to prevent race conditions
       const store = await tx.shop.findUnique({
         where: { id: storeId },
-        select: { id: true, credits: true, shopDomain: true },
+        select: {
+          id: true,
+          shopDomain: true,
+          subscriptionStatus: true,
+          includedSmsPerPeriod: true,
+          usedSmsThisPeriod: true,
+        },
       });
 
       if (!store) {
         throw new Error('Store not found');
       }
 
-      // Check if store has sufficient credits
-      if (store.credits < messageCount) {
-        const missingCredits = messageCount - store.credits;
-        throw new InsufficientCreditsError(
-          `You need ${missingCredits} more credits to send this message. You currently have ${store.credits} credits.`,
-          missingCredits,
+      // Subscription gate
+      if (store.subscriptionStatus !== SubscriptionStatus.active) {
+        throw new SubscriptionRequiredError(
+          'Active subscription required to send SMS. Please subscribe to a plan to continue.',
         );
       }
 
-      // Deduct credits atomically
-      const updatedStore = await tx.shop.update({
-        where: { id: storeId },
-        data: {
-          credits: {
-            decrement: messageCount,
+      const remainingAllowance = store.includedSmsPerPeriod
+        ? Math.max(0, store.includedSmsPerPeriod - (store.usedSmsThisPeriod || 0))
+        : 0;
+      const allowanceUsed = Math.min(messageCount, remainingAllowance);
+      const creditsToDebit = Math.max(0, messageCount - allowanceUsed);
+
+      // Update allowance usage first (within transaction)
+      if (allowanceUsed > 0) {
+        await tx.shop.update({
+          where: { id: storeId },
+          data: {
+            usedSmsThisPeriod: (store.usedSmsThisPeriod || 0) + allowanceUsed,
           },
-        },
-        select: { credits: true },
-      });
+        });
+      }
+
+      let creditsRemaining = 0;
+      if (creditsToDebit > 0) {
+        const wallet = await tx.wallet.upsert({
+          where: { shopId: storeId },
+          update: {},
+          create: { shopId: storeId, balance: 0 },
+          select: { balance: true },
+        });
+
+        const activeReservations = await tx.creditReservation.aggregate({
+          where: {
+            shopId: storeId,
+            status: 'active',
+          },
+          _sum: {
+            amount: true,
+          },
+        });
+
+        const reservedAmount = activeReservations._sum.amount || 0;
+        const availableBalance = wallet.balance - reservedAmount;
+
+        if (availableBalance < creditsToDebit) {
+          const missingCredits = creditsToDebit - availableBalance;
+          throw new InsufficientCreditsError(
+            `You need ${missingCredits} more credits to send this message. You currently have ${availableBalance} credits.`,
+            missingCredits,
+          );
+        }
+
+        const debitResult = await debit(
+          storeId,
+          creditsToDebit,
+          {
+            reason: 'sms:send:automation',
+            meta: {
+              messageCount,
+              allowanceUsed,
+            },
+          },
+          tx,
+        );
+        creditsRemaining = debitResult.balance;
+      } else {
+        const wallet = await tx.wallet.upsert({
+          where: { shopId: storeId },
+          update: {},
+          create: { shopId: storeId, balance: 0 },
+          select: { balance: true },
+        });
+        creditsRemaining = wallet.balance;
+      }
 
       logger.info('Credits consumed successfully', {
         storeId,
         storeDomain: store.shopDomain,
-        creditsConsumed: messageCount,
-        creditsRemaining: updatedStore.credits,
+        creditsConsumed: creditsToDebit,
+        allowanceUsed,
+        creditsRemaining,
       });
 
       return {
         success: true,
-        creditsRemaining: updatedStore.credits,
-        creditsConsumed: messageCount,
+        creditsRemaining,
+        creditsConsumed: creditsToDebit,
+        allowanceUsed,
       };
     });
 
     return result;
   } catch (error) {
+    if (error instanceof SubscriptionRequiredError) {
+      logger.warn('Subscription required for SMS send', {
+        storeId,
+        messageCount,
+        error: error.message,
+      });
+      throw error;
+    }
     if (error instanceof InsufficientCreditsError) {
       logger.warn('Insufficient credits for SMS send', {
         storeId,
@@ -337,4 +414,5 @@ export default {
   getCreditUsageStats,
   refundCredits,
   InsufficientCreditsError,
+  SubscriptionRequiredError,
 };

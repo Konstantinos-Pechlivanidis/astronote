@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { subscriptionsApi } from '@/src/lib/shopify/api/billing';
+import { subscriptionsApi } from '@/src/lib/shopifyBillingApi';
 
 /**
  * React Query hook for subscription status
@@ -15,4 +15,3 @@ export function useSubscriptionStatus() {
     placeholderData: (previousData) => previousData,
   });
 }
-

@@ -1,6 +1,7 @@
 'use client';
 
 import { useDashboardKPIs } from '@/src/features/shopify/dashboard/hooks/useDashboardKPIs';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
@@ -77,28 +78,31 @@ export default function ShopifyDashboardPage() {
   // Show loading skeletons on initial load
   if (isInitialLoad) {
     return (
-      <div>
-        <RetailPageHeader
-          title="Dashboard"
-          description="Welcome to your Shopify SMS marketing dashboard"
-        />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <KPICardSkeleton key={i} />
-          ))}
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader
+            title="Dashboard"
+            description="Welcome to your Shopify SMS marketing dashboard"
+          />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <KPICardSkeleton key={i} />
+            ))}
+          </div>
         </div>
-      </div>
+      </RetailPageLayout>
     );
   }
 
   // Show error state (inline, doesn't block navigation)
   if (error) {
     return (
-      <div>
-        <RetailPageHeader
-          title="Dashboard"
-          description="Welcome to your Shopify SMS marketing dashboard"
-        />
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader
+            title="Dashboard"
+            description="Welcome to your Shopify SMS marketing dashboard"
+          />
 
         {/* Error Alert Card */}
         <RetailCard variant="danger" className="mb-6 p-6">
@@ -147,7 +151,8 @@ export default function ShopifyDashboardPage() {
             icon={Send}
           />
         </div>
-      </div>
+        </div>
+      </RetailPageLayout>
     );
   }
 
@@ -159,11 +164,12 @@ export default function ShopifyDashboardPage() {
     totalMessagesSent === 0;
 
   return (
-    <div>
-      <RetailPageHeader
-        title="Dashboard"
-        description="Welcome to your Shopify SMS marketing dashboard"
-      />
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <RetailPageHeader
+          title="Dashboard"
+          description="Welcome to your Shopify SMS marketing dashboard"
+        />
 
       {/* KPI Cards Grid - Responsive */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
@@ -213,6 +219,7 @@ export default function ShopifyDashboardPage() {
           </div>
         </RetailCard>
       )}
-    </div>
+      </div>
+    </RetailPageLayout>
   );
 }

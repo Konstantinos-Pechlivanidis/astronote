@@ -15,6 +15,19 @@ import { sendSuccess, sendCreated, sendPaginated } from '../utils/response.js';
 export async function list(req, res, next) {
   try {
     const storeId = getStoreId(req);
+    
+    // Validate query params
+    const allowedStatuses = ['draft', 'scheduled', 'sending', 'sent', 'failed', 'cancelled'];
+    if (req.query.status && !allowedStatuses.includes(req.query.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_FILTER',
+        message: `Invalid status filter. Allowed values: ${allowedStatuses.join(', ')}`,
+        code: 'INVALID_FILTER',
+        requestId: req.id,
+      });
+    }
+
     const filters = {
       page: req.query.page,
       pageSize: req.query.pageSize,
@@ -228,7 +241,7 @@ export async function enqueue(req, res, next) {
         const idempotencyService = (await import('../services/idempotency.js')).default;
         const responseData = {
           ok: true,
-          created: result.created,
+          queued: result.queued,
           enqueuedJobs: result.enqueuedJobs,
           campaignId: result.campaignId,
         };
@@ -267,11 +280,11 @@ export async function enqueue(req, res, next) {
           code: 'NO_RECIPIENTS',
         });
       }
-      if (result.reason === 'inactive_subscription') {
+      if (result.reason === 'subscription_required' || result.reason === 'inactive_subscription') {
         return res.status(403).json({
           ok: false,
-          message: 'Active subscription required to send SMS',
-          code: 'INACTIVE_SUBSCRIPTION',
+          message: result.message || 'Active subscription required to send SMS campaigns',
+          code: 'SUBSCRIPTION_REQUIRED',
         });
       }
       if (result.reason === 'insufficient_credits') {
@@ -298,6 +311,13 @@ export async function enqueue(req, res, next) {
           details: result.details || {},
         });
       }
+      if (result.reason === 'queue_unavailable') {
+        return res.status(503).json({
+          ok: false,
+          message: 'SMS queue is temporarily unavailable. Please try again later.',
+          code: 'QUEUE_UNAVAILABLE',
+        });
+      }
       return res.status(400).json({
         ok: false,
         message: result.message || result.reason || 'Campaign cannot be enqueued',
@@ -308,7 +328,7 @@ export async function enqueue(req, res, next) {
 
     return res.json({
       ok: true,
-      created: result.created,
+      queued: result.queued,
       enqueuedJobs: result.enqueuedJobs,
       campaignId: result.campaignId,
     });
@@ -340,6 +360,13 @@ export async function sendNow(req, res, next) {
 
     return sendSuccess(res, result, 'Campaign queued for sending');
   } catch (error) {
+    if (error?.code === 'SUBSCRIPTION_REQUIRED') {
+      return res.status(403).json({
+        ok: false,
+        message: error.message || 'Active subscription required to send SMS campaigns',
+        code: 'SUBSCRIPTION_REQUIRED',
+      });
+    }
     logger.error('Send campaign error', {
       error: error.message,
       stack: error.stack,
@@ -499,11 +526,14 @@ export async function getCampaignPreview(req, res, next) {
           code: 'NOT_FOUND',
         });
       }
-      if (result.reason === 'inactive_subscription') {
+      if (
+        result.reason === 'subscription_required' ||
+        result.reason === 'inactive_subscription'
+      ) {
         return res.status(403).json({
           ok: false,
           message: result.message || 'Active subscription required',
-          code: 'INACTIVE_SUBSCRIPTION',
+          code: 'SUBSCRIPTION_REQUIRED',
         });
       }
       if (result.reason === 'audience_resolution_failed') {

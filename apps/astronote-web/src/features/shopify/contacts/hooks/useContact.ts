@@ -4,7 +4,7 @@ import { contactsApi } from '@/src/lib/shopify/api/contacts';
 /**
  * React Query hook for getting a single contact
  */
-export function useContact(id: number | undefined) {
+export function useContact(id: string | undefined) {
   return useQuery({
     queryKey: ['shopify', 'contacts', 'detail', id],
     queryFn: () => contactsApi.get(id!),
