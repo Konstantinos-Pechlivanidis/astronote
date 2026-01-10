@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useBillingBalance } from '@/src/features/shopify/billing/hooks/useBillingBalance';
@@ -39,9 +39,9 @@ import {
 import { format } from 'date-fns';
 
 /**
- * Billing Page
+ * Billing Page Content
  */
-export default function BillingPage() {
+function BillingPageContent() {
   const searchParams = useSearchParams();
   const [selectedCurrency, setSelectedCurrency] = useState<string>('EUR');
   const [currencyTouched, setCurrencyTouched] = useState(false);
@@ -774,5 +774,33 @@ export default function BillingPage() {
         </RetailCard>
       </div>
     </div>
+  );
+}
+
+/**
+ * Billing Page
+ * Wrapped in Suspense for useSearchParams()
+ */
+export default function BillingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div>
+          <RetailPageHeader
+            title="Billing"
+            description="Manage your SMS credits and subscription"
+          />
+          <div className="space-y-6">
+            <RetailCard className="p-6">
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-8 w-8 animate-spin text-text-tertiary" />
+              </div>
+            </RetailCard>
+          </div>
+        </div>
+      }
+    >
+      <BillingPageContent />
+    </Suspense>
   );
 }

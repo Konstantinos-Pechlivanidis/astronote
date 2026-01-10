@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle, ArrowLeft } from 'lucide-react';
 
 /**
- * Billing Success Page
+ * Billing Success Page Content
  */
-export default function BillingSuccessPage() {
+function BillingSuccessPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -65,3 +65,25 @@ export default function BillingSuccessPage() {
   );
 }
 
+/**
+ * Billing Success Page
+ * Wrapped in Suspense for useSearchParams()
+ */
+export default function BillingSuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <div>
+          <RetailPageHeader title="Payment Successful" />
+          <RetailCard className="p-6">
+            <div className="text-center py-8">
+              <p className="text-sm text-text-secondary">Loading...</p>
+            </div>
+          </RetailCard>
+        </div>
+      }
+    >
+      <BillingSuccessPageContent />
+    </Suspense>
+  );
+}

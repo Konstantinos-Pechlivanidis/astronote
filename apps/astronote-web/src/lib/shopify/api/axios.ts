@@ -29,13 +29,17 @@ shopifyApi.interceptors.request.use(
 
     // Check if this is a public endpoint (unsubscribe, webhooks, etc.)
     // Public endpoints should NOT require tenant headers
-    const isPublicEndpoint = 
-      config.url?.includes('/unsubscribe/') ||
-      config.url?.includes('/webhooks/') ||
-      config.url?.includes('/public/') ||
-      config.url?.includes('/opt-in') ||
-      config.url?.includes('/r/') ||
-      config.url?.includes('/auth/'); // Auth endpoints handle their own auth
+    const url = config.url || '';
+    const isProtectedAuth =
+      url.includes('/auth/verify') || url.includes('/auth/refresh');
+    const isPublicAuth = url.includes('/auth/') && !isProtectedAuth;
+    const isPublicEndpoint =
+      url.includes('/unsubscribe/') ||
+      url.includes('/webhooks/') ||
+      url.includes('/public/') ||
+      url.includes('/opt-in') ||
+      url.includes('/r/') ||
+      isPublicAuth; // Only auth endpoints that do NOT require Bearer token
 
     // For public endpoints, skip tenant headers
     if (isPublicEndpoint) {
@@ -58,7 +62,8 @@ shopifyApi.interceptors.request.use(
     // Resolve shop domain using reliable source of truth
     const shopDomain = resolveShopDomain();
 
-    if (!shopDomain) {
+    // /auth/verify and /auth/refresh do not require shop domain header
+    if (!shopDomain && !isProtectedAuth) {
       // Shop domain is required - do not make the request
       const error = new Error('Missing shop domain. Please re-authenticate.');
       (error as any).code = 'MISSING_SHOP_DOMAIN';
@@ -82,8 +87,10 @@ shopifyApi.interceptors.request.use(
       return Promise.reject(error);
     }
 
-    // Always attach X-Shopify-Shop-Domain header for protected endpoints
-    config.headers['X-Shopify-Shop-Domain'] = shopDomain;
+    if (shopDomain) {
+      // Always attach X-Shopify-Shop-Domain header for protected endpoints
+      config.headers['X-Shopify-Shop-Domain'] = shopDomain;
+    }
 
     // Ensure Accept header is set (may be overridden by request options)
     if (!config.headers['Accept']) {
@@ -170,4 +177,3 @@ shopifyApi.interceptors.response.use(
 );
 
 export default shopifyApi;
-

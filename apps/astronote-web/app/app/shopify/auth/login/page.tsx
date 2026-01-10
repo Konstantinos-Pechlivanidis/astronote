@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { SHOPIFY_API_BASE_URL } from '@/src/lib/shopify/config';
 import { topLevelRedirect } from '@/src/lib/shopify/auth/redirect';
 import { getShopifySessionToken, isEmbeddedShopifyApp } from '@/src/lib/shopify/auth/session-token';
@@ -11,15 +11,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 /**
- * Shopify Login Page
+ * Shopify Login Page Content
  * - Embedded mode: exchange session token automatically
  * - Standalone mode: show shop domain input and trigger OAuth
  */
-export default function ShopifyLoginPage() {
+function ShopifyLoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [shopDomain, setShopDomain] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const queryError = searchParams.get('error');
+    if (queryError) {
+      setError(decodeURIComponent(queryError));
+    }
+
+    const queryShop = searchParams.get('shop') || searchParams.get('shop_domain');
+    if (queryShop && !shopDomain) {
+      setShopDomain(queryShop);
+    }
+  }, [searchParams, shopDomain]);
 
   // Auto-authenticate if in embedded mode
   useEffect(() => {
@@ -139,3 +152,38 @@ export default function ShopifyLoginPage() {
   );
 }
 
+/**
+ * Shopify Login Page
+ * Wrapped in Suspense for useSearchParams()
+ */
+export default function ShopifyLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+          <div className="w-full max-w-md">
+            <RetailCard className="p-6 sm:p-8 lg:p-10">
+              <div className="flex flex-col items-center space-y-4 text-center">
+                <div className="flex items-center justify-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-accent sm:h-20 sm:w-20">
+                    <span className="text-2xl font-bold text-white">A</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">
+                    Shopify Login
+                  </h1>
+                  <p className="text-sm text-text-secondary sm:text-base">
+                    Loading...
+                  </p>
+                </div>
+              </div>
+            </RetailCard>
+          </div>
+        </div>
+      }
+    >
+      <ShopifyLoginPageContent />
+    </Suspense>
+  );
+}

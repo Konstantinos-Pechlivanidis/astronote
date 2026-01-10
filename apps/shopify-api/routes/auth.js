@@ -413,7 +413,7 @@ r.get('/callback', async (req, res, _next) => {
     const webAppUrl =
       process.env.WEB_APP_URL ||
       'https://astronote-shopify-frontend.onrender.com';
-    const redirectUrl = `${webAppUrl}/shopify/auth/callback?token=${token}`;
+    const redirectUrl = `${webAppUrl}/shopify/auth/callback?token=${token}&shop=${encodeURIComponent(store.shopDomain)}`;
 
     res.redirect(redirectUrl);
   } catch (error) {
@@ -445,7 +445,7 @@ r.get('/callback', async (req, res, _next) => {
       process.env.WEB_APP_URL ||
       'https://astronote-shopify-frontend.onrender.com';
     res.redirect(
-      `${webAppUrl}/shopify/login?error=${encodeURIComponent(userMessage)}`,
+      `${webAppUrl}/app/shopify/auth/login?error=${encodeURIComponent(userMessage)}`,
     );
   }
 });

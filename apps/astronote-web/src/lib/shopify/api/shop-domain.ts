@@ -21,8 +21,11 @@ function decodeJWT(token: string): any | null {
     if (tokenParts.length !== 3) {
       return null;
     }
-    const payload = JSON.parse(atob(tokenParts[1]));
-    return payload;
+    const payload = tokenParts[1]
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(tokenParts[1].length / 4) * 4, '=');
+    return JSON.parse(atob(payload));
   } catch (error) {
     return null;
   }
@@ -259,4 +262,3 @@ export function getShopInfo(): ShopInfo | null {
 export function hasShopDomain(): boolean {
   return resolveShopDomain() !== null;
 }
-

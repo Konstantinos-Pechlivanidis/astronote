@@ -21,24 +21,12 @@ function ShopifyAuthCallbackRedirect() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const token = searchParams.get('token');
-    const error = searchParams.get('error');
+    const params = new URLSearchParams(searchParams);
+    const hasParams = params.toString().length > 0;
 
-    // Build query string with all params (preserve any additional params)
-    const params = new URLSearchParams();
-
-    if (token) {
-      params.set('token', token);
-    }
-
-    if (error) {
-      params.set('error', error);
-    }
-
-    // If we have token or error, redirect to the actual handler
-    if (token || error) {
-      const queryString = params.toString();
-      router.push(`/app/shopify/auth/callback?${queryString}`);
+    // If we have params, redirect to the actual handler
+    if (hasParams) {
+      router.push(`/app/shopify/auth/callback?${params.toString()}`);
     } else {
       // No token or error - redirect to login
       router.push('/app/shopify/auth/login');
@@ -81,4 +69,3 @@ export default function ShopifyAuthCallbackRedirectPage() {
     </Suspense>
   );
 }
-

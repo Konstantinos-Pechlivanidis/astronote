@@ -17,6 +17,22 @@ function ShopifyAuthCallbackContent() {
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [error, setError] = useState<string | null>(null);
 
+  const decodeJwtPayload = (jwtToken: string) => {
+    try {
+      const tokenParts = jwtToken.split('.');
+      if (tokenParts.length !== 3) {
+        return null;
+      }
+      const payload = tokenParts[1]
+        .replace(/-/g, '+')
+        .replace(/_/g, '/')
+        .padEnd(Math.ceil(tokenParts[1].length / 4) * 4, '=');
+      return JSON.parse(atob(payload));
+    } catch {
+      return null;
+    }
+  };
+
   useEffect(() => {
     const handleCallback = async () => {
       try {
@@ -52,18 +68,14 @@ function ShopifyAuthCallbackContent() {
 
         // Priority 1: Decode token to get shopDomain (fast, no API call)
         try {
-          const tokenParts = token.split('.');
-          if (tokenParts.length === 3) {
-            const payload = JSON.parse(atob(tokenParts[1]));
-            // Extract store info from token payload
-            if (payload.shopDomain) {
-              storeInfo = {
-                id: payload.storeId,
-                shopDomain: payload.shopDomain,
-              };
-              // Save basic store info from token IMMEDIATELY (ensures shopDomain is always stored)
-              localStorage.setItem('shopify_store', JSON.stringify(storeInfo));
-            }
+          const payload = decodeJwtPayload(token);
+          if (payload?.shopDomain) {
+            storeInfo = {
+              id: payload.storeId,
+              shopDomain: payload.shopDomain,
+            };
+            // Save basic store info from token IMMEDIATELY (ensures shopDomain is always stored)
+            localStorage.setItem('shopify_store', JSON.stringify(storeInfo));
           }
         } catch (decodeError) {
           if (process.env.NODE_ENV === 'development') {
@@ -75,7 +87,7 @@ function ShopifyAuthCallbackContent() {
         // Priority 2: If token decode failed, try URL query param (for redirect flows)
         if (!storeInfo || !storeInfo.shopDomain) {
           const urlParams = new URLSearchParams(window.location.search);
-          const queryShop = urlParams.get('shop');
+          const queryShop = urlParams.get('shop') || urlParams.get('shop_domain');
 
           if (queryShop) {
             // Normalize shop domain
@@ -282,4 +294,3 @@ export default function ShopifyAuthCallbackPage() {
     </Suspense>
   );
 }
-
