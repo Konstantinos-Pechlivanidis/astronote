@@ -1,11 +1,22 @@
 import prisma from '../services/prisma.js';
 import { logger } from '../utils/logger.js';
+import { ensureDefaultTemplates } from '../services/templates.js';
 
 /**
  * Seed professional SMS templates with statistics
  * Templates support: {{first_name}}, {{last_name}}, {{discount_code}}
+ * 
+ * NOTE: This script is DEPRECATED. Templates are now tenant-scoped.
+ * Use ensureDefaultTemplates(shopId, eshopType) instead for tenant-scoped seeding.
+ * 
+ * This script can be used for testing/development with a specific shopId.
+ * 
+ * Usage:
+ *   SHOP_ID=your-shop-id ESHOP_TYPE=fashion node apps/shopify-api/scripts/seed-templates.js
  */
 
+// Legacy template data (for backward compatibility)
+// These are now managed via ensureDefaultTemplates in services/templates.js
 const templates = [
   // Welcome & Onboarding Templates
   {
@@ -222,53 +233,105 @@ const templates = [
   },
 ];
 
-async function seedTemplates() {
+/**
+ * Idempotent template seeding for a specific shop
+ * Uses ensureDefaultTemplates which is the proper tenant-scoped seeding method
+ * 
+ * @param {string} shopId - Shop ID (required)
+ * @param {string} eshopType - eShop type (required, e.g., 'fashion', 'beauty', 'electronics')
+ * @returns {Promise<Object>} Seeding results { created, updated, skipped, total }
+ */
+async function seedTemplatesForShop(shopId, eshopType) {
+  if (!shopId || typeof shopId !== 'string' || shopId.trim().length === 0) {
+    throw new Error('shopId is required and must be a non-empty string');
+  }
+
+  if (!eshopType || typeof eshopType !== 'string' || eshopType.trim().length === 0) {
+    throw new Error('eshopType is required and must be a non-empty string (e.g., fashion, beauty, electronics)');
+  }
+
+  logger.info('Starting idempotent template seeding for shop', { shopId, eshopType });
+
   try {
-    logger.info('Starting template seeding...');
-
-    // Delete all existing templates
-    const deleteCount = await prisma.template.deleteMany({});
-    logger.info(`Deleted ${deleteCount.count} existing templates`);
-
-    // Create new templates
-    const createdTemplates = await prisma.template.createMany({
-      data: templates.map(t => ({
-        ...t,
-        isPublic: true,
-        isSystemDefault: true,
-      })),
+    // Verify shop exists
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { id: true, eshopType: true },
     });
 
-    logger.info(`Created ${createdTemplates.count} new templates`);
+    if (!shop) {
+      throw new Error(`Shop with ID ${shopId} not found`);
+    }
 
-    // Verify templates were created
-    const count = await prisma.template.count();
-    logger.info(`Total templates in database: ${count}`);
+    // Use the idempotent ensureDefaultTemplates function
+    const result = await ensureDefaultTemplates(shopId, eshopType);
 
-    logger.info('Template seeding completed successfully!');
+    logger.info('Template seeding completed', {
+      shopId,
+      eshopType,
+      created: result.created,
+      updated: result.updated,
+      skipped: result.skipped,
+      total: result.total,
+    });
+
+    return result;
   } catch (error) {
-    logger.error('Error seeding templates:', {
+    logger.error('Error seeding templates', {
+      shopId,
+      eshopType,
       error: error.message,
       stack: error.stack,
     });
     throw error;
-  } finally {
-    await prisma.$disconnect();
   }
+}
+
+/**
+ * Legacy function (deprecated - use seedTemplatesForShop instead)
+ * This function is kept for backward compatibility but should not be used.
+ */
+async function seedTemplates() {
+  logger.warn('Legacy seedTemplates() called. This function is deprecated.');
+  logger.warn('Templates are now tenant-scoped. Use seedTemplatesForShop(shopId, eshopType) instead.');
+  logger.warn('Or use ensureDefaultTemplates(shopId, eshopType) from services/templates.js');
+
+  const shopId = process.env.SHOP_ID;
+  const eshopType = process.env.ESHOP_TYPE || 'generic';
+
+  if (!shopId) {
+    throw new Error(
+      'SHOP_ID environment variable is required. ' +
+      'Templates are tenant-scoped and require a shopId. ' +
+      'Usage: SHOP_ID=your-shop-id ESHOP_TYPE=fashion node apps/shopify-api/scripts/seed-templates.js'
+    );
+  }
+
+  return seedTemplatesForShop(shopId, eshopType);
 }
 
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   seedTemplates()
-    .then(() => {
+    .then((result) => {
       console.log('✅ Templates seeded successfully');
+      if (result) {
+        console.log(`   Created: ${result.created}`);
+        console.log(`   Updated: ${result.updated}`);
+        console.log(`   Skipped: ${result.skipped}`);
+        console.log(`   Total: ${result.total}`);
+      }
       process.exit(0);
     })
     .catch((error) => {
-      console.error('❌ Error seeding templates:', error);
+      console.error('❌ Error seeding templates:', error.message);
+      if (error.stack) {
+        console.error(error.stack);
+      }
       process.exit(1);
     });
 }
 
+export { seedTemplatesForShop };
 export default seedTemplates;
 

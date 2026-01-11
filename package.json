@@ -74,6 +74,7 @@
     "audit:shopify:subscription-gating": "node scripts/audit-shopify-subscription-gating.mjs",
     "release:gate": "node scripts/audit-release-gate.mjs && npm run stamp:release:gate",
     "stamp:release:gate": "node scripts/stamp-release-gate.mjs",
+    "shopify:gate": "node scripts/shopify-gate.mjs",
     "install:all": "npm install"
   },
   "devDependencies": {

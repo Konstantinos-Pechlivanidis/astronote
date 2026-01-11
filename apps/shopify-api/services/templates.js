@@ -18,7 +18,7 @@ export async function listTemplates(shopId, filters = {}) {
     eshopType, // Required: eShop type filter
     category,
     search,
-    language = 'en', // Default to English
+    // language is always 'en' for Shopify (English-only requirement)
     page = 1,
     pageSize = 50,
     offset, // Backward compatibility
@@ -27,59 +27,62 @@ export async function listTemplates(shopId, filters = {}) {
 
   logger.info('Listing templates', { shopId, filters });
 
-  // Build where clause (tenant-scoped and eShop type-scoped)
-  const where = {
-    shopId, // Tenant scoping (aligned with Retail: ownerId concept)
-  };
-
-  // eShop type is required (aligned with Shopify-specific requirement)
-  if (eshopType) {
-    where.eshopType = eshopType;
-  } else {
+  // Determine eShop type filter
+  let effectiveEshopType = eshopType;
+  if (!effectiveEshopType) {
     // If eshopType not provided, try to get from shop settings
     const shop = await prisma.shop.findUnique({
       where: { id: shopId },
       select: { eshopType: true },
     });
     if (shop?.eshopType) {
-      where.eshopType = shop.eshopType;
+      effectiveEshopType = shop.eshopType;
     } else {
       // Default to generic if shop has no eshopType set
-      where.eshopType = 'generic';
+      effectiveEshopType = 'generic';
     }
   }
 
-  // Language filter (ENGLISH-ONLY for Shopify)
-  // Shopify templates are English-only, so always filter by 'en' or ignore language field
-  if (language) {
-    // Only accept 'en' for Shopify (English-only requirement)
-    if (language !== 'en') {
-      logger.warn('Non-English language requested for Shopify templates, defaulting to English', {
-        shopId,
-        requestedLanguage: language,
-      });
-    }
-    where.language = 'en'; // Force English-only
-  } else {
-    // Default to English if language not specified
-    where.language = 'en';
-  }
-
-  // Category filter
-  if (category) {
-    where.category = category;
-  }
-
-  // Search filter (supports both name and text fields)
-  if (search) {
-    where.OR = [
-      { name: { contains: search, mode: 'insensitive' } },
-      { title: { contains: search, mode: 'insensitive' } }, // Backward compatibility
-      { text: { contains: search, mode: 'insensitive' } },
-      { content: { contains: search, mode: 'insensitive' } }, // Backward compatibility
-      { tags: { has: search } },
-    ];
-  }
+  // Build where clause to include BOTH global templates AND shop-specific templates
+  // Global templates: shopId IS NULL AND isPublic = true
+  // Shop-specific templates: shopId = currentShopId
+  // Also always include generic templates regardless of shop's eshopType
+  const where = {
+    AND: [
+      // Template visibility: global (shopId = NULL, isPublic = true) OR shop-specific (shopId = currentShopId)
+      {
+        OR: [
+          { shopId: null, isPublic: true },
+          { shopId },
+        ],
+      },
+      // eShop type: show templates for shop's type OR generic (generic templates visible to all)
+      {
+        OR: [
+          { eshopType: effectiveEshopType },
+          { eshopType: 'generic' },
+        ],
+      },
+      // Language filter (ENGLISH-ONLY for Shopify)
+      { language: 'en' },
+      // Category filter (if provided)
+      ...(category ? [{ category }] : []),
+      // Search filter (if provided)
+      ...(search
+        ? [
+          {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { title: { contains: search, mode: 'insensitive' } },
+              { text: { contains: search, mode: 'insensitive' } },
+              { content: { contains: search, mode: 'insensitive' } },
+              { tags: { has: search } },
+            ],
+          },
+        ]
+        : []),
+    ],
+  };
 
   // Support both page/pageSize (Retail-aligned) and offset/limit (backward compatibility)
   const pageNum = page || (offset ? Math.floor(offset / (limit || 50)) + 1 : 1);
@@ -117,7 +120,23 @@ export async function listTemplates(shopId, filters = {}) {
     }),
     prisma.template.count({ where }),
     prisma.template.findMany({
-      where: { shopId, eshopType: where.eshopType },
+      where: {
+        AND: [
+          {
+            OR: [
+              { shopId: null, isPublic: true },
+              { shopId },
+            ],
+          },
+          {
+            OR: [
+              { eshopType: effectiveEshopType },
+              { eshopType: 'generic' },
+            ],
+          },
+          { language: 'en' },
+        ],
+      },
       select: { category: true },
       distinct: ['category'],
     }),
@@ -164,7 +183,11 @@ export async function getTemplateById(shopId, templateId) {
   const template = await prisma.template.findFirst({
     where: {
       id: templateId,
-      shopId, // Tenant scoping (aligned with Retail: ownerId concept)
+      // Include both global templates (shopId = NULL) and shop-specific templates
+      OR: [
+        { shopId: null, isPublic: true },
+        { shopId },
+      ],
     },
     select: {
       id: true,
@@ -338,7 +361,7 @@ export async function getPopularTemplates(limit = 10) {
  * Default templates per eShop type
  * Aligned with Retail template structure but adapted for Shopify eShop types
  */
-const DEFAULT_TEMPLATES = {
+export const DEFAULT_TEMPLATES = {
   fashion: [
     {
       templateKey: 'welcome_new_customer',

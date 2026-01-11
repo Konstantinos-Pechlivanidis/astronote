@@ -703,7 +703,7 @@ model CreditReservation {
 
 model Template {
   id                   String          @id @default(cuid())
-  shopId               String          // Tenant scoping (aligned with Retail: ownerId concept, but per-tenant)
+  shopId               String?         // NULL for global/public templates, set for shop-specific templates
   eshopType            EshopType       // eShop vertical/category (aligned with Shopify-specific requirement)
   templateKey          String          // Stable identity for default templates (e.g., "welcome_new_customer")
   title                String          // Legacy field (deprecated, use name)
@@ -716,7 +716,7 @@ model Template {
   suggestedMetrics     String?         @db.VarChar(500) // Suggested KPIs to watch - aligned with Retail
   previewImage         String?
   tags                 String[]        @default([])
-  isPublic             Boolean         @default(false) // Changed: templates are now tenant-scoped, not public
+  isPublic             Boolean         @default(true) // true for global templates (shopId = NULL), can be false for private shop templates
   isSystemDefault      Boolean         @default(false) // Flag for default templates
   // Statistics fields
   conversionRate       Float? // Conversion rate percentage (e.g., 33.5 for 33.5%)
@@ -726,14 +726,15 @@ model Template {
   customerRetention    Float? // Customer retention improvement percentage
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
-  shop                 Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop                 Shop?           @relation(fields: [shopId], references: [id], onDelete: SetNull)
   usage                TemplateUsage[]
 
-  @@unique([shopId, eshopType, templateKey]) // Prevent duplicates per tenant + eShop type + template key
+  @@unique([shopId, eshopType, templateKey]) // Prevent duplicates per tenant + eShop type + template key (shopId can be NULL)
   @@index([shopId, eshopType]) // For filtering by tenant and eShop type
   @@index([eshopType]) // For filtering by eShop type across tenants (if needed)
   @@index([language]) // For language filtering - aligned with Retail
   @@index([category]) // For category filtering
+  @@index([isPublic]) // For filtering global/public templates
 }
 
 model QueueJob {
