@@ -56,7 +56,7 @@ function UnsubscribeContent() {
         const response = await axios.get<{ success: boolean; data: UnsubscribeInfo }>(
           `${SHOPIFY_API_BASE_URL}/unsubscribe/${token}`,
         );
-        
+
         if (response.data.success && response.data.data) {
           setInfo(response.data.data);
         } else {
@@ -65,7 +65,7 @@ function UnsubscribeContent() {
       } catch (err: any) {
         const status = err.response?.status;
         const errorData = err.response?.data;
-        
+
         if (status === 400 || errorData?.code === 'INVALID_TOKEN' || errorData?.code === 'VALIDATION_ERROR') {
           setError('This unsubscribe link is no longer valid. Please contact the store or try again from a more recent message.');
         } else {
@@ -183,7 +183,7 @@ function UnsubscribeContent() {
           {/* Benefits section - what they lose */}
           <div className="mb-6 text-left bg-surface-light rounded-lg p-4 border border-border">
             <h3 className="text-sm font-semibold text-text-primary mb-2">
-              You'll miss out on:
+              You&apos;ll miss out on:
             </h3>
             <ul className="space-y-1.5 text-xs text-text-secondary">
               {benefits.map((benefit, idx) => (

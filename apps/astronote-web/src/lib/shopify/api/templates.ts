@@ -59,16 +59,16 @@ export const templatesApi = {
 
     // eShop type is required (or will be derived from shop settings on backend)
     if (params?.eshopType) queryParams.eshopType = params.eshopType;
-    
+
     // Support both page/pageSize (Retail-aligned) and offset/limit (backward compatibility)
     if (params?.page) queryParams.page = params.page;
     if (params?.pageSize) queryParams.pageSize = params.pageSize;
     if (params?.limit) queryParams.limit = params.limit;
     if (params?.offset !== undefined) queryParams.offset = params.offset;
-    
+
     if (params?.category) queryParams.category = params.category;
     if (params?.search) queryParams.search = params.search;
-    
+
     // Language is forced to 'en' (English-only for Shopify)
     queryParams.language = 'en';
 

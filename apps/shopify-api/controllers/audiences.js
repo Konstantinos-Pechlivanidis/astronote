@@ -86,23 +86,31 @@ export async function getAudiences(req, res, next) {
       },
     ];
 
-    // Add custom segments
-    const customAudiences = segments.map(segment => ({
-      id: `segment:${segment.id}`,
-      name: segment.name,
-      description: `Custom segment: ${segment.name}`,
-      type: 'segment',
-      contactCount: segment._count.memberships,
-      isAvailable: segment._count.memberships > 0,
-      segmentId: segment.id,
-    }));
+    // Add custom segments (sanitize: ensure segment.id is non-empty)
+    const customAudiences = segments
+      .filter(segment => {
+        const segmentId = String(segment?.id ?? '').trim();
+        return segmentId !== '';
+      })
+      .map(segment => {
+        const segmentId = String(segment.id).trim();
+        return {
+          id: `segment:${segmentId}`,
+          name: segment.name || 'Unnamed Segment',
+          description: `Custom segment: ${segment.name || 'Unnamed'}`,
+          type: 'segment',
+          contactCount: segment._count.memberships,
+          isAvailable: segment._count.memberships > 0,
+          segmentId,
+        };
+      });
 
     const allAudiences = [...audiences, ...customAudiences];
 
     logger.info('Audiences retrieved', {
       shopId,
       totalAudiences: allAudiences.length,
-      totalContacts: allCount,
+      allCount,
     });
 
     return sendSuccess(res, {

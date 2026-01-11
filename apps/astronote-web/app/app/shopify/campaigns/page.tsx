@@ -20,6 +20,9 @@ import { Megaphone, Plus, Search, Send, Trash2, ChevronLeft, ChevronRight } from
 import { format } from 'date-fns';
 import type { Campaign } from '@/src/lib/shopify/api/campaigns';
 
+// Sentinel value for "All" filter (must be non-empty for Radix Select)
+const UI_ALL = '__all__';
+
 /**
  * Stats Cards Component
  */
@@ -94,7 +97,7 @@ function CampaignsToolbar({
             <SelectValue placeholder="All Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Status</SelectItem>
+            <SelectItem value={UI_ALL}>All Status</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="scheduled">Scheduled</SelectItem>
             <SelectItem value="sending">Sending</SelectItem>
@@ -117,7 +120,7 @@ export default function CampaignsPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>(UI_ALL);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [sendTarget, setSendTarget] = useState<{ id: string; name: string } | null>(null);
   const pageSize = 20;
@@ -125,13 +128,12 @@ export default function CampaignsPage() {
   // Fetch campaigns
   const {
     data: campaignsData,
-    isLoading: campaignsLoading,
     error: campaignsError,
     refetch: refetchCampaigns,
   } = useCampaigns({
     page,
     pageSize,
-    status: (statusFilter || undefined) as Campaign['status'] | undefined,
+    status: (statusFilter === UI_ALL ? undefined : statusFilter) as Campaign['status'] | undefined,
     search: search || undefined,
     sortBy: 'createdAt',
     sortOrder: 'desc',
@@ -332,40 +334,43 @@ export default function CampaignsPage() {
 
         {/* Toolbar */}
         <div>
-        <CampaignsToolbar
-          search={search}
-          onSearchChange={setSearch}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-        />
-      </div>
+          <CampaignsToolbar
+            search={search}
+            onSearchChange={setSearch}
+            statusFilter={statusFilter}
+            onStatusFilterChange={(value) => {
+            // Store sentinel value in state (UI needs non-empty value)
+              setStatusFilter(value);
+            }}
+          />
+        </div>
 
         {/* Campaigns Table */}
         <div>
           <RetailDataTable
-          columns={columns}
-          data={campaigns}
-          keyExtractor={(campaign) => campaign.id}
-          emptyTitle={search || statusFilter ? 'No campaigns found' : 'No campaigns yet'}
-          emptyDescription={
-            search || statusFilter
-              ? 'Try adjusting your filters'
-              : 'Create your first campaign to start sending SMS messages to your customers.'
-          }
-          emptyIcon={Megaphone}
-          emptyAction={
-            !search && !statusFilter && (
-              <Link href="/app/shopify/campaigns/new">
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
+            columns={columns}
+            data={campaigns}
+            keyExtractor={(campaign) => campaign.id}
+            emptyTitle={search || statusFilter ? 'No campaigns found' : 'No campaigns yet'}
+            emptyDescription={
+              search || (statusFilter !== UI_ALL && statusFilter)
+                ? 'Try adjusting your filters'
+                : 'Create your first campaign to start sending SMS messages to your customers.'
+            }
+            emptyIcon={Megaphone}
+            emptyAction={
+              !search && !statusFilter && (
+                <Link href="/app/shopify/campaigns/new">
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
                   Create Campaign
-                </Button>
-              </Link>
-            )
-          }
-          error={campaignsError ? 'Failed to load campaigns' : undefined}
-          onRetry={refetchCampaigns}
-          mobileCardRender={mobileCardRender}
+                  </Button>
+                </Link>
+              )
+            }
+            error={campaignsError ? 'Failed to load campaigns' : undefined}
+            onRetry={refetchCampaigns}
+            mobileCardRender={mobileCardRender}
             onRowClick={(campaign) => router.push(`/app/shopify/campaigns/${campaign.id}`)}
           />
         </div>
@@ -373,45 +378,45 @@ export default function CampaignsPage() {
         {/* Pagination */}
         {campaigns.length > 0 && (
           <div className="flex items-center justify-between">
-          <div className="text-sm text-text-secondary">
+            <div className="text-sm text-text-secondary">
             Showing {(pagination.page - 1) * pagination.pageSize + 1} to{' '}
-            {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
-            {pagination.total} campaigns
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={!pagination.hasPrevPage}
-              variant="outline"
-              size="sm"
-            >
-              <ChevronLeft className="mr-1 h-4 w-4" />
+              {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
+              {pagination.total} campaigns
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={!pagination.hasPrevPage}
+                variant="outline"
+                size="sm"
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
               Previous
-            </Button>
-            <Button
-              onClick={() => setPage((p) => p + 1)}
-              disabled={!pagination.hasNextPage}
-              variant="outline"
-              size="sm"
-            >
+              </Button>
+              <Button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!pagination.hasNextPage}
+                variant="outline"
+                size="sm"
+              >
               Next
-              <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Delete Confirmation Dialog */}
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
-        title="Delete Campaign"
-        message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        variant="danger"
-      />
+        {/* Delete Confirmation Dialog */}
+        <ConfirmDialog
+          open={!!deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={handleDelete}
+          title="Delete Campaign"
+          message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          variant="danger"
+        />
 
         {/* Send Confirmation Dialog */}
         <ConfirmDialog

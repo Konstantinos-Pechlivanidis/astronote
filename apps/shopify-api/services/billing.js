@@ -249,11 +249,11 @@ export async function createPurchaseSession(
     currency = shop.currency.toUpperCase();
   }
 
-    const priceCents =
+  const priceCents =
       currency === 'USD' && Number.isFinite(pkg.priceCentsUsd)
         ? pkg.priceCentsUsd
         : pkg.priceCents;
-    const price = priceCents / 100; // Convert from cents
+  const price = priceCents / 100; // Convert from cents
   const stripePriceId = getStripePriceId(pkg.name, currency, pkg);
 
   // Validate Stripe price ID

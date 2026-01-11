@@ -440,7 +440,7 @@ export async function getHistory(req, res, next) {
 export async function getBillingHistory(req, res, next) {
   try {
     const storeId = getStoreId(req);
-    
+
     // Validate query params
     const allowedStatuses = ['pending', 'completed', 'failed', 'refunded'];
     if (req.query.status && !allowedStatuses.includes(req.query.status)) {

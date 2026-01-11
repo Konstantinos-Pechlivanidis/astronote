@@ -89,7 +89,7 @@ export async function getSettings(req, res, next) {
       senderName: settings.senderName || null,
       timezone: settings.timezone || 'UTC',
       currency: settings.currency || shop.currency || 'EUR',
-      baseUrl: baseUrl, // Expose baseUrl (from DB or env fallback)
+      baseUrl, // Expose baseUrl (from DB or env fallback)
       // Additional data
       recentTransactions: shop.billingTransactions,
       usageGuide,
@@ -325,7 +325,7 @@ export async function updateSettings(req, res, next) {
         senderName: updatedSettings.senderName || null,
         timezone: updatedSettings.timezone || 'UTC',
         currency: updatedSettings.currency || 'EUR',
-        baseUrl: baseUrl, // Return baseUrl (from DB or env fallback)
+        baseUrl, // Return baseUrl (from DB or env fallback)
         updatedAt: updatedSettings.updatedAt,
       },
       'Settings updated successfully',

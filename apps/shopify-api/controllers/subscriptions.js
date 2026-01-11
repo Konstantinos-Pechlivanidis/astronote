@@ -579,7 +579,7 @@ export async function verifySession(req, res, next) {
  * GET /api/subscriptions/portal
  * Get Stripe Customer Portal URL
  */
-export async function getPortal(req, res, next) {
+export async function getPortal(req, res, _next) {
   const requestId =
     req.id ||
     req.headers['x-request-id'] ||

@@ -90,7 +90,7 @@ function BillingPageContent() {
   const currency = summary?.credits?.currency || balanceData?.currency || billingCurrency || selectedCurrency || 'EUR';
   const subscriptionRaw = summary?.subscription || subscriptionData || { status: 'inactive', planType: null, interval: null, active: false };
   // Handle subscription type - can be string or object
-  const subscription = typeof subscriptionRaw === 'string' 
+  const subscription = typeof subscriptionRaw === 'string'
     ? { status: subscriptionRaw, planType: null, interval: null, active: subscriptionRaw === 'active' }
     : subscriptionRaw;
   const isSubscriptionActive = (subscription as any).status === 'active' || (subscription as any).active === true;
@@ -99,7 +99,6 @@ function BillingPageContent() {
   const subscriptionStatus = (subscription as any).status || ((subscription as any).active ? 'active' : 'inactive');
   const normalizedStatus = subscriptionStatus === 'canceled' ? 'cancelled' : subscriptionStatus;
   const statusIsWarning = ['trialing', 'past_due', 'unpaid', 'incomplete', 'paused'].includes(normalizedStatus);
-  const statusIsDanger = ['cancelled', 'inactive'].includes(normalizedStatus);
   const statusVariant = normalizedStatus === 'active' ? 'success' : statusIsWarning ? 'warning' : 'danger';
   const statusLabel = normalizedStatus === 'active'
     ? 'Active'

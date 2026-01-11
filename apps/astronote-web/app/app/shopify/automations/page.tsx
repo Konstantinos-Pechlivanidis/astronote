@@ -36,11 +36,14 @@ import type {
   AutomationStatus,
 } from '@/src/lib/shopify/api/automations';
 
+// Sentinel value for "All" filter (must be non-empty for Radix Select)
+const UI_ALL = '__all__';
+
 /**
  * Automations List Page
  */
 export default function AutomationsPage() {
-  const [statusFilter, setStatusFilter] = useState<AutomationStatus | ''>('');
+  const [statusFilter, setStatusFilter] = useState<AutomationStatus | typeof UI_ALL>(UI_ALL);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
     name: string;
@@ -64,7 +67,7 @@ export default function AutomationsPage() {
   // Filter automations by status
   const filteredAutomations = useMemo(() => {
     if (!automations) return [];
-    if (!statusFilter) return automations;
+    if (statusFilter === UI_ALL) return automations;
     return automations.filter(a => a.status === statusFilter);
   }, [automations, statusFilter]);
 
@@ -80,7 +83,7 @@ export default function AutomationsPage() {
 
   const handleToggleStatus = async (
     id: string,
-    currentStatus: AutomationStatus
+    currentStatus: AutomationStatus,
   ) => {
     try {
       const newStatus: AutomationStatus =
@@ -182,14 +185,14 @@ export default function AutomationsPage() {
               <Select
                 value={statusFilter}
                 onValueChange={value =>
-                  setStatusFilter(value as AutomationStatus | '')
+                  setStatusFilter(value as AutomationStatus | typeof UI_ALL)
                 }
               >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Statuses</SelectItem>
+                  <SelectItem value={UI_ALL}>All Statuses</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="paused">Paused</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
@@ -239,155 +242,155 @@ export default function AutomationsPage() {
         {!automationsLoading &&
           !automationsError &&
           filteredAutomations.length === 0 && (
-            <EmptyState
-              icon={Zap}
-              title="No automations found"
-              description={
-                statusFilter
-                  ? 'Try adjusting your filter criteria.'
-                  : 'Create your first automation to get started with automated SMS workflows.'
-              }
-              action={
-                !statusFilter ? (
-                  <Link href="/app/shopify/automations/new">
-                    <Button>
-                      <Zap className="mr-2 h-4 w-4" />
+          <EmptyState
+            icon={Zap}
+            title="No automations found"
+            description={
+              statusFilter
+                ? 'Try adjusting your filter criteria.'
+                : 'Create your first automation to get started with automated SMS workflows.'
+            }
+            action={
+              statusFilter === UI_ALL ? (
+                <Link href="/app/shopify/automations/new">
+                  <Button>
+                    <Zap className="mr-2 h-4 w-4" />
                       Create Automation
-                    </Button>
-                  </Link>
-                ) : (
-                  <Button variant="outline" onClick={() => setStatusFilter('')}>
-                    Clear Filter
                   </Button>
-                )
-              }
-            />
-          )}
+                </Link>
+              ) : (
+                <Button variant="outline" onClick={() => setStatusFilter(UI_ALL)}>
+                    Clear Filter
+                </Button>
+              )
+            }
+          />
+        )}
 
         {/* Automations Grid */}
         {!automationsLoading &&
           !automationsError &&
           filteredAutomations.length > 0 && (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredAutomations.map(automation => {
-                const comingSoon = isComingSoon(automation);
-                return (
-                  <RetailCard
-                    key={automation.id}
-                    className="p-6 hover:shadow-lg transition-shadow relative"
-                  >
-                    {comingSoon && (
-                      <div className="absolute top-4 right-4 z-10">
-                        <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 font-medium">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredAutomations.map(automation => {
+              const comingSoon = isComingSoon(automation);
+              return (
+                <RetailCard
+                  key={automation.id}
+                  className="p-6 hover:shadow-lg transition-shadow relative"
+                >
+                  {comingSoon && (
+                    <div className="absolute top-4 right-4 z-10">
+                      <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 font-medium">
                           Coming Soon
-                        </span>
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    {/* Header */}
+                    <div className="flex items-start justify-between pr-20">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-semibold text-text-primary mb-2 line-clamp-2">
+                          {automation.name}
+                        </h3>
+                        <StatusBadge
+                          status={
+                            automation.status === 'active'
+                              ? 'success'
+                              : automation.status === 'paused'
+                                ? 'warning'
+                                : 'default'
+                          }
+                          label={automation.status}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Trigger */}
+                    {automation.trigger && (
+                      <div>
+                        <div className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wide">
+                            Trigger
+                        </div>
+                        <div className="text-sm text-text-primary capitalize">
+                          {automation.trigger.replace(/_/g, ' ')}
+                        </div>
                       </div>
                     )}
 
-                    <div className="space-y-4">
-                      {/* Header */}
-                      <div className="flex items-start justify-between pr-20">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-lg font-semibold text-text-primary mb-2 line-clamp-2">
-                            {automation.name}
-                          </h3>
-                          <StatusBadge
-                            status={
-                              automation.status === 'active'
-                                ? 'success'
-                                : automation.status === 'paused'
-                                  ? 'warning'
-                                  : 'default'
-                            }
-                            label={automation.status}
-                          />
+                    {/* Message Preview */}
+                    {automation.message && (
+                      <div>
+                        <div className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wide">
+                            Message
+                        </div>
+                        <div className="rounded-lg bg-surface-light border border-border p-3">
+                          <p className="text-sm text-text-primary line-clamp-3 whitespace-pre-wrap">
+                            {automation.message}
+                          </p>
                         </div>
                       </div>
+                    )}
 
-                      {/* Trigger */}
-                      {automation.trigger && (
-                        <div>
-                          <div className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wide">
-                            Trigger
-                          </div>
-                          <div className="text-sm text-text-primary capitalize">
-                            {automation.trigger.replace(/_/g, ' ')}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Message Preview */}
-                      {automation.message && (
-                        <div>
-                          <div className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wide">
-                            Message
-                          </div>
-                          <div className="rounded-lg bg-surface-light border border-border p-3">
-                            <p className="text-sm text-text-primary line-clamp-3 whitespace-pre-wrap">
-                              {automation.message}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-2 pt-4 border-t border-border">
-                        <Link
-                          href={`/app/shopify/automations/${automation.id}`}
-                          className="flex-1"
-                        >
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            disabled={comingSoon}
-                          >
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </Button>
-                        </Link>
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 pt-4 border-t border-border">
+                      <Link
+                        href={`/app/shopify/automations/${automation.id}`}
+                        className="flex-1"
+                      >
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() =>
-                            handleToggleStatus(automation.id, automation.status)
-                          }
-                          disabled={comingSoon || updateAutomation.isPending}
-                          className="flex-1"
+                          className="w-full"
+                          disabled={comingSoon}
                         >
-                          {automation.status === 'active' ? (
-                            <>
-                              <Pause className="mr-2 h-4 w-4" />
+                          <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handleToggleStatus(automation.id, automation.status)
+                        }
+                        disabled={comingSoon || updateAutomation.isPending}
+                        className="flex-1"
+                      >
+                        {automation.status === 'active' ? (
+                          <>
+                            <Pause className="mr-2 h-4 w-4" />
                               Pause
-                            </>
-                          ) : (
-                            <>
-                              <Play className="mr-2 h-4 w-4" />
+                          </>
+                        ) : (
+                          <>
+                            <Play className="mr-2 h-4 w-4" />
                               Activate
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setDeleteTarget({
-                              id: automation.id,
-                              name: automation.name,
-                            })
-                          }
-                          disabled={comingSoon || deleteAutomation.isPending}
-                          className="text-red-400 hover:text-red-500"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setDeleteTarget({
+                            id: automation.id,
+                            name: automation.name,
+                          })
+                        }
+                        disabled={comingSoon || deleteAutomation.isPending}
+                        className="text-red-400 hover:text-red-500"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                  </RetailCard>
-                );
-              })}
-            </div>
-          )}
+                  </div>
+                </RetailCard>
+              );
+            })}
+          </div>
+        )}
 
         {/* Delete Confirmation Dialog */}
         <ConfirmDialog

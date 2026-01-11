@@ -104,53 +104,53 @@ export default function ShopifyDashboardPage() {
             description="Welcome to your Shopify SMS marketing dashboard"
           />
 
-        {/* Error Alert Card */}
-        <RetailCard variant="danger" className="mb-6 p-6">
-          <div className="flex items-start gap-4">
-            <AlertCircle className="mt-1 h-6 w-6 shrink-0 text-red-400" />
-            <div className="flex-1">
-              <h3 className="mb-2 text-lg font-semibold text-text-primary">
+          {/* Error Alert Card */}
+          <RetailCard variant="danger" className="mb-6 p-6">
+            <div className="flex items-start gap-4">
+              <AlertCircle className="mt-1 h-6 w-6 shrink-0 text-red-400" />
+              <div className="flex-1">
+                <h3 className="mb-2 text-lg font-semibold text-text-primary">
                 Error Loading Dashboard Data
-              </h3>
-              <p className="mb-4 text-sm text-text-secondary">
-                {error instanceof Error
-                  ? error.message
-                  : 'Failed to load dashboard KPIs. Please try again.'}
-              </p>
-              <Button onClick={() => refetch()} variant="outline" size="sm">
+                </h3>
+                <p className="mb-4 text-sm text-text-secondary">
+                  {error instanceof Error
+                    ? error.message
+                    : 'Failed to load dashboard KPIs. Please try again.'}
+                </p>
+                <Button onClick={() => refetch()} variant="outline" size="sm">
                 Retry
-              </Button>
+                </Button>
+              </div>
             </div>
-          </div>
-        </RetailCard>
+          </RetailCard>
 
-        {/* Show KPI cards even on error (with zeros) - don't block entire page */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
-          <KPICard
-            title="SMS Credits"
-            value={0}
-            subtitle="Available credits"
-            icon={CreditCard}
-          />
-          <KPICard
-            title="Total Campaigns"
-            value={0}
-            subtitle="All time"
-            icon={MessageSquare}
-          />
-          <KPICard
-            title="Total Contacts"
-            value={0}
-            subtitle="All contacts"
-            icon={Users}
-          />
-          <KPICard
-            title="Messages Sent"
-            value={0}
-            subtitle="All time"
-            icon={Send}
-          />
-        </div>
+          {/* Show KPI cards even on error (with zeros) - don't block entire page */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+            <KPICard
+              title="SMS Credits"
+              value={0}
+              subtitle="Available credits"
+              icon={CreditCard}
+            />
+            <KPICard
+              title="Total Campaigns"
+              value={0}
+              subtitle="All time"
+              icon={MessageSquare}
+            />
+            <KPICard
+              title="Total Contacts"
+              value={0}
+              subtitle="All contacts"
+              icon={Users}
+            />
+            <KPICard
+              title="Messages Sent"
+              value={0}
+              subtitle="All time"
+              icon={Send}
+            />
+          </div>
         </div>
       </RetailPageLayout>
     );
@@ -171,54 +171,54 @@ export default function ShopifyDashboardPage() {
           description="Welcome to your Shopify SMS marketing dashboard"
         />
 
-      {/* KPI Cards Grid - Responsive */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
-        <KPICard
-          title="SMS Credits"
-          value={credits}
-          subtitle="Available credits"
-          icon={CreditCard}
-        />
-        <KPICard
-          title="Total Campaigns"
-          value={totalCampaigns}
-          subtitle="All time"
-          icon={MessageSquare}
-        />
-        <KPICard
-          title="Total Contacts"
-          value={totalContacts}
-          subtitle="All contacts"
-          icon={Users}
-        />
-        <KPICard
-          title="Messages Sent"
-          value={totalMessagesSent}
-          subtitle="All time"
-          icon={Send}
-        />
-
-        {/* Optional: Active Automations (if > 0 or always show) */}
-        {activeAutomations !== undefined && (
+        {/* KPI Cards Grid - Responsive */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
           <KPICard
-            title="Active Automations"
-            value={activeAutomations}
-            subtitle="Currently active"
-            icon={Zap}
+            title="SMS Credits"
+            value={credits}
+            subtitle="Available credits"
+            icon={CreditCard}
           />
-        )}
-      </div>
+          <KPICard
+            title="Total Campaigns"
+            value={totalCampaigns}
+            subtitle="All time"
+            icon={MessageSquare}
+          />
+          <KPICard
+            title="Total Contacts"
+            value={totalContacts}
+            subtitle="All contacts"
+            icon={Users}
+          />
+          <KPICard
+            title="Messages Sent"
+            value={totalMessagesSent}
+            subtitle="All time"
+            icon={Send}
+          />
 
-      {/* Empty State Message (if all zeros) */}
-      {hasNoData && (
-        <RetailCard className="mt-6 p-6">
-          <div className="text-center py-8">
-            <p className="text-text-secondary">
+          {/* Optional: Active Automations (if > 0 or always show) */}
+          {activeAutomations !== undefined && (
+            <KPICard
+              title="Active Automations"
+              value={activeAutomations}
+              subtitle="Currently active"
+              icon={Zap}
+            />
+          )}
+        </div>
+
+        {/* Empty State Message (if all zeros) */}
+        {hasNoData && (
+          <RetailCard className="mt-6 p-6">
+            <div className="text-center py-8">
+              <p className="text-text-secondary">
               No data yet. Start by creating your first campaign or importing contacts.
-            </p>
-          </div>
-        </RetailCard>
-      )}
+              </p>
+            </div>
+          </RetailCard>
+        )}
       </div>
     </RetailPageLayout>
   );

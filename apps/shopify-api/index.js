@@ -6,7 +6,7 @@ import app from './app.js';
 import { logger } from './utils/logger.js';
 import { validateAndLogEnvironment } from './config/env-validation.js';
 import { closeRedisConnections } from './config/redis.js';
-import { getWorkerMode, shouldStartWorkers } from './config/worker-mode.js';
+import { getWorkerMode } from './config/worker-mode.js';
 import { startWorkers, stopWorkers } from './queue/start-workers.js';
 import prisma from './services/prisma.js';
 
@@ -96,7 +96,7 @@ const server = app.listen(PORT, async () => {
 
     // Start reconciliation scheduler (runs every 10 minutes)
     startReconciliationScheduler();
-    
+
     logger.info('Schedulers and pollers started');
   } else {
     logger.info('Schedulers and pollers disabled (WORKER_MODE=off)');

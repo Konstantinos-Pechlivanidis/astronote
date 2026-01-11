@@ -2,7 +2,7 @@
 // Phone number validation and normalization using libphonenumber-js
 // Aligned with Retail implementation
 
-import { parsePhoneNumber, isValidPhoneNumber, AsYouType } from 'libphonenumber-js';
+import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js';
 
 /**
  * Normalize phone number to E.164 format

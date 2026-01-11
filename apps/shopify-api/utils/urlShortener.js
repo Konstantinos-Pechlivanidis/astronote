@@ -177,7 +177,6 @@ export async function shortenUrl(originalUrl, options = {}) {
       return await shortenBitly(originalUrl);
     case 'tinyurl':
       return await shortenTinyURL(originalUrl);
-    case 'custom':
     default:
       return shortenCustom(originalUrl);
     }

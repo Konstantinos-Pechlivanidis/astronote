@@ -142,8 +142,8 @@ function ShopifyAuthCallbackContent() {
                   shopDomain: normalizedShop,
                 };
                 localStorage.setItem('shopify_store', JSON.stringify(storeInfo));
+              }
             }
-          }
 
             // If still no shopDomain, this is a problem
             if (!storeInfo || !storeInfo.shopDomain) {

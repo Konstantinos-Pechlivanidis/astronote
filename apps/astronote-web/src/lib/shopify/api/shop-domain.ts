@@ -135,12 +135,12 @@ export function resolveShopDomain(): string | null {
   // Priority 2: URL query param `shop` (validated, *.myshopify.com)
   // Only check if we're on a redirect/callback route to avoid security issues
   const currentPath = window.location.pathname;
-  const isRedirectRoute = 
-    currentPath.includes('/auth/callback') || 
+  const isRedirectRoute =
+    currentPath.includes('/auth/callback') ||
     currentPath.includes('/auth/login') ||
     currentPath.includes('/auth/shopify') ||
     currentPath.includes('/auth/shopify-token');
-  
+
   if (isRedirectRoute) {
     const urlParams = new URLSearchParams(window.location.search);
     const queryShop = urlParams.get('shop') || urlParams.get('shop_domain');

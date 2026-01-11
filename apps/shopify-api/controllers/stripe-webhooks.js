@@ -887,10 +887,10 @@ async function handleSubscriptionUpdated(subscription) {
   const intervalChanged = interval && shopWithPeriod?.subscriptionInterval !== interval;
 
   // Reset allowance if period changed (new billing cycle)
-  if (periodChanged && stripeSubscription) {
+  if (periodChanged && subscription) {
     const { resetAllowanceForNewPeriod } = await import('../services/subscription.js');
     try {
-      const resetResult = await resetAllowanceForNewPeriod(shop.id, stripeSubscription);
+      const resetResult = await resetAllowanceForNewPeriod(shop.id, subscription);
       if (resetResult.reset) {
         logger.info(
           {

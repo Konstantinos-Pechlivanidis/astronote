@@ -29,11 +29,11 @@ r.get('/readiness', async (req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     checks.database = true;
   } catch (err) {
-    return res.status(500).json({ 
-      status: 'not ready', 
+    return res.status(500).json({
+      status: 'not ready',
       checks,
       message: 'Database connection failed',
-      code: 'HEALTH_CHECK_ERROR' 
+      code: 'HEALTH_CHECK_ERROR',
     });
   }
 
@@ -63,15 +63,15 @@ r.get('/readiness', async (req, res) => {
   }
 
   const allReady = checks.database && checks.redis && checks.workers;
-  
+
   if (allReady) {
     res.json({ status: 'ready', checks });
   } else {
-    res.status(500).json({ 
-      status: 'not ready', 
+    res.status(500).json({
+      status: 'not ready',
       checks,
       message: 'One or more checks failed',
-      code: 'READINESS_CHECK_FAILED' 
+      code: 'READINESS_CHECK_FAILED',
     });
   }
 });

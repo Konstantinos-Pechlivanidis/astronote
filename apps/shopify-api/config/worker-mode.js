@@ -1,14 +1,14 @@
 // Worker Mode Contract
 // Strict validation and mode resolution for embedded/separate/off worker deployment
 
-import { logger } from '../utils/logger.js';
+// import { logger } from '../utils/logger.js'; // Unused for now
 
 /**
  * WORKER_MODE values:
  * - "embedded": Start workers in API process (unified deployment)
  * - "separate": API does NOT start workers; worker service starts them
  * - "off": No workers (testing/development)
- * 
+ *
  * Precedence:
  * 1. WORKER_MODE (if set, takes precedence)
  * 2. START_WORKER (backward compatibility)
@@ -21,7 +21,7 @@ export function resolveWorkerMode() {
     if (!['embedded', 'separate', 'off'].includes(mode)) {
       throw new Error(
         `Invalid WORKER_MODE="${process.env.WORKER_MODE}". ` +
-        `Must be one of: embedded, separate, off`
+        'Must be one of: embedded, separate, off',
       );
     }
     return mode;
@@ -29,7 +29,7 @@ export function resolveWorkerMode() {
 
   // Priority 2: START_WORKER (backward compatibility)
   if (process.env.START_WORKER !== undefined) {
-    const startWorker = process.env.START_WORKER !== 'false' && 
+    const startWorker = process.env.START_WORKER !== 'false' &&
                        process.env.START_WORKER !== '0';
     return startWorker ? 'embedded' : 'separate';
   }
@@ -49,18 +49,18 @@ export async function validateWorkerMode(mode) {
     // Embedded mode requires Redis configuration (not necessarily connected yet)
     // Check if Redis is configured (has env vars or REDIS_URL, and not explicitly disabled)
     const isRedisDisabled = process.env.REDIS_URL === 'disabled';
-    const hasRedisConfig = 
+    const hasRedisConfig =
       !isRedisDisabled && (
-        process.env.REDIS_HOST || 
-        process.env.REDIS_PORT || 
+        process.env.REDIS_HOST ||
+        process.env.REDIS_PORT ||
         process.env.REDIS_URL ||
         (process.env.REDIS_USERNAME && process.env.REDIS_PASSWORD)
       );
-    
+
     if (!hasRedisConfig) {
       throw new Error(
         'WORKER_MODE=embedded requires Redis configuration. ' +
-        'Set REDIS_HOST, REDIS_PORT, etc., or set WORKER_MODE=separate/off'
+        'Set REDIS_HOST, REDIS_PORT, etc., or set WORKER_MODE=separate/off',
       );
     }
 
@@ -68,7 +68,7 @@ export async function validateWorkerMode(mode) {
     if (!process.env.DATABASE_URL) {
       throw new Error(
         'WORKER_MODE=embedded requires DATABASE_URL. ' +
-        'Workers need database access for job processing.'
+        'Workers need database access for job processing.',
       );
     }
   }

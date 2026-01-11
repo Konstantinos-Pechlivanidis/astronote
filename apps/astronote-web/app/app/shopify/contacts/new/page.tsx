@@ -11,6 +11,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Save } from 'lucide-react';
 
+// Sentinel value for "Not specified" (must be non-empty for Radix Select)
+const UI_NOT_SPECIFIED = '__not_specified__';
+
 /**
  * Create Contact Page
  */
@@ -23,7 +26,7 @@ export default function NewContactPage() {
     firstName: '',
     lastName: '',
     email: '',
-    gender: '' as 'male' | 'female' | 'other' | '',
+    gender: UI_NOT_SPECIFIED as 'male' | 'female' | 'other' | typeof UI_NOT_SPECIFIED,
     birthDate: '',
     smsConsent: 'unknown' as 'opted_in' | 'opted_out' | 'unknown',
   });
@@ -181,14 +184,14 @@ export default function NewContactPage() {
               <Select
                 value={formData.gender}
                 onValueChange={(value) =>
-                  setFormData({ ...formData, gender: value as 'male' | 'female' | 'other' | '' })
+                  setFormData({ ...formData, gender: value as 'male' | 'female' | 'other' | typeof UI_NOT_SPECIFIED })
                 }
               >
                 <SelectTrigger id="gender">
                   <SelectValue placeholder="Select gender" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Not specified</SelectItem>
+                  <SelectItem value={UI_NOT_SPECIFIED}>Not specified</SelectItem>
                   <SelectItem value="male">Male</SelectItem>
                   <SelectItem value="female">Female</SelectItem>
                   <SelectItem value="other">Other</SelectItem>

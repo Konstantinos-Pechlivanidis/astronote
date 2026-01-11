@@ -154,11 +154,11 @@ export async function resolveStore(req, res, next) {
         try {
           const shopifySession = await verifyShopifySessionToken(token);
           const normalized = normalizeShopDomain(shopifySession.shop);
-          
+
           if (normalized) {
             shopDomain = normalized;
             resolutionMethod = 'shopify-session-token';
-            
+
             // Generate app token and get store
             const { store: storeFromToken } = await generateAppToken(shopifySession.shop);
             storeId = storeFromToken.id;

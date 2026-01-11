@@ -15,7 +15,7 @@ import { sendSuccess, sendCreated, sendPaginated } from '../utils/response.js';
 export async function list(req, res, next) {
   try {
     const storeId = getStoreId(req);
-    
+
     // Validate query params
     const allowedStatuses = ['draft', 'scheduled', 'sending', 'sent', 'failed', 'cancelled'];
     if (req.query.status && !allowedStatuses.includes(req.query.status)) {

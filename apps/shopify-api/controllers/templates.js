@@ -1,7 +1,7 @@
 import prisma from '../services/prisma.js';
 import { logger } from '../utils/logger.js';
 import { getStoreId } from '../middlewares/store-resolution.js';
-import { sendSuccess, sendPaginated } from '../utils/response.js';
+import { sendSuccess } from '../utils/response.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import * as templatesService from '../services/templates.js';
 
@@ -15,12 +15,12 @@ export async function getAllTemplates(req, res, next) {
     const shopId = getStoreId(req);
 
     // Get filters
-    const { 
+    const {
       eshopType, // Required or derived from shop settings
-      category, 
-      search, 
+      category,
+      search,
       language = 'en', // Default to English (aligned with Retail)
-      page, 
+      page,
       pageSize,
       limit, // Backward compatibility
       offset, // Backward compatibility
@@ -154,9 +154,15 @@ export async function getTemplateCategories(req, res, next) {
       orderBy: { category: 'asc' },
     });
 
+    // Sanitize categories: filter out null/empty and ensure non-empty strings
+    const sanitizedCategories = categories
+      .map(c => String(c?.category ?? '').trim())
+      .filter(cat => cat !== '')
+      .filter((cat, index, arr) => arr.indexOf(cat) === index); // Remove duplicates
+
     return sendSuccess(
       res,
-      categories.map(c => c.category),
+      sanitizedCategories,
     );
   } catch (error) {
     logger.error('Failed to fetch template categories', {

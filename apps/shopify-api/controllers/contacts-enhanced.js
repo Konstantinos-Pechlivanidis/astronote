@@ -1,7 +1,7 @@
 import { getStoreId } from '../middlewares/store-resolution.js';
 import { logger } from '../utils/logger.js';
 import contactsService from '../services/contacts.js';
-import { sendSuccess, sendCreated, sendPaginated } from '../utils/response.js';
+import { sendSuccess, sendCreated } from '../utils/response.js';
 import { ValidationError } from '../utils/errors.js';
 
 /**

@@ -202,465 +202,465 @@ export default function CampaignDetailPage() {
       <div className="space-y-6">
         {/* Header */}
         <div className="mb-6 flex items-center gap-4">
-        <Link href="/app/shopify/campaigns">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
+          <Link href="/app/shopify/campaigns">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
             Back
-          </Button>
-        </Link>
-        <div className="flex-1">
-          <RetailPageHeader
-            title={campaign.name}
-            description="Campaign details and metrics"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          {canSend && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => setShowPreviewModal(true)}
-                disabled={previewLoading}
-              >
-                <Eye className="mr-2 h-4 w-4" />
-                Preview
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowScheduleDialog(true)}
-                disabled={scheduleCampaign.isPending}
-              >
-                <Calendar className="mr-2 h-4 w-4" />
-                Schedule
-              </Button>
-              <Button
-                onClick={() => setShowSendDialog(true)}
-                disabled={!isSubscriptionActive || enqueueCampaign.isPending}
-                title={!isSubscriptionActive ? 'Active subscription required to send campaigns' : 'Send campaign'}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                Send Now
-              </Button>
-            </>
-          )}
-          {canCancel && (
-            <Button
-              variant="outline"
-              onClick={() => setShowCancelDialog(true)}
-              disabled={cancelCampaign.isPending}
-            >
-              <XCircle className="mr-2 h-4 w-4" />
-              Cancel
             </Button>
-          )}
-          {canEdit && (
-            <Link href={`/app/shopify/campaigns/${id}/edit`}>
-              <Button variant="outline">Edit</Button>
-            </Link>
-          )}
-          <Button
-            variant="ghost"
-            onClick={() => setShowDeleteDialog(true)}
-            disabled={deleteCampaign.isPending}
-            className="text-red-400 hover:text-red-500"
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
+          </Link>
+          <div className="flex-1">
+            <RetailPageHeader
+              title={campaign.name}
+              description="Campaign details and metrics"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            {canSend && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowPreviewModal(true)}
+                  disabled={previewLoading}
+                >
+                  <Eye className="mr-2 h-4 w-4" />
+                Preview
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowScheduleDialog(true)}
+                  disabled={scheduleCampaign.isPending}
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                Schedule
+                </Button>
+                <Button
+                  onClick={() => setShowSendDialog(true)}
+                  disabled={!isSubscriptionActive || enqueueCampaign.isPending}
+                  title={!isSubscriptionActive ? 'Active subscription required to send campaigns' : 'Send campaign'}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                Send Now
+                </Button>
+              </>
+            )}
+            {canCancel && (
+              <Button
+                variant="outline"
+                onClick={() => setShowCancelDialog(true)}
+                disabled={cancelCampaign.isPending}
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+              Cancel
+              </Button>
+            )}
+            {canEdit && (
+              <Link href={`/app/shopify/campaigns/${id}/edit`}>
+                <Button variant="outline">Edit</Button>
+              </Link>
+            )}
+            <Button
+              variant="ghost"
+              onClick={() => setShowDeleteDialog(true)}
+              disabled={deleteCampaign.isPending}
+              className="text-red-400 hover:text-red-500"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
             Delete
-          </Button>
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Campaign Info Card */}
-        <RetailCard className="p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Campaign Information</h3>
-          <div className="space-y-4">
-            <div>
-              <div className="text-sm font-medium text-text-secondary mb-1">Status</div>
-              <StatusBadge status={campaign.status} />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-text-secondary mb-1">Recipients</div>
-              <div className="text-text-primary">{campaign.recipientCount || 0} recipients</div>
-            </div>
-            {campaign.scheduleAt && (
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Scheduled</div>
-                <div className="text-text-primary">
-                  {format(new Date(campaign.scheduleAt), 'MMM d, yyyy HH:mm')}
-                </div>
-              </div>
-            )}
-            <div>
-              <div className="text-sm font-medium text-text-secondary mb-1">Created</div>
-              <div className="text-text-primary">
-                {format(new Date(campaign.createdAt), 'MMM d, yyyy HH:mm')}
-              </div>
-            </div>
-            {campaign.startedAt && (
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Started</div>
-                <div className="text-text-primary">
-                  {format(new Date(campaign.startedAt), 'MMM d, yyyy HH:mm')}
-                </div>
-              </div>
-            )}
-            {campaign.finishedAt && (
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Finished</div>
-                <div className="text-text-primary">
-                  {format(new Date(campaign.finishedAt), 'MMM d, yyyy HH:mm')}
-                </div>
-              </div>
-            )}
-          </div>
-        </RetailCard>
-
-        {/* Message Card */}
-        <RetailCard className="p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Message</h3>
-          <div className="space-y-4">
-            <div className="p-4 rounded-lg bg-surface-light border border-border">
-              <p className="text-sm text-text-primary whitespace-pre-wrap">{campaign.message}</p>
-            </div>
-            <div className="text-xs text-text-tertiary">
-              {campaign.message.length} characters
-            </div>
-          </div>
-        </RetailCard>
-
-        {/* Metrics Card */}
-        {metrics && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Campaign Info Card */}
           <RetailCard className="p-6">
-            <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Metrics
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Campaign Information</h3>
+            <div className="space-y-4">
               <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Total</div>
-                <div className="text-2xl font-bold text-text-primary">{metrics.total || 0}</div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Status</div>
+                <StatusBadge status={campaign.status} />
               </div>
               <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                <div className="text-2xl font-bold text-green-400">{metrics.sent || 0}</div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Recipients</div>
+                <div className="text-text-primary">{campaign.recipientCount || 0} recipients</div>
               </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                <div className="text-2xl font-bold text-red-400">{metrics.failed || 0}</div>
-              </div>
-              {metrics.conversionRate !== undefined && (
+              {campaign.scheduleAt && (
                 <div>
-                  <div className="text-sm font-medium text-text-secondary mb-1">Conversion Rate</div>
-                  <div className="text-2xl font-bold text-accent">
-                    {(metrics.conversionRate * 100).toFixed(1)}%
+                  <div className="text-sm font-medium text-text-secondary mb-1">Scheduled</div>
+                  <div className="text-text-primary">
+                    {format(new Date(campaign.scheduleAt), 'MMM d, yyyy HH:mm')}
+                  </div>
+                </div>
+              )}
+              <div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Created</div>
+                <div className="text-text-primary">
+                  {format(new Date(campaign.createdAt), 'MMM d, yyyy HH:mm')}
+                </div>
+              </div>
+              {campaign.startedAt && (
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Started</div>
+                  <div className="text-text-primary">
+                    {format(new Date(campaign.startedAt), 'MMM d, yyyy HH:mm')}
+                  </div>
+                </div>
+              )}
+              {campaign.finishedAt && (
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Finished</div>
+                  <div className="text-text-primary">
+                    {format(new Date(campaign.finishedAt), 'MMM d, yyyy HH:mm')}
                   </div>
                 </div>
               )}
             </div>
           </RetailCard>
-        )}
 
-        {/* Status Card (if sending/scheduled) */}
-        {statusData && isActive && (
+          {/* Message Card */}
           <RetailCard className="p-6">
-            <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Status
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Queued</div>
-                <div className="text-2xl font-bold text-text-primary">{statusData.queued || 0}</div>
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Message</h3>
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-surface-light border border-border">
+                <p className="text-sm text-text-primary whitespace-pre-wrap">{campaign.message}</p>
               </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Processed</div>
-                <div className="text-2xl font-bold text-yellow-400">{statusData.processed || 0}</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                <div className="text-2xl font-bold text-green-400">{statusData.sent || 0}</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                <div className="text-2xl font-bold text-red-400">{statusData.failed || 0}</div>
+              <div className="text-xs text-text-tertiary">
+                {campaign.message.length} characters
               </div>
             </div>
           </RetailCard>
-        )}
 
-        {/* Progress Card (if sending) */}
-        {progressData && campaign.status === 'sending' && (
-          <RetailCard className="p-6">
-            <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
-              <CheckCircle className="h-5 w-5" />
-              Progress
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-text-secondary">Progress</span>
-                  <span className="text-sm font-medium text-text-primary">
-                    {progressData.percentage}%
-                  </span>
+          {/* Metrics Card */}
+          {metrics && (
+            <RetailCard className="p-6">
+              <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+              Metrics
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Total</div>
+                  <div className="text-2xl font-bold text-text-primary">{metrics.total || 0}</div>
                 </div>
-                <div className="w-full h-2 bg-surface-light rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-accent transition-all duration-300"
-                    style={{ width: `${progressData.percentage}%` }}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                  <div className="text-lg font-bold text-green-400">{progressData.sent || 0}</div>
+                  <div className="text-2xl font-bold text-green-400">{metrics.sent || 0}</div>
                 </div>
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                  <div className="text-lg font-bold text-red-400">{progressData.failed || 0}</div>
+                  <div className="text-2xl font-bold text-red-400">{metrics.failed || 0}</div>
+                </div>
+                {metrics.conversionRate !== undefined && (
+                  <div>
+                    <div className="text-sm font-medium text-text-secondary mb-1">Conversion Rate</div>
+                    <div className="text-2xl font-bold text-accent">
+                      {(metrics.conversionRate * 100).toFixed(1)}%
+                    </div>
+                  </div>
+                )}
+              </div>
+            </RetailCard>
+          )}
+
+          {/* Status Card (if sending/scheduled) */}
+          {statusData && isActive && (
+            <RetailCard className="p-6">
+              <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+              Status
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Queued</div>
+                  <div className="text-2xl font-bold text-text-primary">{statusData.queued || 0}</div>
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-text-secondary mb-1">Pending</div>
-                  <div className="text-lg font-bold text-yellow-400">{progressData.pending || 0}</div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Processed</div>
+                  <div className="text-2xl font-bold text-yellow-400">{statusData.processed || 0}</div>
                 </div>
-              </div>
-            </div>
-          </RetailCard>
-        )}
-
-        {/* Delivery Breakdown Card */}
-        {metrics && (campaign.status === 'sent' || campaign.status === 'sending' || campaign.status === 'failed') && (
-          <RetailCard className="p-6">
-            <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Delivery Breakdown
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Total Recipients</div>
-                <div className="text-2xl font-bold text-text-primary">{metrics.total || 0}</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                <div className="text-2xl font-bold text-green-400">{metrics.sent || 0}</div>
-              </div>
-              <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                <div className="text-2xl font-bold text-red-400">{metrics.failed || 0}</div>
-              </div>
-              {metrics.delivered !== undefined && (
                 <div>
-                  <div className="text-sm font-medium text-text-secondary mb-1">Delivered</div>
-                  <div className="text-2xl font-bold text-blue-400">{metrics.delivered || 0}</div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
+                  <div className="text-2xl font-bold text-green-400">{statusData.sent || 0}</div>
                 </div>
-              )}
-            </div>
-          </RetailCard>
-        )}
-
-        {/* Quick Actions */}
-        <RetailCard className="p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Quick Actions</h3>
-          <div className="space-y-2">
-            <Link href={`/app/shopify/campaigns/${id}/stats`}>
-              <Button variant="outline" className="w-full justify-start">
-                <BarChart3 className="mr-2 h-4 w-4" />
-                View Stats
-              </Button>
-            </Link>
-            <Link href={`/app/shopify/campaigns/${id}/status`}>
-              <Button variant="outline" className="w-full justify-start">
-                <Clock className="mr-2 h-4 w-4" />
-                View Status
-              </Button>
-            </Link>
-          </div>
-        </RetailCard>
-      </div>
-
-      {/* Delete Confirmation Dialog */}
-      <ConfirmDialog
-        open={showDeleteDialog}
-        onClose={() => setShowDeleteDialog(false)}
-        onConfirm={handleDelete}
-        title="Delete Campaign"
-        message={`Are you sure you want to delete "${campaign.name}"? This action cannot be undone.`}
-        confirmText="Delete"
-        cancelText="Cancel"
-        variant="danger"
-      />
-
-      {/* Send Confirmation Dialog */}
-      <ConfirmDialog
-        open={showSendDialog}
-        onClose={() => setShowSendDialog(false)}
-        onConfirm={handleSend}
-        title="Send Campaign"
-        message={`Are you sure you want to send "${campaign.name}"? This will start sending SMS messages immediately.`}
-        confirmText="Send"
-        cancelText="Cancel"
-      />
-
-      {/* Cancel Confirmation Dialog */}
-      <ConfirmDialog
-        open={showCancelDialog}
-        onClose={() => setShowCancelDialog(false)}
-        onConfirm={handleCancel}
-        title="Cancel Campaign"
-        message={`Are you sure you want to cancel "${campaign.name}"? Pending messages will not be sent.`}
-        confirmText="Cancel Campaign"
-        cancelText="Keep Sending"
-        variant="danger"
-      />
-
-      {/* Schedule Dialog */}
-      {showScheduleDialog && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen px-4">
-            <div className="fixed inset-0 bg-black/50" onClick={() => setShowScheduleDialog(false)} />
-            <RetailCard className="relative z-10 max-w-md w-full p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-text-primary">Schedule Campaign</h2>
-                <button
-                  onClick={() => setShowScheduleDialog(false)}
-                  className="text-text-tertiary hover:text-text-primary"
-                  aria-label="Close schedule dialog"
-                >
-                  <X className="w-5 h-5" aria-hidden="true" />
-                </button>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
+                  <div className="text-2xl font-bold text-red-400">{statusData.failed || 0}</div>
+                </div>
               </div>
+            </RetailCard>
+          )}
 
+          {/* Progress Card (if sending) */}
+          {progressData && campaign.status === 'sending' && (
+            <RetailCard className="p-6">
+              <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <CheckCircle className="h-5 w-5" />
+              Progress
+              </h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">
-                    Date & Time
-                  </label>
-                  <Input
-                    type="datetime-local"
-                    value={scheduleDateTime}
-                    onChange={(e) => setScheduleDateTime(e.target.value)}
-                    min={new Date().toISOString().slice(0, 16)}
-                    className="w-full"
-                  />
-                  <p className="mt-1 text-xs text-text-tertiary">
-                    Select a future date and time to schedule this campaign
-                  </p>
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowScheduleDialog(false)}
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSchedule}
-                    disabled={!scheduleDateTime || scheduleCampaign.isPending}
-                    className="flex-1"
-                  >
-                    {scheduleCampaign.isPending ? 'Scheduling...' : 'Schedule'}
-                  </Button>
-                </div>
-              </div>
-            </RetailCard>
-          </div>
-        </div>
-      )}
-
-      {/* Preview Modal */}
-      {showPreviewModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen px-4">
-            <div className="fixed inset-0 bg-black/50" onClick={() => setShowPreviewModal(false)} />
-            <RetailCard className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-text-primary">Campaign Preview</h2>
-                <button
-                  onClick={() => setShowPreviewModal(false)}
-                  className="text-text-tertiary hover:text-text-primary"
-                  aria-label="Close preview modal"
-                >
-                  <X className="w-5 h-5" aria-hidden="true" />
-                </button>
-              </div>
-
-              {previewLoading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-4"></div>
-                  <p className="text-sm text-text-secondary">Loading preview...</p>
-                </div>
-              ) : previewData ? (
-                previewBlocked ? (
-                  <RetailCard variant="danger" className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertCircle className="h-5 w-5 text-red-400" />
-                      <h3 className="font-semibold text-text-primary">Subscription Required</h3>
-                    </div>
-                    <p className="text-sm text-text-secondary">
-                      Active subscription required to send campaigns. Please subscribe to a plan to continue.
-                    </p>
-                  </RetailCard>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <div className="text-sm font-medium text-text-secondary mb-1">Recipients</div>
-                        <div className="text-2xl font-bold text-text-primary">
-                          {(previewData.recipientCount ?? 0).toLocaleString()}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-text-secondary mb-1">Estimated Cost</div>
-                        <div className="text-2xl font-bold text-accent">
-                          {(previewData.estimatedCost ?? 0).toLocaleString()} credits
-                        </div>
-                      </div>
-                    </div>
-
-                    {previewData.insufficientCredits && (
-                      <RetailCard variant="danger" className="p-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <AlertCircle className="h-5 w-5 text-red-400" />
-                          <h3 className="font-semibold text-text-primary">Insufficient Credits</h3>
-                        </div>
-                        <p className="text-sm text-text-secondary">
-                          You need {(previewData.missingCredits ?? 0).toLocaleString()} more credits to send this campaign.
-                        </p>
-                      </RetailCard>
-                    )}
-
-                    {previewData.errors && previewData.errors.length > 0 && (
-                      <RetailCard variant="danger" className="p-4">
-                        <h3 className="font-semibold text-text-primary mb-2">Errors</h3>
-                        <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
-                          {previewData.errors.map((error, idx) => (
-                            <li key={idx}>{error}</li>
-                          ))}
-                        </ul>
-                      </RetailCard>
-                    )}
-
-                    {previewData.canSend && (
-                      <div className="pt-4 border-t border-border">
-                        <p className="text-sm text-text-secondary mb-4">
-                          This campaign is ready to send. Click &quot;Send&quot; to start sending messages.
-                        </p>
-                      </div>
-                    )}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-text-secondary">Progress</span>
+                    <span className="text-sm font-medium text-text-primary">
+                      {progressData.percentage}%
+                    </span>
                   </div>
-                )
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-sm text-text-secondary">Failed to load preview</p>
+                  <div className="w-full h-2 bg-surface-light rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-accent transition-all duration-300"
+                      style={{ width: `${progressData.percentage}%` }}
+                    />
+                  </div>
                 </div>
-              )}
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
+                    <div className="text-lg font-bold text-green-400">{progressData.sent || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
+                    <div className="text-lg font-bold text-red-400">{progressData.failed || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-text-secondary mb-1">Pending</div>
+                    <div className="text-lg font-bold text-yellow-400">{progressData.pending || 0}</div>
+                  </div>
+                </div>
+              </div>
             </RetailCard>
-          </div>
+          )}
+
+          {/* Delivery Breakdown Card */}
+          {metrics && (campaign.status === 'sent' || campaign.status === 'sending' || campaign.status === 'failed') && (
+            <RetailCard className="p-6">
+              <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+              Delivery Breakdown
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Total Recipients</div>
+                  <div className="text-2xl font-bold text-text-primary">{metrics.total || 0}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
+                  <div className="text-2xl font-bold text-green-400">{metrics.sent || 0}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
+                  <div className="text-2xl font-bold text-red-400">{metrics.failed || 0}</div>
+                </div>
+                {metrics.delivered !== undefined && (
+                  <div>
+                    <div className="text-sm font-medium text-text-secondary mb-1">Delivered</div>
+                    <div className="text-2xl font-bold text-blue-400">{metrics.delivered || 0}</div>
+                  </div>
+                )}
+              </div>
+            </RetailCard>
+          )}
+
+          {/* Quick Actions */}
+          <RetailCard className="p-6">
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Quick Actions</h3>
+            <div className="space-y-2">
+              <Link href={`/app/shopify/campaigns/${id}/stats`}>
+                <Button variant="outline" className="w-full justify-start">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                View Stats
+                </Button>
+              </Link>
+              <Link href={`/app/shopify/campaigns/${id}/status`}>
+                <Button variant="outline" className="w-full justify-start">
+                  <Clock className="mr-2 h-4 w-4" />
+                View Status
+                </Button>
+              </Link>
+            </div>
+          </RetailCard>
         </div>
-      )}
+
+        {/* Delete Confirmation Dialog */}
+        <ConfirmDialog
+          open={showDeleteDialog}
+          onClose={() => setShowDeleteDialog(false)}
+          onConfirm={handleDelete}
+          title="Delete Campaign"
+          message={`Are you sure you want to delete "${campaign.name}"? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          variant="danger"
+        />
+
+        {/* Send Confirmation Dialog */}
+        <ConfirmDialog
+          open={showSendDialog}
+          onClose={() => setShowSendDialog(false)}
+          onConfirm={handleSend}
+          title="Send Campaign"
+          message={`Are you sure you want to send "${campaign.name}"? This will start sending SMS messages immediately.`}
+          confirmText="Send"
+          cancelText="Cancel"
+        />
+
+        {/* Cancel Confirmation Dialog */}
+        <ConfirmDialog
+          open={showCancelDialog}
+          onClose={() => setShowCancelDialog(false)}
+          onConfirm={handleCancel}
+          title="Cancel Campaign"
+          message={`Are you sure you want to cancel "${campaign.name}"? Pending messages will not be sent.`}
+          confirmText="Cancel Campaign"
+          cancelText="Keep Sending"
+          variant="danger"
+        />
+
+        {/* Schedule Dialog */}
+        {showScheduleDialog && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-center justify-center min-h-screen px-4">
+              <div className="fixed inset-0 bg-black/50" onClick={() => setShowScheduleDialog(false)} />
+              <RetailCard className="relative z-10 max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-text-primary">Schedule Campaign</h2>
+                  <button
+                    onClick={() => setShowScheduleDialog(false)}
+                    className="text-text-tertiary hover:text-text-primary"
+                    aria-label="Close schedule dialog"
+                  >
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">
+                    Date & Time
+                    </label>
+                    <Input
+                      type="datetime-local"
+                      value={scheduleDateTime}
+                      onChange={(e) => setScheduleDateTime(e.target.value)}
+                      min={new Date().toISOString().slice(0, 16)}
+                      className="w-full"
+                    />
+                    <p className="mt-1 text-xs text-text-tertiary">
+                    Select a future date and time to schedule this campaign
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2 pt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowScheduleDialog(false)}
+                      className="flex-1"
+                    >
+                    Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSchedule}
+                      disabled={!scheduleDateTime || scheduleCampaign.isPending}
+                      className="flex-1"
+                    >
+                      {scheduleCampaign.isPending ? 'Scheduling...' : 'Schedule'}
+                    </Button>
+                  </div>
+                </div>
+              </RetailCard>
+            </div>
+          </div>
+        )}
+
+        {/* Preview Modal */}
+        {showPreviewModal && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-center justify-center min-h-screen px-4">
+              <div className="fixed inset-0 bg-black/50" onClick={() => setShowPreviewModal(false)} />
+              <RetailCard className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-text-primary">Campaign Preview</h2>
+                  <button
+                    onClick={() => setShowPreviewModal(false)}
+                    className="text-text-tertiary hover:text-text-primary"
+                    aria-label="Close preview modal"
+                  >
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                </div>
+
+                {previewLoading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-4"></div>
+                    <p className="text-sm text-text-secondary">Loading preview...</p>
+                  </div>
+                ) : previewData ? (
+                  previewBlocked ? (
+                    <RetailCard variant="danger" className="p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle className="h-5 w-5 text-red-400" />
+                        <h3 className="font-semibold text-text-primary">Subscription Required</h3>
+                      </div>
+                      <p className="text-sm text-text-secondary">
+                      Active subscription required to send campaigns. Please subscribe to a plan to continue.
+                      </p>
+                    </RetailCard>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm font-medium text-text-secondary mb-1">Recipients</div>
+                          <div className="text-2xl font-bold text-text-primary">
+                            {(previewData.recipientCount ?? 0).toLocaleString()}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-text-secondary mb-1">Estimated Cost</div>
+                          <div className="text-2xl font-bold text-accent">
+                            {(previewData.estimatedCost ?? 0).toLocaleString()} credits
+                          </div>
+                        </div>
+                      </div>
+
+                      {previewData.insufficientCredits && (
+                        <RetailCard variant="danger" className="p-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <AlertCircle className="h-5 w-5 text-red-400" />
+                            <h3 className="font-semibold text-text-primary">Insufficient Credits</h3>
+                          </div>
+                          <p className="text-sm text-text-secondary">
+                          You need {(previewData.missingCredits ?? 0).toLocaleString()} more credits to send this campaign.
+                          </p>
+                        </RetailCard>
+                      )}
+
+                      {previewData.errors && previewData.errors.length > 0 && (
+                        <RetailCard variant="danger" className="p-4">
+                          <h3 className="font-semibold text-text-primary mb-2">Errors</h3>
+                          <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
+                            {previewData.errors.map((error, idx) => (
+                              <li key={idx}>{error}</li>
+                            ))}
+                          </ul>
+                        </RetailCard>
+                      )}
+
+                      {previewData.canSend && (
+                        <div className="pt-4 border-t border-border">
+                          <p className="text-sm text-text-secondary mb-4">
+                          This campaign is ready to send. Click &quot;Send&quot; to start sending messages.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-text-secondary">Failed to load preview</p>
+                  </div>
+                )}
+              </RetailCard>
+            </div>
+          </div>
+        )}
       </div>
     </RetailPageLayout>
   );

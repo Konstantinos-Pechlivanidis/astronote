@@ -52,10 +52,24 @@ export async function getShopifyDiscounts(req, res, next) {
       discountCodes = [];
     }
 
-    // Filter only active and non-expired discounts
-    const activeDiscounts = discountCodes.filter(
-      discount => discount && discount.isActive && !discount.isExpired,
-    );
+    // Filter only active and non-expired discounts, and sanitize IDs
+    const activeDiscounts = discountCodes
+      .filter(
+        discount => discount && discount.isActive && !discount.isExpired,
+      )
+      .filter(discount => {
+        // Sanitize: ensure discount.id is a non-empty string
+        const id = String(discount?.id ?? '').trim();
+        return id !== '';
+      })
+      .map(discount => {
+        // Ensure ID is always a non-empty string
+        const id = String(discount.id).trim();
+        return {
+          ...discount,
+          id: id || `__unknown__:${Date.now()}_${Math.random()}`, // Fallback if somehow empty
+        };
+      });
 
     logger.info('Shopify discounts retrieved', {
       shopDomain,

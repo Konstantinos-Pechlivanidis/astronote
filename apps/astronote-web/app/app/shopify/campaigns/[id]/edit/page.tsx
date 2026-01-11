@@ -17,6 +17,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, Save, AlertCircle } from 'lucide-react';
 import type { ScheduleType } from '@/src/lib/shopify/api/campaigns';
 
+// Sentinel value for "No discount" (must be non-empty for Radix Select)
+const UI_NONE = '__none__';
+
 /**
  * Campaign Edit Page
  * Edit an existing campaign (only if draft or scheduled)
@@ -35,7 +38,7 @@ export default function EditCampaignPage() {
     name: '',
     message: '',
     audience: 'all',
-    discountId: '',
+    discountId: UI_NONE,
     scheduleType: 'immediate' as ScheduleType,
     scheduleAt: '',
   });
@@ -56,7 +59,7 @@ export default function EditCampaignPage() {
         name: campaign.name || '',
         message: campaign.message || '',
         audience: typeof campaign.audience === 'string' ? campaign.audience : 'all',
-        discountId: campaign.discountId || '',
+        discountId: campaign.discountId || UI_NONE,
         scheduleType: campaign.scheduleType || 'immediate',
         scheduleAt: campaign.scheduleAt
           ? new Date(campaign.scheduleAt).toISOString().slice(0, 16)
@@ -114,7 +117,8 @@ export default function EditCampaignPage() {
             : undefined,
       };
 
-      if (formData.discountId) {
+      // Convert sentinel to null for API
+      if (formData.discountId && formData.discountId !== UI_NONE) {
         campaignData.discountId = formData.discountId;
       } else {
         campaignData.discountId = null;
@@ -286,16 +290,27 @@ export default function EditCampaignPage() {
                   <SelectContent>
                     {audiencesData?.audiences
                       ?.filter((a) => a.isAvailable)
-                      .map((audience) => (
-                        <SelectItem key={audience.id} value={audience.id}>
-                          <div className="flex items-center justify-between w-full">
-                            <span>{audience.name}</span>
-                            <span className="ml-2 text-xs text-text-tertiary">
-                              ({audience.contactCount} contacts)
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
+                      .filter((a) => {
+                        // Sanitize: ensure audience.id is a non-empty string
+                        const id = String(a?.id ?? '').trim();
+                        return id !== '';
+                      })
+                      .map((audience) => {
+                        // Sanitize audience ID
+                        const audienceId = String(audience.id ?? '').trim();
+                        if (!audienceId) return null;
+                        return (
+                          <SelectItem key={audienceId} value={audienceId}>
+                            <div className="flex items-center justify-between w-full">
+                              <span>{audience.name}</span>
+                              <span className="ml-2 text-xs text-text-tertiary">
+                                ({audience.contactCount} contacts)
+                              </span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })
+                      .filter(Boolean)}
                   </SelectContent>
                 </Select>
                 {errors.audience && (
@@ -321,19 +336,30 @@ export default function EditCampaignPage() {
                     <SelectValue placeholder="No discount code" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No discount code</SelectItem>
+                    <SelectItem value={UI_NONE}>No discount code</SelectItem>
                     {discountsData?.discounts
                       ?.filter((d) => d.isActive && !d.isExpired)
-                      .map((discount) => (
-                        <SelectItem key={discount.id} value={discount.id}>
-                          <div className="flex items-center justify-between w-full">
-                            <span>{discount.code}</span>
-                            {discount.title && (
-                              <span className="ml-2 text-xs text-text-tertiary">— {discount.title}</span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
+                      .filter((d) => {
+                        // Sanitize: ensure discount.id is a non-empty string
+                        const id = String(d?.id ?? '').trim();
+                        return id !== '';
+                      })
+                      .map((discount) => {
+                        // Sanitize discount ID
+                        const discountId = String(discount.id ?? '').trim();
+                        if (!discountId) return null;
+                        return (
+                          <SelectItem key={discountId} value={discountId}>
+                            <div className="flex items-center justify-between w-full">
+                              <span>{discount.code}</span>
+                              {discount.title && (
+                                <span className="ml-2 text-xs text-text-tertiary">— {discount.title}</span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        );
+                      })
+                      .filter(Boolean)}
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-text-tertiary">

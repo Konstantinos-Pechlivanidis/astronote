@@ -137,18 +137,18 @@ export async function deliveryReport(req, res) {
           updatedAt: new Date(),
         };
 
-      if (newStatus === 'sent') {
-        updateData.status = 'sent';
-        updateData.deliveredAt = doneAt;
-        if (!recipient.sentAt) {
-          updateData.sentAt = doneAt;
+        if (newStatus === 'sent') {
+          updateData.status = 'sent';
+          updateData.deliveredAt = doneAt;
+          if (!recipient.sentAt) {
+            updateData.sentAt = doneAt;
+          }
+          updateData.error = null;
+        } else if (newStatus === 'failed') {
+          updateData.status = 'failed';
+          updateData.failedAt = doneAt; // Aligned with Retail: track when message failed
+          updateData.error = errorDesc || 'Delivery failed';
         }
-        updateData.error = null;
-      } else if (newStatus === 'failed') {
-        updateData.status = 'failed';
-        updateData.failedAt = doneAt; // Aligned with Retail: track when message failed
-        updateData.error = errorDesc || 'Delivery failed';
-      }
 
         await prisma.campaignRecipient.update({
           where: { id: recipient.id },

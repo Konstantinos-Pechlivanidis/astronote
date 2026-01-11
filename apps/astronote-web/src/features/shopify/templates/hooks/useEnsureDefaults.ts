@@ -13,7 +13,7 @@ export function useEnsureDefaults() {
     onSuccess: (data) => {
       // Invalidate templates list to refresh
       queryClient.invalidateQueries({ queryKey: ['shopify', 'templates', 'list'] });
-      
+
       toast.success(
         `Default templates ensured: ${data.created} created, ${data.updated} updated, ${data.repaired} repaired`,
       );

@@ -104,6 +104,7 @@ export async function updateSettings(storeId, settingsData) {
   });
 
   let settings;
+  const updateData = {};
 
   // Validate baseUrl if provided
   if (settingsData.baseUrl !== undefined) {

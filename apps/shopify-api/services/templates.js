@@ -14,12 +14,12 @@ import { NotFoundError } from '../utils/errors.js';
  * @returns {Promise<Object>} Templates list with pagination
  */
 export async function listTemplates(shopId, filters = {}) {
-  const { 
+  const {
     eshopType, // Required: eShop type filter
-    category, 
-    search, 
+    category,
+    search,
     language = 'en', // Default to English
-    page = 1, 
+    page = 1,
     pageSize = 50,
     offset, // Backward compatibility
     limit, // Backward compatibility
@@ -28,7 +28,7 @@ export async function listTemplates(shopId, filters = {}) {
   logger.info('Listing templates', { shopId, filters });
 
   // Build where clause (tenant-scoped and eShop type-scoped)
-  const where = { 
+  const where = {
     shopId, // Tenant scoping (aligned with Retail: ownerId concept)
   };
 
@@ -113,7 +113,7 @@ export async function listTemplates(shopId, filters = {}) {
       },
       orderBy: { createdAt: 'desc' },
       take: pageSizeNum,
-      skip: skip,
+      skip,
     }),
     prisma.template.count({ where }),
     prisma.template.findMany({

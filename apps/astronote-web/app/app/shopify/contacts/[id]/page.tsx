@@ -15,6 +15,9 @@ import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { ArrowLeft, Save, Trash2, AlertCircle, Edit } from 'lucide-react';
 import { format } from 'date-fns';
 
+// Sentinel value for "Not specified" (must be non-empty for Radix Select)
+const UI_NOT_SPECIFIED = '__not_specified__';
+
 /**
  * Contact Detail Page
  */
@@ -34,7 +37,7 @@ export default function ContactDetailPage() {
     firstName: '',
     lastName: '',
     email: '',
-    gender: '' as 'male' | 'female' | 'other' | '',
+    gender: UI_NOT_SPECIFIED as 'male' | 'female' | 'other' | typeof UI_NOT_SPECIFIED,
     birthDate: '',
     smsConsent: 'unknown' as 'opted_in' | 'opted_out' | 'unknown',
   });
@@ -48,7 +51,7 @@ export default function ContactDetailPage() {
         firstName: contact.firstName || '',
         lastName: contact.lastName || '',
         email: contact.email || '',
-        gender: (contact.gender as 'male' | 'female' | 'other') || '',
+        gender: (contact.gender as 'male' | 'female' | 'other') || UI_NOT_SPECIFIED,
         birthDate: contact.birthDate
           ? new Date(contact.birthDate).toISOString().split('T')[0]
           : '',
@@ -92,7 +95,7 @@ export default function ContactDetailPage() {
         firstName: formData.firstName.trim() || null,
         lastName: formData.lastName.trim() || null,
         email: formData.email.trim() || null,
-        gender: formData.gender || null,
+        gender: (formData.gender === UI_NOT_SPECIFIED ? null : formData.gender) || null,
         birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : null,
         smsConsent: formData.smsConsent,
       };
@@ -276,14 +279,14 @@ export default function ContactDetailPage() {
                 <Select
                   value={formData.gender}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, gender: value as 'male' | 'female' | 'other' | '' })
+                    setFormData({ ...formData, gender: value as 'male' | 'female' | 'other' | typeof UI_NOT_SPECIFIED })
                   }
                 >
                   <SelectTrigger id="gender">
                     <SelectValue placeholder="Select gender" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Not specified</SelectItem>
+                    <SelectItem value={UI_NOT_SPECIFIED}>Not specified</SelectItem>
                     <SelectItem value="male">Male</SelectItem>
                     <SelectItem value="female">Female</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
@@ -348,7 +351,7 @@ export default function ContactDetailPage() {
                         firstName: contact.firstName || '',
                         lastName: contact.lastName || '',
                         email: contact.email || '',
-                        gender: (contact.gender as 'male' | 'female' | 'other') || '',
+                        gender: (contact.gender as 'male' | 'female' | 'other') || UI_NOT_SPECIFIED,
                         birthDate: contact.birthDate
                           ? new Date(contact.birthDate).toISOString().split('T')[0]
                           : '',

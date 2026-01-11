@@ -39,12 +39,12 @@ export async function acquireWorkerLock(serviceName) {
       lockToken,
       'PX', // milliseconds
       LOCK_TTL_MS,
-      'NX'  // only set if not exists
+      'NX',  // only set if not exists
     );
 
     if (result === 'OK') {
       lockAcquired = true;
-      
+
       // Start refresh interval to keep lock alive
       lockRefreshInterval = setInterval(async () => {
         try {
@@ -67,8 +67,8 @@ export async function acquireWorkerLock(serviceName) {
       // Lock already held by another process
       const currentToken = await queueRedis.get(lockKey);
       console.error(
-        `[Worker Lock] Lock already held by another process. ` +
-        `Lock key: ${lockKey}, Current token: ${currentToken}`
+        '[Worker Lock] Lock already held by another process. ' +
+        `Lock key: ${lockKey}, Current token: ${currentToken}`,
       );
       return false;
     }
@@ -103,7 +103,7 @@ export async function releaseWorkerLock(serviceName) {
       lockAcquired = false;
       console.log(`[Worker Lock] Released lock: ${lockKey}`);
     } else {
-      console.warn(`[Worker Lock] Lock token mismatch - lock may have been stolen`);
+      console.warn('[Worker Lock] Lock token mismatch - lock may have been stolen');
     }
   } catch (error) {
     console.error('[Worker Lock] Failed to release lock:', error.message);

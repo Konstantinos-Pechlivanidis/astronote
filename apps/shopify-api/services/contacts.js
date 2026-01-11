@@ -412,7 +412,7 @@ export async function createContact(storeId, contactData) {
   // Determine isSubscribed and smsConsentStatus (aligned with Retail)
   let isSubscribed = true; // Default to subscribed
   let smsConsentStatus = null;
-  let smsConsentValue = contactData.smsConsent || 'unknown';
+  const smsConsentValue = contactData.smsConsent || 'unknown';
 
   // Map consent to isSubscribed and smsConsentStatus
   if (smsConsentValue === 'opted_in') {
@@ -519,25 +519,7 @@ export async function createContact(storeId, contactData) {
     contactId: contact.id,
   });
 
-  // Transform to Retail-aligned shape for return
-  const transformed = {
-    id: contact.id,
-    phone: contact.phoneE164,
-    phoneE164: contact.phoneE164,
-    email: contact.email,
-    firstName: contact.firstName,
-    lastName: contact.lastName,
-    gender: contact.gender,
-    birthday: contact.birthDate,
-    birthDate: contact.birthDate,
-    isSubscribed: contact.isSubscribed ?? true,
-    smsConsentStatus: contact.smsConsentStatus || (contact.smsConsent === 'opted_in' ? 'opted_in' : contact.smsConsent === 'opted_out' ? 'opted_out' : null),
-    smsConsent: contact.smsConsent,
-    smsConsentAt: contact.smsConsentAt,
-    tags: contact.tags,
-    createdAt: contact.createdAt,
-    updatedAt: contact.updatedAt,
-  };
+  // Return contact as-is (Retail alignment transformation not needed here)
 
   // Trigger welcome automation if contact has opted in and welcome automation is active
   if (contact.smsConsent === 'opted_in') {
@@ -706,7 +688,7 @@ export async function updateContact(storeId, contactId, contactData) {
       );
     }
     updateData.smsConsent = contactData.smsConsent;
-    
+
     // Update isSubscribed and smsConsentStatus based on consent (aligned with Retail)
     if (contactData.smsConsent === 'opted_in') {
       updateData.isSubscribed = true;
@@ -1110,7 +1092,7 @@ export async function importContacts(storeId, contactsData) {
             smsConsent: smsConsentValue,
             smsConsentStatus: smsConsentStatus || existing.smsConsentStatus,
             smsConsentAt: smsConsentStatus ? new Date() : existing.smsConsentAt,
-            isSubscribed: isSubscribed,
+            isSubscribed,
             tags: contactData.tags || existing.tags,
           },
         });

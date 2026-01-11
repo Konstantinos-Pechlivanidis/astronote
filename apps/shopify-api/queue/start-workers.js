@@ -49,7 +49,7 @@ export async function startWorkers() {
         logger.warn(
           'Worker lock already held by another process. ' +
           'Workers will not start in this instance. ' +
-          'If this is unexpected, check for duplicate services or stale locks in Redis.'
+          'If this is unexpected, check for duplicate services or stale locks in Redis.',
         );
         // Don't throw - allow API to start without workers
         return;
@@ -57,7 +57,7 @@ export async function startWorkers() {
 
       // Import worker module (this creates Worker instances)
       const workerModule = await import('./worker.js');
-      
+
       // Extract worker instances from module
       // The worker.js exports workers, we need to track them
       const {
@@ -72,7 +72,7 @@ export async function startWorkers() {
       // Track worker instances for graceful shutdown
       // Filter out MockWorker instances (created when skipWorkers=true)
       const isRealWorker = (worker) => worker && typeof worker.close === 'function' && !worker.isMock;
-      
+
       if (isRealWorker(smsWorker)) workerInstances.push(smsWorker);
       if (isRealWorker(campaignWorker)) workerInstances.push(campaignWorker);
       if (isRealWorker(automationWorker)) workerInstances.push(automationWorker);
@@ -85,7 +85,7 @@ export async function startWorkers() {
         queues: ['sms-send', 'campaign-send', 'automation-trigger', 'delivery-status-update', 'all-campaigns-status-update', 'reconciliation'],
         workerCount: workerInstances.length,
       });
-      
+
       workersStarted = true;
     } catch (error) {
       logger.error('Failed to start workers', {
