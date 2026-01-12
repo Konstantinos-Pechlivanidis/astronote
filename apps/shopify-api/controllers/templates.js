@@ -128,27 +128,16 @@ export async function getTemplateById(req, res, next) {
 export async function getTemplateCategories(req, res, next) {
   try {
     const shopId = getStoreId(req);
-    const { eshopType } = req.query;
 
-    // Build where clause (tenant-scoped)
-    const where = { shopId };
-
-    // eShop type filter (if provided)
-    if (eshopType) {
-      where.eshopType = eshopType;
-    } else {
-      // Try to get from shop settings
-      const shop = await prisma.shop.findUnique({
-        where: { id: shopId },
-        select: { eshopType: true },
-      });
-      if (shop?.eshopType) {
-        where.eshopType = shop.eshopType;
-      }
-    }
-
+    // Return store-type categories from global templates
+    // Categories are now store-type names (Fashion & Apparel, Beauty & Cosmetics, etc.)
     const categories = await prisma.template.findMany({
-      where,
+      where: {
+        OR: [
+          { shopId: null, isPublic: true }, // Global templates
+          { shopId }, // Shop-specific templates
+        ],
+      },
       select: { category: true },
       distinct: ['category'],
       orderBy: { category: 'asc' },
@@ -158,7 +147,8 @@ export async function getTemplateCategories(req, res, next) {
     const sanitizedCategories = categories
       .map(c => String(c?.category ?? '').trim())
       .filter(cat => cat !== '')
-      .filter((cat, index, arr) => arr.indexOf(cat) === index); // Remove duplicates
+      .filter((cat, index, arr) => arr.indexOf(cat) === index) // Remove duplicates
+      .sort(); // Sort by display order (store-type categories should be in a sensible order)
 
     return sendSuccess(
       res,

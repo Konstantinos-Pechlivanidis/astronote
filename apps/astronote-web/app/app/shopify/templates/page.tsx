@@ -17,6 +17,7 @@ import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { FileText, Search, ChevronLeft, ChevronRight, AlertCircle, Eye, X, Star, BarChart3, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { Template } from '@/src/lib/shopify/api/templates';
+import { getTemplateName, getTemplateContent, sanitizeCategory, sanitizeTemplateId } from '@/src/lib/shopify/api/templates';
 
 // Sentinel value for "All" filter (must be non-empty for Radix Select)
 const UI_ALL = '__all__';
@@ -93,12 +94,22 @@ export default function TemplatesPage() {
 
   // Filter by favorites if enabled
   // Support both Retail-aligned "items" and Shopify "templates" field names
+  // Defensive mapping: ensure all templates have valid IDs and required fields
   const templates = useMemo(() => {
     const allTemplates = templatesData?.items || templatesData?.templates || [];
+    // Filter out invalid templates (missing ID or empty ID)
+    const validTemplates = allTemplates.filter((t) => {
+      const id = sanitizeTemplateId(t.id);
+      return id !== null;
+    });
+    // Apply favorites filter if enabled
     if (favoritesFilter) {
-      return allTemplates.filter((t) => favorites.has(t.id));
+      return validTemplates.filter((t) => {
+        const id = sanitizeTemplateId(t.id);
+        return id !== null && favorites.has(id);
+      });
     }
-    return allTemplates;
+    return validTemplates;
   }, [templatesData?.items, templatesData?.templates, favoritesFilter, favorites]);
 
   const pagination = templatesData?.pagination || {
@@ -109,7 +120,13 @@ export default function TemplatesPage() {
     hasNextPage: false,
     hasPrevPage: false,
   };
-  const categories = categoriesData || [];
+  // Sanitize and filter categories (ensure non-empty strings)
+  const categories = useMemo(() => {
+    if (!categoriesData) return [];
+    return categoriesData
+      .map(cat => sanitizeCategory(cat))
+      .filter((cat): cat is string => cat !== null);
+  }, [categoriesData]);
 
   // Toggle favorite
   const toggleFavorite = (templateId: string) => {
@@ -157,8 +174,8 @@ export default function TemplatesPage() {
       localStorage.setItem(
         'shopify_template_prefill',
         JSON.stringify({
-          message: template.content,
-          name: template.title,
+          message: getTemplateContent(template),
+          name: getTemplateName(template),
         }),
       );
     }
@@ -202,23 +219,15 @@ export default function TemplatesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={UI_ALL}>All Categories</SelectItem>
-                  {categories
-                    .filter((category) => {
-                    // Sanitize: ensure category is a non-empty string
-                      const cat = String(category ?? '').trim();
-                      return cat !== '';
-                    })
-                    .map((category) => {
-                    // Sanitize category
-                      const cat = String(category ?? '').trim();
-                      if (!cat) return null;
-                      return (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      );
-                    })
-                    .filter(Boolean)}
+                  {categories.map((category) => {
+                    // Categories are already sanitized in useMemo
+                    // Ensure value is never empty (use category as-is, already validated)
+                    return (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               {/* eShop Type Selector (if needed - can be derived from shop settings) */}
@@ -288,7 +297,7 @@ export default function TemplatesPage() {
                   variant="outline"
                   onClick={() => {
                     setSearchQuery('');
-                    setCategoryFilter('');
+                    setCategoryFilter(UI_ALL);
                   }}
                 >
                 Clear Filters
@@ -308,7 +317,7 @@ export default function TemplatesPage() {
                     {/* Category Badge */}
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium text-accent uppercase tracking-wide">
-                        {template.category}
+                        {template.category || 'Uncategorized'}
                       </span>
                       {template.useCount !== undefined && template.useCount > 0 && (
                         <span className="text-xs text-text-tertiary">
@@ -318,12 +327,12 @@ export default function TemplatesPage() {
                     </div>
 
                     {/* Title */}
-                    <h3 className="text-lg font-semibold text-text-primary">{template.title}</h3>
+                    <h3 className="text-lg font-semibold text-text-primary">{getTemplateName(template)}</h3>
 
                     {/* Preview */}
                     <div className="rounded-lg bg-surface-light border border-border p-4 min-h-[100px]">
                       <p className="text-sm text-text-secondary whitespace-pre-wrap line-clamp-4">
-                        {template.content}
+                        {getTemplateContent(template)}
                       </p>
                     </div>
 
@@ -462,7 +471,7 @@ export default function TemplatesPage() {
               />
               <RetailCard className="relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-text-primary">{previewTemplate.title}</h2>
+                  <h2 className="text-xl font-semibold text-text-primary">{getTemplateName(previewTemplate)}</h2>
                   <button
                     onClick={() => setPreviewTemplate(null)}
                     className="text-text-tertiary hover:text-text-primary"
@@ -476,7 +485,7 @@ export default function TemplatesPage() {
                   {/* Category */}
                   <div>
                     <div className="text-sm font-medium text-text-secondary mb-1">Category</div>
-                    <StatusBadge status="default" label={previewTemplate.category} />
+                    <StatusBadge status="default" label={previewTemplate.category || 'Uncategorized'} />
                   </div>
 
                   {/* Content */}
@@ -484,7 +493,7 @@ export default function TemplatesPage() {
                     <div className="text-sm font-medium text-text-secondary mb-2">Message Content</div>
                     <div className="rounded-lg bg-surface-light border border-border p-4">
                       <p className="text-text-primary whitespace-pre-wrap leading-relaxed">
-                        {previewTemplate.content}
+                        {getTemplateContent(previewTemplate)}
                       </p>
                     </div>
                   </div>

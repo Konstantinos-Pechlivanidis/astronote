@@ -1,14 +1,27 @@
 import shopifyApi from './axios';
+
 /**
  * Template Type Definitions
+ * Aligned with backend DTO (Retail-aligned fields + backward compatibility)
  */
 export interface Template {
   id: string;
-  title: string;
+  // Retail-aligned fields (primary)
+  name: string; // Template name/title
+  text: string; // SMS message content
+  // Backward compatibility fields
+  title?: string; // Deprecated, use name
+  content?: string; // Deprecated, use text
+  // Category (store-type category name)
   category: string;
-  content: string; // SMS message content
+  // Metadata
+  language?: string;
+  goal?: string | null;
+  suggestedMetrics?: string | null;
+  eshopType?: string;
   previewImage?: string | null;
   tags?: string[];
+  // Statistics
   conversionRate?: number | null;
   productViewsIncrease?: number | null;
   clickThroughRate?: number | null;
@@ -32,7 +45,7 @@ export interface TemplatesListParams {
 
 export interface TemplatesListResponse {
   items?: Template[]; // Retail-aligned field name
-  templates: Template[]; // Backward compatibility
+  templates?: Template[]; // Backward compatibility
   total?: number; // Retail-aligned field
   page?: number; // Retail-aligned field
   pageSize?: number; // Retail-aligned field
@@ -45,6 +58,74 @@ export interface TemplatesListResponse {
     hasPrevPage: boolean;
   };
   categories?: string[];
+}
+
+/**
+ * Store-type category display order
+ * Used to sort categories in the UI
+ */
+const STORE_TYPE_CATEGORY_ORDER: readonly string[] = [
+  'Fashion & Apparel',
+  'Beauty & Cosmetics',
+  'Electronics & Gadgets',
+  'Home & Living',
+  'Health & Wellness',
+  'Food & Beverage',
+  'Jewelry & Accessories',
+  'Baby & Kids',
+  'Sports & Fitness',
+  'Pet Supplies',
+];
+
+/**
+ * Sort categories by display order (store-type categories first, then others alphabetically)
+ */
+export function sortCategories(categories: string[]): string[] {
+  const storeTypeCategories = categories.filter(cat =>
+    STORE_TYPE_CATEGORY_ORDER.includes(cat),
+  ).sort((a, b) => {
+    const indexA = STORE_TYPE_CATEGORY_ORDER.indexOf(a);
+    const indexB = STORE_TYPE_CATEGORY_ORDER.indexOf(b);
+    return indexA - indexB;
+  });
+
+  const otherCategories = categories
+    .filter(cat => !STORE_TYPE_CATEGORY_ORDER.includes(cat))
+    .sort((a, b) => a.localeCompare(b));
+
+  return [...storeTypeCategories, ...otherCategories];
+}
+
+/**
+ * Get template display name (with fallback)
+ */
+export function getTemplateName(template: Template): string {
+  return template.name || template.title || '(Untitled)';
+}
+
+/**
+ * Get template display content (with fallback)
+ */
+export function getTemplateContent(template: Template): string {
+  return template.text || template.content || '';
+}
+
+/**
+ * Sanitize category name (ensure non-empty string)
+ */
+export function sanitizeCategory(category: unknown): string | null {
+  if (typeof category !== 'string') return null;
+  const trimmed = category.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * Sanitize template ID (ensure non-empty string)
+ */
+export function sanitizeTemplateId(id: unknown): string | null {
+  if (typeof id !== 'string') return null;
+  const trimmed = id.trim();
+  return trimmed === '' ? null : trimmed;
 }
 
 /**
@@ -81,6 +162,10 @@ export const templatesApi = {
     if (data.items && !data.templates) {
       data.templates = data.items;
     }
+    // Sort categories by display order
+    if (data.categories) {
+      data.categories = sortCategories(data.categories);
+    }
     return data;
   },
 
@@ -90,7 +175,12 @@ export const templatesApi = {
   getCategories: async (): Promise<string[]> => {
     const response = await shopifyApi.get<string[]>('/templates/categories');
     // Response interceptor already extracts data
-    return response as unknown as string[];
+    const categories = response as unknown as string[];
+    // Sanitize and sort categories
+    const sanitized = categories
+      .map(cat => sanitizeCategory(cat))
+      .filter((cat): cat is string => cat !== null);
+    return sortCategories(sanitized);
   },
 
   /**
@@ -137,4 +227,3 @@ export const templatesApi = {
     };
   },
 };
-

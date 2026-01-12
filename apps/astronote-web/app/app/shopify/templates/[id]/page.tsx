@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { ArrowLeft, FileText, BarChart3, Users } from 'lucide-react';
 import { format } from 'date-fns';
+import { getTemplateName, getTemplateContent } from '@/src/lib/shopify/api/templates';
 
 /**
  * Template Detail Page
@@ -41,8 +42,8 @@ export default function TemplateDetailPage() {
       localStorage.setItem(
         'shopify_template_prefill',
         JSON.stringify({
-          message: template.content,
-          name: template.title,
+          message: getTemplateContent(template),
+          name: getTemplateName(template),
         }),
       );
     }
@@ -102,8 +103,8 @@ export default function TemplateDetailPage() {
         </Link>
         <div className="flex-1">
           <RetailPageHeader
-            title={template.title}
-            description={`Template: ${template.category}`}
+            title={getTemplateName(template)}
+            description={`Template: ${template.category || 'Uncategorized'}`}
           />
         </div>
         <Button onClick={handleUseTemplate} disabled={trackUsage.isPending}>
@@ -122,13 +123,13 @@ export default function TemplateDetailPage() {
             </h3>
             <div className="rounded-lg bg-surface-light border border-border p-6">
               <p className="text-text-primary whitespace-pre-wrap leading-relaxed">
-                {template.content}
+                {getTemplateContent(template)}
               </p>
             </div>
             <div className="mt-4 flex items-center gap-2">
               <StatusBadge
                 status="default"
-                label={template.category}
+                label={template.category || 'Uncategorized'}
               />
               {template.tags && template.tags.length > 0 && (
                 <div className="flex flex-wrap gap-2">
@@ -211,7 +212,7 @@ export default function TemplateDetailPage() {
             <div className="space-y-4">
               <div>
                 <div className="text-sm font-medium text-text-secondary mb-1">Category</div>
-                <div className="text-text-primary">{template.category}</div>
+                <div className="text-text-primary">{template.category || 'Uncategorized'}</div>
               </div>
               {template.useCount !== undefined && template.useCount > 0 && (
                 <div>
