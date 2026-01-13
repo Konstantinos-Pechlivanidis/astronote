@@ -9,6 +9,7 @@ import {
 } from '../services/subscription.js';
 import { getSubscriptionStatusWithStripeSync } from '../services/stripe-sync.js';
 import { SubscriptionPlanType } from '../utils/prismaEnums.js';
+import { computeAllowedActions } from '../services/subscription-actions.js';
 import {
   createSubscriptionCheckoutSession,
   cancelSubscription,
@@ -44,11 +45,15 @@ export async function getStatus(req, res, next) {
       ? getPlanConfig(subscription.planType)
       : null;
 
+    // Compute allowed actions (backend-driven action matrix)
+    const allowedActions = computeAllowedActions(subscription);
+
     return sendSuccess(
       res,
       {
         ...subscription,
         plan, // Include plan config
+        allowedActions, // Server-computed allowed actions (prevents frontend/backend drift)
       },
       'Subscription status retrieved',
     );

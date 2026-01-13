@@ -28,6 +28,7 @@ import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
+import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -44,6 +45,15 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import {
+  deriveUIState,
+  getAvailableActions,
+  getPlanActionLabel,
+  getPlanChangeMessage,
+  isActionDisabled,
+  type BillingAction,
+  type BillingUIState,
+} from '@/src/features/shopify/billing/utils/billingActionMatrix';
 
 /**
  * Billing Page Content
@@ -56,6 +66,11 @@ function BillingPageContent() {
   const [page, setPage] = useState(1);
   const [invoicePage, setInvoicePage] = useState(1);
   const pageSize = 20;
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    action: BillingAction | null;
+    onConfirm: () => void;
+      }>({ open: false, action: null, onConfirm: () => {} });
 
   // Fetch data
   const { data: balanceData } = useBillingBalance();
@@ -259,55 +274,10 @@ function BillingPageContent() {
     }
   };
 
-  // Plan ranking for upgrade/downgrade logic (must match backend plan codes)
-  const PLAN_RANK = {
-    starter: 1,
-    pro: 2,
-  } as const;
-
-  // Helper to compute action label for a plan option
-  const getPlanActionLabel = (targetPlanType: 'starter' | 'pro', targetInterval: 'month' | 'year') => {
-    if (!isSubscriptionActive || !subscriptionPlan) {
-      return 'Subscribe';
-    }
-
-    const currentRank = PLAN_RANK[subscriptionPlan as keyof typeof PLAN_RANK] || 0;
-    const targetRank = PLAN_RANK[targetPlanType] || 0;
-
-    // If different plan
-    if (currentRank !== targetRank) {
-      return currentRank < targetRank ? 'Upgrade' : 'Downgrade';
-    }
-
-    // Same plan, different interval
-    if (subscriptionInterval !== targetInterval) {
-      return targetInterval === 'year' ? 'Switch to Yearly' : 'Switch to Monthly';
-    }
-
-    // Same plan and interval
-    return 'Current Plan';
-  };
-
-  // Helper to get "what happens" message for a plan option
-  const getPlanChangeMessage = (targetPlanType: 'starter' | 'pro', _targetInterval: 'month' | 'year') => {
-    if (!isSubscriptionActive || !subscriptionPlan) {
-      return 'Takes effect immediately';
-    }
-
-    const currentRank = PLAN_RANK[subscriptionPlan as keyof typeof PLAN_RANK] || 0;
-    const targetRank = PLAN_RANK[targetPlanType] || 0;
-    const isDowngrade = currentRank > targetRank;
-    const isProYearlyDowngrade = subscriptionPlan === 'pro' && subscriptionInterval === 'year' && isDowngrade;
-
-    if (isProYearlyDowngrade) {
-      const effectiveDate = subscription.currentPeriodEnd
-        ? formatDateSafe(subscription.currentPeriodEnd)
-        : 'end of term';
-      return `Scheduled for end of term (${effectiveDate})`;
-    }
-
-    return 'Takes effect immediately';
-  };
+  // Derive UI state from subscription (action matrix)
+  const uiState: BillingUIState = deriveUIState(subscription);
+  // Use backend allowedActions if provided (prevents drift), otherwise compute locally
+  const availableActions = getAvailableActions(uiState, subscription?.allowedActions);
 
   const handleSubscribe = async (planType: 'starter' | 'pro') => {
     try {
@@ -339,15 +309,91 @@ function BillingPageContent() {
     }
   };
 
-  const handleSwitchInterval = async (interval: 'month' | 'year') => {
-    const intervalLabel = interval === 'month' ? 'monthly' : 'yearly';
-    // Interval switches are IMMEDIATE (not scheduled at period end)
-    const confirmMessage = `Are you sure you want to switch to ${intervalLabel} billing? This change will take effect immediately.`;
+  // Action handlers with confirmation support
+  const handleAction = (action: BillingAction, targetPlanCode?: 'starter' | 'pro', targetInterval?: 'month' | 'year') => {
+    // Special handling for switchInterval - determine target interval if not provided
+    let finalTargetInterval = targetInterval;
+    if (action.id === 'switchInterval' && !finalTargetInterval) {
+      // Determine target interval from current state (toggle)
+      finalTargetInterval = uiState.currentInterval === 'month' ? 'year' : 'month';
+    }
 
-    if (!window.confirm(confirmMessage)) {
+    // Check if action is disabled
+    const disabled = isActionDisabled(action.id, uiState, targetPlanCode, finalTargetInterval);
+    if (disabled.disabled) {
+      toast.error(disabled.reason || 'This action is not available');
       return;
     }
 
+    // If action requires confirmation, show dialog
+    if (action.requiresConfirmation && action.confirmationCopy) {
+      setConfirmDialog({
+        open: true,
+        action,
+        onConfirm: () => {
+          setConfirmDialog({ open: false, action: null, onConfirm: () => {} });
+          executeAction(action, targetPlanCode, finalTargetInterval);
+        },
+      });
+      return;
+    }
+
+    // Execute immediately
+    executeAction(action, targetPlanCode, finalTargetInterval);
+  };
+
+  const executeAction = (action: BillingAction, targetPlanCode?: 'starter' | 'pro', targetInterval?: 'month' | 'year') => {
+    switch (action.id) {
+    case 'subscribe':
+      if (targetPlanCode) {
+        handleSubscribe(targetPlanCode);
+      }
+      break;
+    case 'changePlan':
+      if (targetPlanCode && targetInterval) {
+        handleChangePlan(targetPlanCode, targetInterval);
+      }
+      break;
+    case 'switchInterval':
+      if (targetInterval) {
+        handleSwitchInterval(targetInterval);
+      } else {
+        // Toggle current interval based on current state
+        const newInterval = uiState.currentInterval === 'month' ? 'year' : 'month';
+        handleSwitchInterval(newInterval);
+      }
+      break;
+    case 'cancelAtPeriodEnd':
+      handleCancelSubscription();
+      break;
+    case 'resumeSubscription':
+      resumeSubscription.mutate();
+      break;
+    case 'updatePaymentMethod':
+      handleManageSubscription();
+      break;
+    case 'refreshFromStripe':
+      reconcileSubscription.mutate();
+      break;
+    case 'viewInvoices':
+      // Scroll to invoices section (handled by UI)
+      break;
+    default:
+      toast.error('Action not implemented');
+    }
+  };
+
+  const handleChangePlan = async (planType: 'starter' | 'pro', interval: 'month' | 'year') => {
+    try {
+      await subscribe.mutateAsync({ planType, interval, currency });
+    } catch (error) {
+      // Error handled by mutation hook
+    }
+  };
+
+  const handleSwitchInterval = async (interval: 'month' | 'year') => {
+    // Note: Confirmation is handled by handleAction() via ConfirmDialog
+    // This function is called after confirmation
     try {
       await switchInterval.mutateAsync({ interval });
       // Status will be refreshed automatically via query invalidation in the mutation hook
@@ -527,68 +573,103 @@ function BillingPageContent() {
                   )}
                 </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button onClick={handleManageSubscription} disabled={getPortal.isPending}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Manage Payment Method
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => reconcileSubscription.mutate()}
-                  disabled={reconcileSubscription.isPending}
-                >
-                  {reconcileSubscription.isPending ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Refreshing...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      Refresh Status
-                    </>
-                  )}
-                </Button>
-                {subscriptionInterval && (
-                  <>
-                    {subscriptionInterval === 'month' ? (
-                      <Button
-                        variant="outline"
-                        onClick={() => handleSwitchInterval('year')}
-                        disabled={switchInterval.isPending}
-                      >
-                        Switch to Yearly
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        onClick={() => handleSwitchInterval('month')}
-                        disabled={switchInterval.isPending}
-                      >
-                        Switch to Monthly
-                      </Button>
-                    )}
-                  </>
+              {/* Action Matrix - Professional Actions Based on State */}
+              <div className="space-y-4">
+                {/* Status Banners */}
+                {uiState.cancelAtPeriodEnd && uiState.effectiveDates.cancelEffectiveDate && (
+                  <div className="p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-yellow-500">
+                          Subscription will cancel on {formatDateSafe(uiState.effectiveDates.cancelEffectiveDate)}
+                        </p>
+                        <p className="text-xs text-text-secondary mt-1">
+                          You&apos;ll keep access until then. You can resume anytime before the cancellation date.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 )}
-                {subscription?.cancelAtPeriodEnd ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => resumeSubscription.mutate()}
-                    disabled={resumeSubscription.isPending}
-                    className="text-green-400 hover:text-green-500"
-                  >
-                    Resume Subscription
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onClick={handleCancelSubscription}
-                    disabled={cancelSubscription.isPending}
-                    className="text-red-400 hover:text-red-500"
-                  >
-                    Cancel Subscription
-                  </Button>
+                {uiState.pendingChange && (
+                  <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-500">
+                          Scheduled change to {uiState.pendingChange.planCode} ({uiState.pendingChange.interval}ly)
+                        </p>
+                        <p className="text-xs text-text-secondary mt-1">
+                          Effective on {formatDateSafe(uiState.pendingChange.effectiveAt)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 )}
+                {(uiState.status === 'past_due' || uiState.status === 'unpaid') && (
+                  <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-red-500">
+                          Payment required - Your subscription is {uiState.status === 'past_due' ? 'past due' : 'unpaid'}
+                        </p>
+                        <p className="text-xs text-text-secondary mt-1">
+                          Please update your payment method to continue service.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons - Responsive Grid */}
+                <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+                  {availableActions.map((action) => {
+                    const disabled = isActionDisabled(action.id, uiState).disabled;
+                    const isLoading =
+                      (action.id === 'cancelAtPeriodEnd' && cancelSubscription.isPending) ||
+                      (action.id === 'resumeSubscription' && resumeSubscription.isPending) ||
+                      (action.id === 'switchInterval' && switchInterval.isPending) ||
+                      (action.id === 'updatePaymentMethod' && getPortal.isPending) ||
+                      (action.id === 'refreshFromStripe' && reconcileSubscription.isPending) ||
+                      (action.id === 'subscribe' && subscribe.isPending);
+
+                    return (
+                      <Button
+                        key={action.id}
+                        onClick={() => handleAction(action)}
+                        disabled={disabled || isLoading}
+                        variant={
+                          action.variant === 'link' || action.variant === 'destructive'
+                            ? 'ghost'
+                            : action.variant === 'default'
+                              ? 'default'
+                              : 'outline'
+                        }
+                        className={
+                          action.intent === 'danger'
+                            ? 'text-red-400 hover:text-red-500'
+                            : action.intent === 'primary'
+                              ? ''
+                              : ''
+                        }
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            {action.id === 'updatePaymentMethod' && <ExternalLink className="mr-2 h-4 w-4" />}
+                            {action.id === 'refreshFromStripe' && <RefreshCw className="mr-2 h-4 w-4" />}
+                            {action.label}
+                          </>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           ) : (
@@ -619,15 +700,15 @@ function BillingPageContent() {
                     </li>
                   </ul>
                   <p className="text-xs text-text-tertiary mb-4 italic">
-                    {getPlanChangeMessage('starter', 'month')}
+                    {getPlanChangeMessage(uiState, 'starter', 'month')}
                   </p>
                   <Button
-                    onClick={() => handleSubscribe('starter')}
+                    onClick={() => handleAction({ id: 'subscribe', label: 'Subscribe', intent: 'primary', variant: 'default' }, 'starter', 'month')}
                     disabled={subscribe.isPending || (isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'month')}
                     className="w-full"
                     variant={isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'month' ? 'outline' : 'default'}
                   >
-                    {getPlanActionLabel('starter', 'month')}
+                    {getPlanActionLabel(uiState, 'starter', 'month')}
                   </Button>
                 </div>
               </RetailCard>
@@ -665,13 +746,16 @@ function BillingPageContent() {
                       <span className="text-sm text-text-secondary">Save 50% vs monthly</span>
                     </li>
                   </ul>
+                  <p className="text-xs text-text-tertiary mb-4 italic">
+                    {getPlanChangeMessage(uiState, 'pro', 'year')}
+                  </p>
                   <Button
-                    onClick={() => handleSubscribe('pro')}
+                    onClick={() => handleAction({ id: 'subscribe', label: 'Subscribe', intent: 'primary', variant: 'default' }, 'pro', 'year')}
                     disabled={subscribe.isPending || (isSubscriptionActive && subscriptionPlan === 'pro' && subscriptionInterval === 'year')}
                     className="w-full"
                     variant={isSubscriptionActive && subscriptionPlan === 'pro' && subscriptionInterval === 'year' ? 'outline' : 'default'}
                   >
-                    {getPlanActionLabel('pro', 'year')}
+                    {getPlanActionLabel(uiState, 'pro', 'year')}
                   </Button>
                 </div>
               </RetailCard>
@@ -1030,6 +1114,137 @@ function BillingPageContent() {
           )}
         </RetailCard>
 
+        {/* Billing Help & Guidance */}
+        <RetailCard className="p-6">
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-text-primary">Billing Help & Guidance</h2>
+            <p className="text-sm text-text-secondary">
+              Learn how billing works and get answers to common questions.
+            </p>
+
+            <div className="space-y-3">
+              {/* How switching plans works */}
+              <details className="group rounded-lg border border-border bg-surface-light p-4">
+                <summary className="flex items-center justify-between cursor-pointer list-none">
+                  <div className="flex items-center gap-3">
+                    <TrendingUp className="h-5 w-5 text-accent flex-shrink-0" />
+                    <h3 className="text-base font-semibold text-text-primary">How switching plans works</h3>
+                  </div>
+                  <span className="text-text-tertiary group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="mt-4 space-y-3 text-sm text-text-secondary">
+                  <p>
+                    <strong className="text-text-primary">Upgrades:</strong> When you upgrade to a higher plan (e.g., Starter → Pro), the change takes effect immediately. You&apos;ll be charged a prorated amount for the remainder of your billing period.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Downgrades:</strong> Most downgrades take effect immediately. However, if you&apos;re on the Pro Yearly plan and downgrade, the change is scheduled for the end of your yearly term to ensure you get full value.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Switching intervals:</strong> When you switch from monthly to yearly billing (or vice versa), the change takes effect immediately. Stripe automatically calculates any proration based on your current usage.
+                  </p>
+                </div>
+              </details>
+
+              {/* When you're charged */}
+              <details className="group rounded-lg border border-border bg-surface-light p-4">
+                <summary className="flex items-center justify-between cursor-pointer list-none">
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="h-5 w-5 text-accent flex-shrink-0" />
+                    <h3 className="text-base font-semibold text-text-primary">When you&apos;re charged</h3>
+                  </div>
+                  <span className="text-text-tertiary group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="mt-4 space-y-3 text-sm text-text-secondary">
+                  <p>
+                    <strong className="text-text-primary">New subscriptions:</strong> You&apos;re charged immediately when you subscribe. Your billing period starts from that moment.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Plan changes:</strong> For upgrades and interval switches, you&apos;ll be charged a prorated amount immediately. The proration ensures you only pay for the time you&apos;ve used on each plan.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Renewals:</strong> Your subscription automatically renews at the end of each billing period. You&apos;ll be charged the full amount for the next period.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Cancellations:</strong> If you cancel, you&apos;ll keep access until the end of your current billing period. No charges occur after that date.
+                  </p>
+                </div>
+              </details>
+
+              {/* Why billing details are needed */}
+              <details className="group rounded-lg border border-border bg-surface-light p-4">
+                <summary className="flex items-center justify-between cursor-pointer list-none">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="h-5 w-5 text-accent flex-shrink-0" />
+                    <h3 className="text-base font-semibold text-text-primary">Why we need billing details</h3>
+                  </div>
+                  <span className="text-text-tertiary group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="mt-4 space-y-3 text-sm text-text-secondary">
+                  <p>
+                    <strong className="text-text-primary">Legal requirements:</strong> We need your billing address and legal name to comply with tax regulations and provide accurate invoices.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">VAT/Tax ID:</strong> If you&apos;re a business in the EU (especially Greece), we may need your VAT number (AFM) for tax compliance. This helps ensure correct tax treatment and may reduce your tax burden.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Invoice accuracy:</strong> Complete billing details ensure your invoices are accurate and can be used for accounting purposes.
+                  </p>
+                  <p className="text-xs text-text-tertiary italic">
+                    You can update your billing details at any time in the Billing Settings page.
+                  </p>
+                </div>
+              </details>
+
+              {/* How to fix payment issues */}
+              <details className="group rounded-lg border border-border bg-surface-light p-4">
+                <summary className="flex items-center justify-between cursor-pointer list-none">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+                    <h3 className="text-base font-semibold text-text-primary">How to fix payment issues</h3>
+                  </div>
+                  <span className="text-text-tertiary group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="mt-4 space-y-3 text-sm text-text-secondary">
+                  <p>
+                    <strong className="text-text-primary">Payment failed:</strong> If your payment fails, your subscription status will show as &quot;Past Due&quot; or &quot;Unpaid&quot;. Update your payment method immediately to avoid service interruption.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Update payment method:</strong> Click &quot;Manage Payment Method&quot; to open the Stripe Customer Portal, where you can update your card, billing address, and payment preferences.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Contact support:</strong> If you continue to experience payment issues, please contact our support team. We&apos;re here to help!
+                  </p>
+                </div>
+              </details>
+
+              {/* How to get invoices/receipts */}
+              <details className="group rounded-lg border border-border bg-surface-light p-4">
+                <summary className="flex items-center justify-between cursor-pointer list-none">
+                  <div className="flex items-center gap-3">
+                    <History className="h-5 w-5 text-accent flex-shrink-0" />
+                    <h3 className="text-base font-semibold text-text-primary">How to get invoices/receipts</h3>
+                  </div>
+                  <span className="text-text-tertiary group-open:rotate-180 transition-transform">▼</span>
+                </summary>
+                <div className="mt-4 space-y-3 text-sm text-text-secondary">
+                  <p>
+                    <strong className="text-text-primary">View invoices:</strong> All your invoices are listed in the &quot;Invoices&quot; section below. Each invoice shows the date, amount, status, and provides links to view or download.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Download PDF:</strong> Click &quot;View&quot; on any invoice to open it in Stripe&apos;s hosted invoice page, where you can download a PDF copy.
+                  </p>
+                  <p>
+                    <strong className="text-text-primary">Email receipts:</strong> Stripe automatically sends email receipts to your billing email address after each successful payment.
+                  </p>
+                  <p className="text-xs text-text-tertiary italic">
+                    Invoices are generated automatically for all subscription payments and top-ups.
+                  </p>
+                </div>
+              </details>
+            </div>
+          </div>
+        </RetailCard>
+
         {/* Invoices */}
         <RetailCard className="p-6">
           <h2 className="text-2xl font-bold text-text-primary mb-6">Invoices</h2>
@@ -1142,6 +1357,25 @@ function BillingPageContent() {
           )}
         </RetailCard>
       </div>
+
+      {/* Confirmation Dialog for Actions */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}
+        onClose={() => setConfirmDialog({ open: false, action: null, onConfirm: () => {} })}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.action?.label || 'Confirm Action'}
+        message={confirmDialog.action?.confirmationCopy || 'Are you sure you want to proceed?'}
+        confirmText="Confirm"
+        cancelText="Cancel"
+        variant={confirmDialog.action?.intent === 'danger' ? 'danger' : 'default'}
+        confirmLoading={
+          (confirmDialog.action?.id === 'cancelAtPeriodEnd' && cancelSubscription.isPending) ||
+          (confirmDialog.action?.id === 'resumeSubscription' && resumeSubscription.isPending) ||
+          (confirmDialog.action?.id === 'switchInterval' && switchInterval.isPending) ||
+          (confirmDialog.action?.id === 'subscribe' && subscribe.isPending)
+        }
+      />
     </RetailPageLayout>
   );
 }

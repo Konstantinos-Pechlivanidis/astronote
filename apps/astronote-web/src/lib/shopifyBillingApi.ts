@@ -78,6 +78,7 @@ export interface SubscriptionStatus {
   mismatchDetected?: boolean;
   lastSyncedAt?: string | null;
   sourceOfTruth?: string | null;
+  allowedActions?: string[]; // Server-computed allowed actions (optional, frontend can compute if missing)
 }
 
 export interface BillingSummary {
