@@ -33,4 +33,7 @@ r.post('/verify-session', ctrl.verifySession);
 // GET /subscriptions/portal - Get Stripe Customer Portal URL
 r.get('/portal', ctrl.getPortal);
 
+// POST /subscriptions/finalize - Finalize subscription from checkout session
+r.post('/finalize', ctrl.finalize);
+
 export default r;

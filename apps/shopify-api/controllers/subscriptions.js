@@ -17,9 +17,12 @@ import {
   getCheckoutSession,
   ensureStripeCustomer,
 } from '../services/stripe.js';
+import { syncBillingProfileFromStripe } from '../services/billing-profile.js';
+import { resolveTaxTreatment, resolveTaxRateForInvoice } from '../services/tax-resolver.js';
+import { upsertTaxEvidence } from '../services/tax-evidence.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
-import { getBillingProfile } from '../services/billing-profile.js';
+import { getBillingProfile, validateBillingProfileForCheckout } from '../services/billing-profile.js';
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -162,17 +165,20 @@ export async function subscribe(req, res, next) {
       }
     }
 
-    const { buildFrontendUrl } = await import('../utils/frontendUrl.js');
+    const { getFrontendBaseUrlSync } = await import('../utils/frontendUrl.js');
+    const { normalizeBaseUrl } = await import('../utils/url-helpers.js');
 
-    // Build success URL with query parameters
-    // Note: Stripe requires {CHECKOUT_SESSION_ID} as literal string in URL
-    const successUrl = buildFrontendUrl('/app/billing/success', null, {
-      session_id: '{CHECKOUT_SESSION_ID}',
-      type: 'subscription',
-    });
+    // Build success URL with {CHECKOUT_SESSION_ID} token (must NOT be URL-encoded)
+    // Stripe requires literal {CHECKOUT_SESSION_ID} string in URL, not encoded
+    const baseUrl = normalizeBaseUrl(getFrontendBaseUrlSync());
+    if (!baseUrl) {
+      throw new Error('FRONTEND_URL is not configured. Please set FRONTEND_URL environment variable.');
+    }
+    // Route is /app/shopify/billing/success (Next.js app router structure)
+    const successUrl = `${baseUrl}/app/shopify/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`;
 
     // Build cancel URL
-    const cancelUrl = buildFrontendUrl('/app/billing/cancel');
+    const cancelUrl = `${baseUrl}/app/shopify/billing/cancel`;
 
     // Validate URLs before passing to Stripe (fail fast with clear error)
     const { isValidAbsoluteUrl } = await import('../utils/url-helpers.js');
@@ -203,7 +209,26 @@ export async function subscribe(req, res, next) {
       );
     }
 
+    // Validate billing profile completeness before checkout
     const billingProfile = await getBillingProfile(shopId);
+    const profileValidation = validateBillingProfileForCheckout(billingProfile);
+    if (!profileValidation.valid) {
+      logger.warn('Billing profile incomplete for checkout', {
+        shopId,
+        missingFields: profileValidation.missingFields,
+      });
+      return sendError(
+        res,
+        400,
+        'BILLING_PROFILE_INCOMPLETE',
+        'Billing profile is incomplete. Please complete your billing details before subscribing.',
+        {
+          missingFields: profileValidation.missingFields,
+        },
+      );
+    }
+
+    // Ensure Stripe customer exists with correct email from billing profile
     const stripeCustomerId = await ensureStripeCustomer({
       shopId,
       shopDomain,
@@ -219,6 +244,7 @@ export async function subscribe(req, res, next) {
       planType,
       currency, // Use resolved currency
       stripeCustomerId,
+      billingProfile, // Pass billing profile for email
       successUrl,
       cancelUrl,
     });
@@ -802,5 +828,256 @@ export async function getPortal(req, res, _next) {
       'Failed to create customer portal session',
       { requestId },
     );
+  }
+}
+
+/**
+ * POST /subscriptions/finalize
+ * Finalize subscription from Stripe checkout session
+ * Called by frontend success page as fallback if webhook is delayed
+ * Body: { sessionId: string, type?: string }
+ */
+export async function finalize(req, res, next) {
+  try {
+    const shopId = getStoreId(req);
+    const { sessionId, type } = req.body;
+
+    if (!sessionId || typeof sessionId !== 'string') {
+      return sendError(
+        res,
+        400,
+        'VALIDATION_ERROR',
+        'sessionId is required and must be a string',
+      );
+    }
+
+    // Validate sessionId is not the placeholder token
+    if (sessionId.includes('{') || sessionId.includes('CHECKOUT_SESSION_ID')) {
+      return sendError(
+        res,
+        400,
+        'INVALID_SESSION_ID',
+        'Invalid session ID. Please complete the checkout process.',
+      );
+    }
+
+    if (!stripe) {
+      return sendError(
+        res,
+        503,
+        'STRIPE_NOT_CONFIGURED',
+        'Payment processing unavailable',
+      );
+    }
+
+    // Retrieve checkout session from Stripe
+    let session;
+    try {
+      session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['subscription', 'customer', 'line_items'],
+      });
+    } catch (err) {
+      logger.error('Failed to retrieve Stripe checkout session', {
+        sessionId,
+        error: err.message,
+        shopId,
+      });
+      return sendError(
+        res,
+        404,
+        'SESSION_NOT_FOUND',
+        'Checkout session not found. Please contact support if payment was completed.',
+      );
+    }
+
+    // Verify session belongs to this shop
+    const metadata = session.metadata || {};
+    const sessionShopId = metadata.shopId || metadata.storeId;
+    if (sessionShopId !== shopId) {
+      logger.warn('Session shopId mismatch', {
+        sessionId,
+        sessionShopId,
+        requestShopId: shopId,
+      });
+      return sendError(
+        res,
+        403,
+        'SESSION_MISMATCH',
+        'This checkout session does not belong to your shop.',
+      );
+    }
+
+    // Only process subscription type
+    const sessionType = type || metadata.type || (session.mode === 'subscription' ? 'subscription' : null);
+    if (sessionType !== 'subscription') {
+      return sendError(
+        res,
+        400,
+        'INVALID_SESSION_TYPE',
+        'This endpoint only processes subscription checkouts.',
+      );
+    }
+
+    // Check if session is already paid
+    if (session.payment_status !== 'paid') {
+      return sendError(
+        res,
+        400,
+        'PAYMENT_NOT_COMPLETE',
+        'Payment is not complete. Please complete the checkout process.',
+      );
+    }
+
+    // Extract subscription and customer IDs
+    const subscriptionId =
+      typeof session.subscription === 'string'
+        ? session.subscription
+        : session.subscription?.id;
+    const customerId =
+      typeof session.customer === 'string'
+        ? session.customer
+        : session.customer?.id;
+
+    if (!subscriptionId || !customerId) {
+      logger.warn('Session missing subscription or customer ID', {
+        sessionId,
+        shopId,
+      });
+      return sendError(
+        res,
+        400,
+        'INCOMPLETE_SESSION',
+        'Checkout session is incomplete. Webhook will process this automatically.',
+      );
+    }
+
+    const planType = metadata.planType;
+    if (!planType || !['starter', 'pro'].includes(planType)) {
+      return sendError(
+        res,
+        400,
+        'INVALID_PLAN_TYPE',
+        'Invalid plan type in checkout session.',
+      );
+    }
+
+    // Check if subscription is already activated (idempotency)
+    const existingSubscription = await prisma.subscription.findUnique({
+      where: { shopId },
+    });
+
+    if (existingSubscription?.stripeSubscriptionId === subscriptionId && existingSubscription?.status === 'active') {
+      logger.info('Subscription already finalized', {
+        shopId,
+        subscriptionId,
+      });
+      const subscriptionStatus = await getSubscriptionStatus(shopId);
+      return sendSuccess(res, {
+        finalized: true,
+        alreadyActive: true,
+        subscription: subscriptionStatus,
+      }, 'Subscription already active');
+    }
+
+    // Retrieve subscription from Stripe
+    let stripeSubscription = null;
+    try {
+      stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+    } catch (err) {
+      logger.warn('Failed to retrieve subscription from Stripe', {
+        subscriptionId,
+        error: err.message,
+      });
+    }
+
+    // Activate subscription (idempotent)
+    logger.info('Finalizing subscription from checkout session', {
+      shopId,
+      planType,
+      subscriptionId,
+      sessionId,
+    });
+
+    await activateSubscription(shopId, customerId, subscriptionId, planType, stripeSubscription);
+
+    // Allocate free credits (idempotent)
+    const creditResult = await allocateFreeCredits(
+      shopId,
+      planType,
+      `sub_${subscriptionId}`,
+      stripeSubscription,
+    );
+
+    // Extract tax details and sync billing profile
+    const extractTaxId = (taxIds = []) => {
+      if (!Array.isArray(taxIds)) return null;
+      const vat = taxIds.find((entry) => entry.type === 'eu_vat') || taxIds[0];
+      if (!vat) return null;
+      return {
+        value: vat.value || vat.id || null,
+        country: vat.country || null,
+        verified: vat.verification?.status === 'verified',
+      };
+    };
+
+    const customerDetails = session?.customer_details || {};
+    const taxId = extractTaxId(customerDetails.tax_ids || []);
+    const billingCountry = customerDetails.address?.country || null;
+    const subtotal = session.amount_subtotal ?? null;
+    const taxAmount = session.total_details?.amount_tax ?? null;
+
+    if (billingCountry || taxId?.value) {
+      const treatment = resolveTaxTreatment({
+        billingCountry,
+        vatId: taxId?.value || null,
+        vatIdValidated: taxId?.verified || false,
+      });
+      const taxRateApplied = resolveTaxRateForInvoice({
+        subtotal,
+        tax: taxAmount,
+      });
+
+      await upsertTaxEvidence({
+        shopId,
+        billingCountry,
+        vatIdProvided: taxId?.value || null,
+        vatIdValidated: taxId?.verified || false,
+        taxRateApplied,
+        taxJurisdiction: treatment.taxJurisdiction,
+        taxTreatment: treatment.mode,
+      });
+
+      await syncBillingProfileFromStripe({
+        shopId,
+        session,
+        taxTreatment: treatment.mode,
+        taxExempt: treatment.taxRate === 0,
+      });
+    }
+
+    // Get final subscription status
+    const subscriptionStatus = await getSubscriptionStatus(shopId);
+
+    logger.info('Subscription finalized successfully', {
+      shopId,
+      planType,
+      subscriptionId,
+      creditsAllocated: creditResult.allocated,
+    });
+
+    return sendSuccess(res, {
+      finalized: true,
+      subscription: subscriptionStatus,
+      creditsAllocated: creditResult.allocated,
+      credits: creditResult.credits || 0,
+    }, 'Subscription finalized successfully');
+  } catch (error) {
+    logger.error('Finalize subscription error', {
+      error: error.message,
+      stack: error.stack,
+      shopId: getStoreId(req),
+      sessionId: req.body?.sessionId,
+    });
+    next(error);
   }
 }

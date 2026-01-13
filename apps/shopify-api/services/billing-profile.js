@@ -43,6 +43,49 @@ export async function getBillingProfile(shopId) {
   });
 }
 
+/**
+ * Validate billing profile completeness for checkout
+ * Required fields: billingEmail, legalName, country, address line1
+ * @param {Object} profile - Billing profile object
+ * @returns {Object} { valid: boolean, missingFields: string[] }
+ */
+export function validateBillingProfileForCheckout(profile) {
+  if (!profile) {
+    return {
+      valid: false,
+      missingFields: ['billingEmail', 'legalName', 'country', 'address.line1'],
+    };
+  }
+
+  const missingFields = [];
+
+  // Required: billingEmail
+  if (!profile.billingEmail || !profile.billingEmail.trim()) {
+    missingFields.push('billingEmail');
+  }
+
+  // Required: legalName
+  if (!profile.legalName || !profile.legalName.trim()) {
+    missingFields.push('legalName');
+  }
+
+  // Required: country (from billingAddress or vatCountry)
+  const country = profile.billingAddress?.country || profile.vatCountry;
+  if (!country || !country.trim()) {
+    missingFields.push('country');
+  }
+
+  // Required: address line1
+  if (!profile.billingAddress?.line1 || !profile.billingAddress.line1.trim()) {
+    missingFields.push('address.line1');
+  }
+
+  return {
+    valid: missingFields.length === 0,
+    missingFields,
+  };
+}
+
 export async function upsertBillingProfile(shopId, data) {
   return prisma.shopBillingProfile.upsert({
     where: { shopId },
@@ -129,4 +172,5 @@ export default {
   getBillingProfile,
   upsertBillingProfile,
   syncBillingProfileFromStripe,
+  validateBillingProfileForCheckout,
 };

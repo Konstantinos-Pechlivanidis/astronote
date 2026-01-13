@@ -44,8 +44,11 @@ export async function ensureStripeCustomer({
   }
 
   const address = normalizeStripeAddress(billingProfile?.billingAddress);
-  const email =
-    billingProfile?.billingEmail || (shopDomain ? `${shopDomain}@astronote.com` : null);
+  // Use billingEmail from profile (required for checkout), never default to shop@astronote.com
+  const email = billingProfile?.billingEmail || null;
+  if (!email) {
+    throw new Error('Billing email is required. Please complete your billing profile before checkout.');
+  }
   const name = billingProfile?.legalName || shopName || shopDomain || 'Astronote Shop';
 
   const customer = await stripe.customers.create({
@@ -644,10 +647,11 @@ export function getStripePriceId(
  */
 export async function createSubscriptionCheckoutSession({
   shopId,
-  shopDomain,
+  shopDomain: _shopDomain,
   planType,
   currency = 'EUR',
   stripeCustomerId = null,
+  billingProfile = null,
   successUrl,
   cancelUrl,
 }) {
@@ -749,7 +753,7 @@ export async function createSubscriptionCheckoutSession({
       },
       ...(stripeCustomerId
         ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
-        : { customer_email: `${shopDomain}@astronote.com` }),
+        : { customer_email: billingProfile?.billingEmail || null }),
       client_reference_id: `shop_${shopId}`,
       subscription_data: {
         metadata: {

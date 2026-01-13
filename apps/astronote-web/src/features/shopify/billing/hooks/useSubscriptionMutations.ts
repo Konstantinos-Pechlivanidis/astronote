@@ -33,6 +33,15 @@ export function useSubscribe() {
       const code = apiError?.code || error.response?.data?.code || error.code;
       if (code === 'ALREADY_SUBSCRIBED') {
         toast.error('You already have an active subscription. Please cancel your current subscription first.');
+      } else if (code === 'BILLING_PROFILE_INCOMPLETE') {
+        const missingFields = error.response?.data?.missingFields || [];
+        toast.error('Please complete your billing details before subscribing.', {
+          duration: 5000,
+        });
+        // Redirect to billing settings
+        setTimeout(() => {
+          window.location.href = `/app/shopify/billing?missingFields=${encodeURIComponent(JSON.stringify(missingFields))}`;
+        }, 1000);
       } else if (code === 'MISSING_PRICE_ID') {
         toast.error('Payment configuration error. Please contact support.');
       } else if (code === 'INVALID_PLAN_TYPE') {
@@ -147,6 +156,31 @@ export function useSwitchInterval() {
     onError: (error: any) => {
       const apiError = error as BillingApiError;
       const message = apiError?.message || error.response?.data?.message || 'Failed to switch subscription interval';
+      toast.error(message);
+    },
+  });
+}
+
+/**
+ * React Query hook for finalizing subscription from checkout session
+ */
+export function useFinalizeSubscription() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: { sessionId: string; type?: string }) => {
+      const response = await subscriptionsApi.finalize(data);
+      return response;
+    },
+    onSuccess: () => {
+      // Invalidate subscription status and billing summary
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'balance'] });
+    },
+    onError: (error: any) => {
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to finalize subscription';
       toast.error(message);
     },
   });

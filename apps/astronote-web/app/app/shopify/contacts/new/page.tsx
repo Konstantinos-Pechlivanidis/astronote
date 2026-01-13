@@ -90,182 +90,182 @@ export default function NewContactPage() {
   return (
     <RetailPageLayout>
       <div className="space-y-6">
-      {/* Header */}
+        {/* Header */}
         <div className="flex items-center gap-4">
-        <Link href="/app/shopify/contacts">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
+          <Link href="/app/shopify/contacts">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="mr-2 h-4 w-4" />
             Back
-          </Button>
-        </Link>
-        <div className="flex-1">
-          <RetailPageHeader
-            title="Create Contact"
-            description="Add a new contact to your list"
-          />
+            </Button>
+          </Link>
+          <div className="flex-1">
+            <RetailPageHeader
+              title="Create Contact"
+              description="Add a new contact to your list"
+            />
+          </div>
+        </div>
+
+        <div className="max-w-2xl">
+          <RetailCard className="p-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Phone - Full width */}
+              <div>
+                <label htmlFor="phoneE164" className="mb-2 block text-sm font-medium text-text-secondary">
+                Phone Number <span className="text-red-400">*</span>
+                </label>
+                <Input
+                  id="phoneE164"
+                  type="tel"
+                  value={formData.phoneE164}
+                  onChange={(e) => setFormData({ ...formData, phoneE164: e.target.value })}
+                  placeholder="+306977123456"
+                  className={errors.phoneE164 ? 'border-red-400' : ''}
+                />
+                {errors.phoneE164 && (
+                  <p className="mt-1 text-sm text-red-400">{errors.phoneE164}</p>
+                )}
+                <p className="mt-1 text-xs text-text-tertiary">
+                Must be in E.164 format (e.g., +306977123456)
+                </p>
+              </div>
+
+              {/* Name Fields - 2 columns on desktop */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                {/* First Name */}
+                <div>
+                  <label htmlFor="firstName" className="mb-2 block text-sm font-medium text-text-secondary">
+                First Name
+                  </label>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    value={formData.firstName}
+                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                    placeholder="John"
+                    maxLength={100}
+                  />
+                </div>
+
+                {/* Last Name */}
+                <div>
+                  <label htmlFor="lastName" className="mb-2 block text-sm font-medium text-text-secondary">
+                Last Name
+                  </label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    value={formData.lastName}
+                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                    placeholder="Doe"
+                    maxLength={100}
+                  />
+                </div>
+              </div>
+
+              {/* Email */}
+              <div>
+                <label htmlFor="email" className="mb-2 block text-sm font-medium text-text-secondary">
+                Email
+                </label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="john.doe@example.com"
+                  className={errors.email ? 'border-red-400' : ''}
+                />
+                {errors.email && (
+                  <p className="mt-1 text-sm text-red-400">{errors.email}</p>
+                )}
+              </div>
+
+              {/* Gender and Birth Date - 2 columns on desktop */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                {/* Gender */}
+                <div>
+                  <label htmlFor="gender" className="mb-2 block text-sm font-medium text-text-secondary">
+                Gender
+                  </label>
+                  <Select
+                    value={formData.gender}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, gender: value as 'male' | 'female' | 'other' | typeof UI_NOT_SPECIFIED })
+                    }
+                  >
+                    <SelectTrigger id="gender">
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UI_NOT_SPECIFIED}>Not specified</SelectItem>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Birth Date */}
+                <div>
+                  <label htmlFor="birthDate" className="mb-2 block text-sm font-medium text-text-secondary">
+                Birth Date
+                  </label>
+                  <Input
+                    id="birthDate"
+                    type="date"
+                    value={formData.birthDate}
+                    onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+                    max={new Date().toISOString().split('T')[0]}
+                    className={errors.birthDate ? 'border-red-400' : ''}
+                  />
+                  {errors.birthDate && (
+                    <p className="mt-1 text-sm text-red-400">{errors.birthDate}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* SMS Consent */}
+              <div>
+                <label htmlFor="smsConsent" className="mb-2 block text-sm font-medium text-text-secondary">
+                SMS Consent
+                </label>
+                <Select
+                  value={formData.smsConsent}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      smsConsent: value as 'opted_in' | 'opted_out' | 'unknown',
+                    })
+                  }
+                >
+                  <SelectTrigger id="smsConsent">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="opted_in">Opted In</SelectItem>
+                    <SelectItem value="opted_out">Opted Out</SelectItem>
+                    <SelectItem value="unknown">Unknown</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-4 border-t border-border">
+                <Link href="/app/shopify/contacts">
+                  <Button type="button" variant="outline">
+                  Cancel
+                  </Button>
+                </Link>
+                <Button type="submit" disabled={createContact.isPending} className="flex-1">
+                  <Save className="mr-2 h-4 w-4" />
+                  {createContact.isPending ? 'Creating...' : 'Create Contact'}
+                </Button>
+              </div>
+            </form>
+          </RetailCard>
         </div>
       </div>
-
-      <div className="max-w-2xl">
-        <RetailCard className="p-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Phone - Full width */}
-            <div>
-              <label htmlFor="phoneE164" className="mb-2 block text-sm font-medium text-text-secondary">
-                Phone Number <span className="text-red-400">*</span>
-              </label>
-              <Input
-                id="phoneE164"
-                type="tel"
-                value={formData.phoneE164}
-                onChange={(e) => setFormData({ ...formData, phoneE164: e.target.value })}
-                placeholder="+306977123456"
-                className={errors.phoneE164 ? 'border-red-400' : ''}
-              />
-              {errors.phoneE164 && (
-                <p className="mt-1 text-sm text-red-400">{errors.phoneE164}</p>
-              )}
-              <p className="mt-1 text-xs text-text-tertiary">
-                Must be in E.164 format (e.g., +306977123456)
-              </p>
-            </div>
-
-            {/* Name Fields - 2 columns on desktop */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {/* First Name */}
-            <div>
-              <label htmlFor="firstName" className="mb-2 block text-sm font-medium text-text-secondary">
-                First Name
-              </label>
-              <Input
-                id="firstName"
-                type="text"
-                value={formData.firstName}
-                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                placeholder="John"
-                maxLength={100}
-              />
-            </div>
-
-            {/* Last Name */}
-            <div>
-              <label htmlFor="lastName" className="mb-2 block text-sm font-medium text-text-secondary">
-                Last Name
-              </label>
-              <Input
-                id="lastName"
-                type="text"
-                value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                placeholder="Doe"
-                maxLength={100}
-              />
-              </div>
-            </div>
-
-            {/* Email */}
-            <div>
-              <label htmlFor="email" className="mb-2 block text-sm font-medium text-text-secondary">
-                Email
-              </label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="john.doe@example.com"
-                className={errors.email ? 'border-red-400' : ''}
-              />
-              {errors.email && (
-                <p className="mt-1 text-sm text-red-400">{errors.email}</p>
-              )}
-            </div>
-
-            {/* Gender and Birth Date - 2 columns on desktop */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {/* Gender */}
-            <div>
-              <label htmlFor="gender" className="mb-2 block text-sm font-medium text-text-secondary">
-                Gender
-              </label>
-              <Select
-                value={formData.gender}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, gender: value as 'male' | 'female' | 'other' | typeof UI_NOT_SPECIFIED })
-                }
-              >
-                <SelectTrigger id="gender">
-                  <SelectValue placeholder="Select gender" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UI_NOT_SPECIFIED}>Not specified</SelectItem>
-                  <SelectItem value="male">Male</SelectItem>
-                  <SelectItem value="female">Female</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Birth Date */}
-            <div>
-              <label htmlFor="birthDate" className="mb-2 block text-sm font-medium text-text-secondary">
-                Birth Date
-              </label>
-              <Input
-                id="birthDate"
-                type="date"
-                value={formData.birthDate}
-                onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
-                max={new Date().toISOString().split('T')[0]}
-                className={errors.birthDate ? 'border-red-400' : ''}
-              />
-              {errors.birthDate && (
-                <p className="mt-1 text-sm text-red-400">{errors.birthDate}</p>
-              )}
-              </div>
-            </div>
-
-            {/* SMS Consent */}
-            <div>
-              <label htmlFor="smsConsent" className="mb-2 block text-sm font-medium text-text-secondary">
-                SMS Consent
-              </label>
-              <Select
-                value={formData.smsConsent}
-                onValueChange={(value) =>
-                  setFormData({
-                    ...formData,
-                    smsConsent: value as 'opted_in' | 'opted_out' | 'unknown',
-                  })
-                }
-              >
-                <SelectTrigger id="smsConsent">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="opted_in">Opted In</SelectItem>
-                  <SelectItem value="opted_out">Opted Out</SelectItem>
-                  <SelectItem value="unknown">Unknown</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-3 pt-4 border-t border-border">
-              <Link href="/app/shopify/contacts">
-                <Button type="button" variant="outline">
-                  Cancel
-                </Button>
-              </Link>
-              <Button type="submit" disabled={createContact.isPending} className="flex-1">
-                <Save className="mr-2 h-4 w-4" />
-                {createContact.isPending ? 'Creating...' : 'Create Contact'}
-              </Button>
-            </div>
-          </form>
-        </RetailCard>
-      </div>
-    </div>
     </RetailPageLayout>
   );
 }

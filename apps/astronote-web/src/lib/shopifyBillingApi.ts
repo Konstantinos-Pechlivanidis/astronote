@@ -557,6 +557,30 @@ export const shopifyBillingApi = {
       return response as unknown as PortalResponse;
     }, 'Failed to open billing portal'),
 
+  finalize: async (data: { sessionId: string; type?: string }): Promise<{
+    finalized: boolean;
+    alreadyActive?: boolean;
+    subscription?: SubscriptionStatus;
+    creditsAllocated?: boolean;
+    credits?: number;
+  }> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<{
+        finalized: boolean;
+        alreadyActive?: boolean;
+        subscription?: SubscriptionStatus;
+        creditsAllocated?: boolean;
+        credits?: number;
+      }>('/subscriptions/finalize', data);
+      return response as unknown as {
+        finalized: boolean;
+        alreadyActive?: boolean;
+        subscription?: SubscriptionStatus;
+        creditsAllocated?: boolean;
+        credits?: number;
+      };
+    }, 'Failed to finalize subscription'),
+
   getBillingProfile: async (): Promise<BillingProfile> =>
     safeRequest(async () => {
       const response = await shopifyApi.get<BillingProfile>('/billing/profile');
@@ -597,4 +621,5 @@ export const subscriptionsApi = {
   cancel: shopifyBillingApi.cancelSubscription,
   getPortal: shopifyBillingApi.getBillingPortalUrl,
   switchInterval: shopifyBillingApi.switchSubscription,
+  finalize: shopifyBillingApi.finalize,
 };

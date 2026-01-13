@@ -294,11 +294,11 @@ function BillingPageContent() {
   return (
     <RetailPageLayout>
       <div className="space-y-6">
-      {/* Header */}
-      <RetailPageHeader
-        title="Billing"
-        description="Manage your SMS credits and subscription"
-      />
+        {/* Header */}
+        <RetailPageHeader
+          title="Billing"
+          description="Manage your SMS credits and subscription"
+        />
         {/* Subscription Required Banner */}
         {!isSubscriptionActive && (
           <RetailCard className="p-6 border-2 border-red-500/50 bg-red-500/10">
@@ -1024,10 +1024,10 @@ export default function BillingPage() {
       fallback={
         <RetailPageLayout>
           <div className="space-y-6">
-          <RetailPageHeader
-            title="Billing"
-            description="Manage your SMS credits and subscription"
-          />
+            <RetailPageHeader
+              title="Billing"
+              description="Manage your SMS credits and subscription"
+            />
             <RetailCard className="p-6">
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="h-8 w-8 animate-spin text-text-tertiary" />

@@ -19,6 +19,8 @@ const subscriptionMock = {
 
 const billingProfileMock = {
   getBillingProfile: jest.fn(),
+  validateBillingProfileForCheckout: jest.fn(),
+  syncBillingProfileFromStripe: jest.fn(),
 };
 
 const prismaMock = {
@@ -43,7 +45,12 @@ describe('Subscription checkout controller', () => {
 
   it('returns a checkout URL and session ID', async () => {
     subscriptionMock.getSubscriptionStatus.mockResolvedValue({ active: false, planType: null });
-    billingProfileMock.getBillingProfile.mockResolvedValue(null);
+    billingProfileMock.getBillingProfile.mockResolvedValue({
+      billingEmail: 'test@example.com',
+      legalName: 'Test Shop',
+      billingAddress: { line1: '123 Main St', country: 'US' },
+    });
+    billingProfileMock.validateBillingProfileForCheckout.mockReturnValue({ valid: true, missingFields: [] });
     stripeMock.ensureStripeCustomer.mockResolvedValue('cus_test_123');
     prismaMock.shop.findUnique.mockResolvedValue({ currency: 'EUR' });
     stripeMock.createSubscriptionCheckoutSession.mockResolvedValue({

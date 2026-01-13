@@ -14,25 +14,25 @@ export default function BillingCancelPage() {
   return (
     <RetailPageLayout>
       <div className="space-y-6">
-      <RetailPageHeader title="Payment Cancelled" />
-      <RetailCard className="p-6">
-        <div className="text-center py-8">
-          <XCircle className="mx-auto h-16 w-16 text-yellow-500 mb-4" />
-          <h2 className="text-2xl font-bold text-text-primary mb-2">Payment Cancelled</h2>
-          <p className="text-sm text-text-secondary mb-6">
+        <RetailPageHeader title="Payment Cancelled" />
+        <RetailCard className="p-6">
+          <div className="text-center py-8">
+            <XCircle className="mx-auto h-16 w-16 text-yellow-500 mb-4" />
+            <h2 className="text-2xl font-bold text-text-primary mb-2">Payment Cancelled</h2>
+            <p className="text-sm text-text-secondary mb-6">
             Your payment was cancelled. No charges have been made to your account.
-          </p>
-          <div className="flex items-center justify-center gap-3">
-            <Link href="/app/shopify/billing">
-              <Button>
-                <ArrowLeft className="mr-2 h-4 w-4" />
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <Link href="/app/shopify/billing">
+                <Button>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
                 Return to Billing
-              </Button>
-            </Link>
+                </Button>
+              </Link>
+            </div>
           </div>
-        </div>
-      </RetailCard>
-    </div>
+        </RetailCard>
+      </div>
     </RetailPageLayout>
   );
 }

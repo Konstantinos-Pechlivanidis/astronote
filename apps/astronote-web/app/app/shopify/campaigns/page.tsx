@@ -366,34 +366,34 @@ export default function CampaignsPage() {
 
         {/* Campaigns Table */}
         {!campaignsLoading && (
-        <div>
-          <RetailDataTable
-            columns={columns}
-            data={campaigns}
-            keyExtractor={(campaign) => campaign.id}
-            emptyTitle={search || statusFilter ? 'No campaigns found' : 'No campaigns yet'}
-            emptyDescription={
-              search || (statusFilter !== UI_ALL && statusFilter)
-                ? 'Try adjusting your filters'
-                : 'Create your first campaign to start sending SMS messages to your customers.'
-            }
-            emptyIcon={Megaphone}
-            emptyAction={
-              !search && !statusFilter && (
-                <Link href="/app/shopify/campaigns/new">
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" />
+          <div>
+            <RetailDataTable
+              columns={columns}
+              data={campaigns}
+              keyExtractor={(campaign) => campaign.id}
+              emptyTitle={search || statusFilter ? 'No campaigns found' : 'No campaigns yet'}
+              emptyDescription={
+                search || (statusFilter !== UI_ALL && statusFilter)
+                  ? 'Try adjusting your filters'
+                  : 'Create your first campaign to start sending SMS messages to your customers.'
+              }
+              emptyIcon={Megaphone}
+              emptyAction={
+                !search && !statusFilter && (
+                  <Link href="/app/shopify/campaigns/new">
+                    <Button>
+                      <Plus className="mr-2 h-4 w-4" />
                   Create Campaign
-                  </Button>
-                </Link>
-              )
-            }
-            error={campaignsError ? 'Failed to load campaigns' : undefined}
-            onRetry={refetchCampaigns}
-            mobileCardRender={mobileCardRender}
-            onRowClick={(campaign) => router.push(`/app/shopify/campaigns/${campaign.id}`)}
-          />
-        </div>
+                    </Button>
+                  </Link>
+                )
+              }
+              error={campaignsError ? 'Failed to load campaigns' : undefined}
+              onRetry={refetchCampaigns}
+              mobileCardRender={mobileCardRender}
+              onRowClick={(campaign) => router.push(`/app/shopify/campaigns/${campaign.id}`)}
+            />
+          </div>
         )}
 
         {/* Pagination */}
