@@ -156,21 +156,51 @@ export async function getSubscriptionStatus(shopId) {
     });
 
     // Also get Subscription model for pendingChange and reconciliation tracking
-    const subscriptionRecord = await prisma.subscription.findUnique({
-      where: { shopId },
-      select: {
-        planCode: true,
-        interval: true,
-        currency: true,
-        status: true,
-        pendingChangePlanCode: true,
-        pendingChangeInterval: true,
-        pendingChangeCurrency: true,
-        pendingChangeEffectiveAt: true,
-        lastSyncedAt: true,
-        sourceOfTruth: true,
-      },
-    });
+    // TODO: Remove try-catch once migration 20250206000000_add_subscription_interval_fields is deployed
+    // Temporary backward-compatible query to prevent crashes if DB doesn't have new columns yet
+    let subscriptionRecord = null;
+    try {
+      subscriptionRecord = await prisma.subscription.findUnique({
+        where: { shopId },
+        select: {
+          planCode: true,
+          interval: true,
+          currency: true,
+          status: true,
+          pendingChangePlanCode: true,
+          pendingChangeInterval: true,
+          pendingChangeCurrency: true,
+          pendingChangeEffectiveAt: true,
+          lastSyncedAt: true,
+          sourceOfTruth: true,
+        },
+      });
+    } catch (err) {
+      // If columns don't exist yet, fallback to basic query
+      if (err.message?.includes('does not exist')) {
+        logger.warn('Subscription interval fields not yet migrated, using fallback query', { shopId });
+        subscriptionRecord = await prisma.subscription.findUnique({
+          where: { shopId },
+          select: {
+            planCode: true,
+            currency: true,
+            status: true,
+          },
+        });
+        // Set defaults for missing fields
+        if (subscriptionRecord) {
+          subscriptionRecord.interval = null;
+          subscriptionRecord.pendingChangePlanCode = null;
+          subscriptionRecord.pendingChangeInterval = null;
+          subscriptionRecord.pendingChangeCurrency = null;
+          subscriptionRecord.pendingChangeEffectiveAt = null;
+          subscriptionRecord.lastSyncedAt = null;
+          subscriptionRecord.sourceOfTruth = null;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     if (!shop) {
       return {
@@ -479,45 +509,89 @@ export async function activateSubscription(
       ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
       : shop.currency || null;
 
-    await prisma.subscription.upsert({
-      where: { shopId },
-      update: {
-        stripeCustomerId,
-        stripeSubscriptionId,
-        planCode: planType,
-        interval: resolvedInterval,
-        status: 'active',
-        currency: subscriptionCurrency,
-        currentPeriodStart,
-        currentPeriodEnd,
-        cancelAtPeriodEnd,
-        trialEndsAt: stripeSubscription?.trial_end
-          ? new Date(stripeSubscription.trial_end * 1000)
-          : null,
-        metadata: stripeSubscription?.metadata || undefined,
-        lastSyncedAt: new Date(),
-        sourceOfTruth: 'activateSubscription',
-      },
-      create: {
-        shopId,
-        provider: 'stripe',
-        stripeCustomerId,
-        stripeSubscriptionId,
-        planCode: planType,
-        interval: resolvedInterval,
-        status: 'active',
-        currency: subscriptionCurrency,
-        currentPeriodStart,
-        currentPeriodEnd,
-        cancelAtPeriodEnd,
-        trialEndsAt: stripeSubscription?.trial_end
-          ? new Date(stripeSubscription.trial_end * 1000)
-          : null,
-        metadata: stripeSubscription?.metadata || undefined,
-        lastSyncedAt: new Date(),
-        sourceOfTruth: 'activateSubscription',
-      },
-    });
+    // TODO: Remove try-catch once migration 20250206000000_add_subscription_interval_fields is deployed
+    // Temporary backward-compatible upsert to prevent crashes if DB doesn't have new columns yet
+    try {
+      await prisma.subscription.upsert({
+        where: { shopId },
+        update: {
+          stripeCustomerId,
+          stripeSubscriptionId,
+          planCode: planType,
+          interval: resolvedInterval,
+          status: 'active',
+          currency: subscriptionCurrency,
+          currentPeriodStart,
+          currentPeriodEnd,
+          cancelAtPeriodEnd,
+          trialEndsAt: stripeSubscription?.trial_end
+            ? new Date(stripeSubscription.trial_end * 1000)
+            : null,
+          metadata: stripeSubscription?.metadata || undefined,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'activateSubscription',
+        },
+        create: {
+          shopId,
+          provider: 'stripe',
+          stripeCustomerId,
+          stripeSubscriptionId,
+          planCode: planType,
+          interval: resolvedInterval,
+          status: 'active',
+          currency: subscriptionCurrency,
+          currentPeriodStart,
+          currentPeriodEnd,
+          cancelAtPeriodEnd,
+          trialEndsAt: stripeSubscription?.trial_end
+            ? new Date(stripeSubscription.trial_end * 1000)
+            : null,
+          metadata: stripeSubscription?.metadata || undefined,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'activateSubscription',
+        },
+      });
+    } catch (err) {
+      // If columns don't exist yet, fallback to basic upsert without new fields
+      if (err.message?.includes('does not exist') || err.code === 'P2025') {
+        logger.warn('Subscription interval fields not yet migrated, using fallback upsert', { shopId });
+        await prisma.subscription.upsert({
+          where: { shopId },
+          update: {
+            stripeCustomerId,
+            stripeSubscriptionId,
+            planCode: planType,
+            status: 'active',
+            currency: subscriptionCurrency,
+            currentPeriodStart,
+            currentPeriodEnd,
+            cancelAtPeriodEnd,
+            trialEndsAt: stripeSubscription?.trial_end
+              ? new Date(stripeSubscription.trial_end * 1000)
+              : null,
+            metadata: stripeSubscription?.metadata || undefined,
+          },
+          create: {
+            shopId,
+            provider: 'stripe',
+            stripeCustomerId,
+            stripeSubscriptionId,
+            planCode: planType,
+            status: 'active',
+            currency: subscriptionCurrency,
+            currentPeriodStart,
+            currentPeriodEnd,
+            cancelAtPeriodEnd,
+            trialEndsAt: stripeSubscription?.trial_end
+              ? new Date(stripeSubscription.trial_end * 1000)
+              : null,
+            metadata: stripeSubscription?.metadata || undefined,
+          },
+        });
+      } else {
+        throw err;
+      }
+    }
 
     logger.info(
       { shopId, planType, stripeSubscriptionId, interval: resolvedInterval, includedSms },
@@ -961,45 +1035,88 @@ export async function reconcileSubscriptionFromStripe(shopId) {
     ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
     : null;
 
-  await prisma.subscription.upsert({
-    where: { shopId },
-    update: {
-      stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
-      stripeSubscriptionId: subscriptionId,
-      planCode: newPlanType,
-      interval: interval || undefined,
-      status: newStatus,
-      currency: subscriptionCurrency || currency,
-      currentPeriodStart,
-      currentPeriodEnd,
-      cancelAtPeriodEnd,
-      trialEndsAt: stripeSubscription.trial_end
-        ? new Date(stripeSubscription.trial_end * 1000)
-        : null,
-      metadata: stripeSubscription.metadata || undefined,
-      lastSyncedAt: new Date(),
-      sourceOfTruth: 'reconcile',
-    },
-    create: {
-      shopId,
-      provider: 'stripe',
-      stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
-      stripeSubscriptionId: subscriptionId,
-      planCode: newPlanType,
-      interval: interval || undefined,
-      status: newStatus,
-      currency: subscriptionCurrency || currency,
-      currentPeriodStart,
-      currentPeriodEnd,
-      cancelAtPeriodEnd,
-      trialEndsAt: stripeSubscription.trial_end
-        ? new Date(stripeSubscription.trial_end * 1000)
-        : null,
-      metadata: stripeSubscription.metadata || undefined,
-      lastSyncedAt: new Date(),
-      sourceOfTruth: 'reconcile',
-    },
-  });
+  // TODO: Remove try-catch once migration 20250206000000_add_subscription_interval_fields is deployed
+  try {
+    await prisma.subscription.upsert({
+      where: { shopId },
+      update: {
+        stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
+        stripeSubscriptionId: subscriptionId,
+        planCode: newPlanType,
+        interval: interval || undefined,
+        status: newStatus,
+        currency: subscriptionCurrency || currency,
+        currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd,
+        trialEndsAt: stripeSubscription.trial_end
+          ? new Date(stripeSubscription.trial_end * 1000)
+          : null,
+        metadata: stripeSubscription.metadata || undefined,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'reconcile',
+      },
+      create: {
+        shopId,
+        provider: 'stripe',
+        stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
+        stripeSubscriptionId: subscriptionId,
+        planCode: newPlanType,
+        interval: interval || undefined,
+        status: newStatus,
+        currency: subscriptionCurrency || currency,
+        currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd,
+        trialEndsAt: stripeSubscription.trial_end
+          ? new Date(stripeSubscription.trial_end * 1000)
+          : null,
+        metadata: stripeSubscription.metadata || undefined,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'reconcile',
+      },
+    });
+  } catch (err) {
+    // If columns don't exist yet, fallback to basic upsert without new fields
+    if (err.message?.includes('does not exist') || err.code === 'P2025') {
+      logger.warn('Subscription interval fields not yet migrated, using fallback upsert', { shopId });
+      await prisma.subscription.upsert({
+        where: { shopId },
+        update: {
+          stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
+          stripeSubscriptionId: subscriptionId,
+          planCode: newPlanType,
+          status: newStatus,
+          currency: subscriptionCurrency || currency,
+          currentPeriodStart,
+          currentPeriodEnd,
+          cancelAtPeriodEnd,
+          trialEndsAt: stripeSubscription.trial_end
+            ? new Date(stripeSubscription.trial_end * 1000)
+            : null,
+          metadata: stripeSubscription.metadata || undefined,
+        },
+        create: {
+          shopId,
+          provider: 'stripe',
+          stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
+          stripeSubscriptionId: subscriptionId,
+          planCode: newPlanType,
+          status: newStatus,
+          currency: subscriptionCurrency || currency,
+          currentPeriodStart,
+          currentPeriodEnd,
+          cancelAtPeriodEnd,
+          trialEndsAt: stripeSubscription.trial_end
+            ? new Date(stripeSubscription.trial_end * 1000)
+            : null,
+          metadata: stripeSubscription.metadata || undefined,
+        },
+      });
+    } else {
+      throw err;
+    }
+  }
 
   return {
     reconciled: true,

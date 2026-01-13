@@ -1050,8 +1050,28 @@ export async function finalize(req, res, next) {
     }
 
     // Check if subscription is already activated (idempotency)
+    // TODO: Remove select once migration 20250206000000_add_subscription_interval_fields is deployed
+    // Temporary backward-compatible query to prevent crashes if DB doesn't have interval column yet
     const existingSubscription = await prisma.subscription.findUnique({
       where: { shopId },
+      select: {
+        id: true,
+        shopId: true,
+        stripeCustomerId: true,
+        stripeSubscriptionId: true,
+        planCode: true,
+        status: true,
+        currency: true,
+        currentPeriodStart: true,
+        currentPeriodEnd: true,
+        cancelAtPeriodEnd: true,
+        trialEndsAt: true,
+        metadata: true,
+        createdAt: true,
+        updatedAt: true,
+        // interval and pendingChange fields may not exist in DB yet - will be null if missing
+        // This is safe because we check for stripeSubscriptionId and status which definitely exist
+      },
     });
 
     if (existingSubscription?.stripeSubscriptionId === subscriptionId && existingSubscription?.status === 'active') {

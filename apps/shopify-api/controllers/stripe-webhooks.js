@@ -1233,45 +1233,88 @@ async function handleSubscriptionUpdated(subscription) {
     ? String(subscription.items.data[0].price.currency).toUpperCase()
     : null;
 
-  await prisma.subscription.upsert({
-    where: { shopId: shop.id },
-    update: {
-      stripeCustomerId: customerId,
-      interval: interval || undefined,
-      stripeSubscriptionId: subscriptionId,
-      planCode: newPlanType,
-      status: newStatus,
-      currency: subscriptionCurrency,
-      currentPeriodStart,
-      currentPeriodEnd,
-      cancelAtPeriodEnd,
-      trialEndsAt: subscription.trial_end
-        ? new Date(subscription.trial_end * 1000)
-        : null,
-      metadata: subscription.metadata || undefined,
-      lastSyncedAt: new Date(),
-      sourceOfTruth: 'webhook',
-    },
-    create: {
-      shopId: shop.id,
-      provider: 'stripe',
-      stripeCustomerId: customerId,
-      stripeSubscriptionId: subscriptionId,
-      planCode: newPlanType,
-      interval: interval || undefined,
-      status: newStatus,
-      currency: subscriptionCurrency,
-      currentPeriodStart,
-      currentPeriodEnd,
-      cancelAtPeriodEnd,
-      trialEndsAt: subscription.trial_end
-        ? new Date(subscription.trial_end * 1000)
-        : null,
-      metadata: subscription.metadata || undefined,
-      lastSyncedAt: new Date(),
-      sourceOfTruth: 'webhook',
-    },
-  });
+  // TODO: Remove try-catch once migration 20250206000000_add_subscription_interval_fields is deployed
+  try {
+    await prisma.subscription.upsert({
+      where: { shopId: shop.id },
+      update: {
+        stripeCustomerId: customerId,
+        interval: interval || undefined,
+        stripeSubscriptionId: subscriptionId,
+        planCode: newPlanType,
+        status: newStatus,
+        currency: subscriptionCurrency,
+        currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd,
+        trialEndsAt: subscription.trial_end
+          ? new Date(subscription.trial_end * 1000)
+          : null,
+        metadata: subscription.metadata || undefined,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'webhook',
+      },
+      create: {
+        shopId: shop.id,
+        provider: 'stripe',
+        stripeCustomerId: customerId,
+        stripeSubscriptionId: subscriptionId,
+        planCode: newPlanType,
+        interval: interval || undefined,
+        status: newStatus,
+        currency: subscriptionCurrency,
+        currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd,
+        trialEndsAt: subscription.trial_end
+          ? new Date(subscription.trial_end * 1000)
+          : null,
+        metadata: subscription.metadata || undefined,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'webhook',
+      },
+    });
+  } catch (err) {
+    // If columns don't exist yet, fallback to basic upsert without new fields
+    if (err.message?.includes('does not exist') || err.code === 'P2025') {
+      logger.warn('Subscription interval fields not yet migrated, using fallback upsert', { shopId: shop.id });
+      await prisma.subscription.upsert({
+        where: { shopId: shop.id },
+        update: {
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subscriptionId,
+          planCode: newPlanType,
+          status: newStatus,
+          currency: subscriptionCurrency,
+          currentPeriodStart,
+          currentPeriodEnd,
+          cancelAtPeriodEnd,
+          trialEndsAt: subscription.trial_end
+            ? new Date(subscription.trial_end * 1000)
+            : null,
+          metadata: subscription.metadata || undefined,
+        },
+        create: {
+          shopId: shop.id,
+          provider: 'stripe',
+          stripeCustomerId: customerId,
+          stripeSubscriptionId: subscriptionId,
+          planCode: newPlanType,
+          status: newStatus,
+          currency: subscriptionCurrency,
+          currentPeriodStart,
+          currentPeriodEnd,
+          cancelAtPeriodEnd,
+          trialEndsAt: subscription.trial_end
+            ? new Date(subscription.trial_end * 1000)
+            : null,
+          metadata: subscription.metadata || undefined,
+        },
+      });
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
