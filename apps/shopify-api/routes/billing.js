@@ -34,6 +34,9 @@ r.get('/profile', ctrl.getProfile);
 // PUT /billing/profile - Update billing profile
 r.put('/profile', validateBody(billingProfileSchema), ctrl.updateProfile);
 
+// POST /billing/profile/sync-from-stripe - Sync billing profile from Stripe customer
+r.post('/profile/sync-from-stripe', ctrl.syncProfileFromStripe);
+
 // GET /billing/packages - Get available credit packages (only if subscription active)
 r.get('/packages', ctrl.getPackages);
 

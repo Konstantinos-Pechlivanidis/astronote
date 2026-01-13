@@ -13,6 +13,7 @@ import { useBillingInvoices } from '@/src/features/shopify/billing/hooks/useBill
 import {
   useCreatePurchase,
   useCreateTopup,
+  useSyncBillingProfileFromStripe,
 } from '@/src/features/shopify/billing/hooks/useBillingMutations';
 import { useCalculateTopup } from '@/src/features/shopify/billing/hooks/useCalculateTopup';
 import {
@@ -53,15 +54,6 @@ function BillingPageContent() {
   const [invoicePage, setInvoicePage] = useState(1);
   const pageSize = 20;
 
-  // Handle URL params for success/cancel
-  useEffect(() => {
-    if (searchParams.get('success') === 'true') {
-      toast.success('Payment completed successfully!');
-    } else if (searchParams.get('canceled') === 'true') {
-      toast.info('Payment was cancelled');
-    }
-  }, [searchParams]);
-
   // Fetch data
   const { data: balanceData } = useBillingBalance();
   const { data: billingSummary, isLoading: summaryLoading } = useBillingSummary();
@@ -78,6 +70,19 @@ function BillingPageContent() {
   const cancelSubscription = useCancelSubscription();
   const getPortal = useGetPortal();
   const switchInterval = useSwitchInterval();
+  const syncBillingProfile = useSyncBillingProfileFromStripe();
+
+  // Handle URL params for success/cancel and portal return
+  useEffect(() => {
+    if (searchParams.get('success') === 'true') {
+      toast.success('Payment completed successfully!');
+    } else if (searchParams.get('canceled') === 'true') {
+      toast.info('Payment was cancelled');
+    } else if (searchParams.get('fromPortal') === 'true') {
+      // User returned from Stripe portal - sync billing profile
+      syncBillingProfile.mutate();
+    }
+  }, [searchParams, syncBillingProfile]);
 
   // Calculate top-up price
   const creditsNum = topupCredits ? parseInt(topupCredits) : null;

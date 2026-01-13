@@ -593,6 +593,12 @@ export const shopifyBillingApi = {
       return parseBillingProfile(response);
     }, 'Failed to update billing profile'),
 
+  syncBillingProfileFromStripe: async (): Promise<BillingProfile> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<BillingProfile>('/billing/profile/sync-from-stripe');
+      return parseBillingProfile(response);
+    }, 'Failed to sync billing profile from Stripe'),
+
   getInvoices: async (params: { page?: number; pageSize?: number; status?: string } = {}): Promise<InvoicesResponse> =>
     safeRequest(async () => {
       const response = await shopifyApi.get<InvoicesResponse>('/billing/invoices', { params });
@@ -611,6 +617,7 @@ export const billingApi = {
   getSummary: shopifyBillingApi.getBillingSummary,
   getProfile: shopifyBillingApi.getBillingProfile,
   updateProfile: shopifyBillingApi.updateBillingProfile,
+  syncProfileFromStripe: shopifyBillingApi.syncBillingProfileFromStripe,
   getInvoices: shopifyBillingApi.getInvoices,
 };
 

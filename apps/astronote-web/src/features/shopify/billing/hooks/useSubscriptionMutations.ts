@@ -35,10 +35,10 @@ export function useSubscribe() {
         toast.error('You already have an active subscription. Please cancel your current subscription first.');
       } else if (code === 'BILLING_PROFILE_INCOMPLETE') {
         const missingFields = error.response?.data?.missingFields || [];
-        toast.error('Please complete your billing details before subscribing.', {
-          duration: 5000,
+        toast.error('Please complete your billing details before subscribing. You can sync from Stripe or edit manually.', {
+          duration: 7000,
         });
-        // Redirect to billing settings
+        // Redirect to billing settings with missing fields
         setTimeout(() => {
           window.location.href = `/app/shopify/billing?missingFields=${encodeURIComponent(JSON.stringify(missingFields))}`;
         }, 1000);

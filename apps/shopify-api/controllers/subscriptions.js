@@ -22,7 +22,7 @@ import { resolveTaxTreatment, resolveTaxRateForInvoice } from '../services/tax-r
 import { upsertTaxEvidence } from '../services/tax-evidence.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
-import { getBillingProfile, validateBillingProfileForCheckout } from '../services/billing-profile.js';
+import { getBillingProfile, validateBillingProfileForCheckout, upsertBillingProfile } from '../services/billing-profile.js';
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -209,9 +209,69 @@ export async function subscribe(req, res, next) {
       );
     }
 
-    // Validate billing profile completeness before checkout
-    const billingProfile = await getBillingProfile(shopId);
-    const profileValidation = validateBillingProfileForCheckout(billingProfile);
+    // Get billing profile and attempt auto-sync from Stripe if incomplete
+    let billingProfile = await getBillingProfile(shopId);
+    let profileValidation = validateBillingProfileForCheckout(billingProfile);
+
+    // If profile is incomplete but we have a Stripe customer, try to sync from Stripe
+    if (!profileValidation.valid && currentSubscription.stripeCustomerId && stripe) {
+      const isValidStripeCustomerId = (value) =>
+        typeof value === 'string' && value.startsWith('cus_');
+
+      if (isValidStripeCustomerId(currentSubscription.stripeCustomerId)) {
+        try {
+          logger.info('Attempting auto-sync billing profile from Stripe', {
+            shopId,
+            stripeCustomerId: currentSubscription.stripeCustomerId,
+          });
+
+          // Fetch customer from Stripe
+          const customer = await stripe.customers.retrieve(currentSubscription.stripeCustomerId, {
+            expand: ['tax_ids'],
+          });
+
+          // Map Stripe customer to billing profile
+          const taxId = customer.tax_ids?.data?.find((t) => t.type === 'eu_vat') || customer.tax_ids?.data?.[0];
+          const address = customer.address;
+
+          billingProfile = await upsertBillingProfile(shopId, {
+            billingEmail: customer.email || billingProfile?.billingEmail || null,
+            legalName: customer.name || billingProfile?.legalName || null,
+            billingAddress: address
+              ? {
+                line1: address.line1 || billingProfile?.billingAddress?.line1 || null,
+                line2: address.line2 || billingProfile?.billingAddress?.line2 || null,
+                city: address.city || billingProfile?.billingAddress?.city || null,
+                state: address.state || billingProfile?.billingAddress?.state || null,
+                postalCode: address.postal_code || billingProfile?.billingAddress?.postalCode || null,
+                country: address.country || billingProfile?.billingAddress?.country || null,
+              }
+              : billingProfile?.billingAddress || null,
+            vatNumber: taxId?.value
+              ? String(taxId.value).replace(/\s+/g, '').toUpperCase()
+              : billingProfile?.vatNumber || null,
+            vatCountry: taxId?.country || address?.country || billingProfile?.vatCountry || null,
+          });
+
+          // Re-validate after sync
+          profileValidation = validateBillingProfileForCheckout(billingProfile);
+
+          logger.info('Auto-sync billing profile completed', {
+            shopId,
+            valid: profileValidation.valid,
+            missingFields: profileValidation.missingFields,
+          });
+        } catch (syncError) {
+          logger.warn('Auto-sync billing profile from Stripe failed', {
+            shopId,
+            error: syncError.message,
+          });
+          // Continue with original validation - don't fail subscribe if sync fails
+        }
+      }
+    }
+
+    // Validate billing profile completeness after auto-sync attempt
     if (!profileValidation.valid) {
       logger.warn('Billing profile incomplete for checkout', {
         shopId,
@@ -799,8 +859,11 @@ export async function getPortal(req, res, _next) {
     }
 
     const { getCustomerPortalUrl } = await import('../services/stripe.js');
-    const { buildFrontendUrl } = await import('../utils/frontendUrl.js');
-    const returnUrl = buildFrontendUrl('/app/billing');
+    const { getFrontendBaseUrlSync } = await import('../utils/frontendUrl.js');
+    const { normalizeBaseUrl } = await import('../utils/url-helpers.js');
+    // Add fromPortal param to trigger sync on return
+    const baseUrl = normalizeBaseUrl(getFrontendBaseUrlSync());
+    const returnUrl = `${baseUrl}/app/shopify/billing?fromPortal=true`;
 
     const portalUrl = await getCustomerPortalUrl(stripeCustomerId, returnUrl);
 

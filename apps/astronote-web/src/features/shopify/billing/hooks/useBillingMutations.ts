@@ -73,3 +73,33 @@ export function useCreateTopup() {
     },
   });
 }
+
+/**
+ * React Query hook for syncing billing profile from Stripe
+ */
+export function useSyncBillingProfileFromStripe() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await billingApi.syncProfileFromStripe();
+      return response;
+    },
+    onSuccess: () => {
+      // Invalidate billing profile and summary
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'profile'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
+      toast.success('Billing profile synced from Stripe');
+    },
+    onError: (error: any) => {
+      const apiError = error as BillingApiError;
+      const code = apiError?.code || error.response?.data?.code || error.code;
+      if (code === 'MISSING_CUSTOMER_ID') {
+        toast.error('No Stripe customer found. Please subscribe to a plan first.');
+      } else {
+        const message = apiError?.message || error.response?.data?.message || 'Failed to sync billing profile from Stripe';
+        toast.error(message);
+      }
+    },
+  });
+}

@@ -21,6 +21,7 @@ const billingProfileMock = {
   getBillingProfile: jest.fn(),
   validateBillingProfileForCheckout: jest.fn(),
   syncBillingProfileFromStripe: jest.fn(),
+  upsertBillingProfile: jest.fn(),
 };
 
 const prismaMock = {

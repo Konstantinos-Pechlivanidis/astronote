@@ -9,6 +9,13 @@ import { listInvoices } from '../services/invoices.js';
 import prisma from '../services/prisma.js';
 import { sendSuccess, sendPaginated, sendError } from '../utils/response.js';
 import crypto from 'crypto';
+import Stripe from 'stripe';
+
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2024-06-20',
+  })
+  : null;
 
 /**
  * Billing Controller
@@ -697,6 +704,104 @@ export async function updateProfile(req, res, next) {
     logger.error('Update billing profile error', {
       error: error.message,
       storeId: req.ctx?.store?.id,
+    });
+    next(error);
+  }
+}
+
+/**
+ * Sync billing profile from Stripe customer
+ * @route POST /billing/profile/sync-from-stripe
+ */
+export async function syncProfileFromStripe(req, res, next) {
+  try {
+    const storeId = getStoreId(req);
+    const shop = req.ctx?.store || (await prisma.shop.findUnique({
+      where: { id: storeId },
+      select: { id: true, stripeCustomerId: true },
+    }));
+
+    if (!shop?.stripeCustomerId) {
+      return sendError(
+        res,
+        400,
+        'MISSING_CUSTOMER_ID',
+        'No Stripe customer found. Please subscribe to a plan first.',
+      );
+    }
+
+    if (!stripe) {
+      return sendError(
+        res,
+        503,
+        'STRIPE_NOT_CONFIGURED',
+        'Payment processing unavailable',
+      );
+    }
+
+    // Fetch customer from Stripe
+    let customer;
+    try {
+      customer = await stripe.customers.retrieve(shop.stripeCustomerId, {
+        expand: ['tax_ids'],
+      });
+    } catch (err) {
+      logger.error('Failed to retrieve Stripe customer', {
+        storeId,
+        customerId: shop.stripeCustomerId,
+        error: err.message,
+      });
+      return sendError(
+        res,
+        404,
+        'CUSTOMER_NOT_FOUND',
+        'Stripe customer not found. Please contact support.',
+      );
+    }
+
+    // Map Stripe customer to billing profile
+    const taxId = customer.tax_ids?.data?.find((t) => t.type === 'eu_vat') || customer.tax_ids?.data?.[0];
+    const address = customer.address;
+
+    const profile = await upsertBillingProfile(storeId, {
+      billingEmail: customer.email || null,
+      legalName: customer.name || null,
+      billingAddress: address
+        ? {
+          line1: address.line1 || null,
+          line2: address.line2 || null,
+          city: address.city || null,
+          state: address.state || null,
+          postalCode: address.postal_code || null,
+          country: address.country || null,
+        }
+        : null,
+      vatNumber: taxId?.value ? String(taxId.value).replace(/\s+/g, '').toUpperCase() : null,
+      vatCountry: taxId?.country || address?.country || null,
+    });
+
+    // Also sync to Stripe customer (bidirectional sync)
+    if (profile.billingEmail || profile.legalName || profile.billingAddress) {
+      await syncStripeCustomerBillingProfile({
+        stripeCustomerId: shop.stripeCustomerId,
+        billingProfile: profile,
+      });
+    }
+
+    logger.info('Billing profile synced from Stripe', {
+      storeId,
+      customerId: shop.stripeCustomerId,
+      hasEmail: !!profile.billingEmail,
+      hasName: !!profile.legalName,
+      hasAddress: !!profile.billingAddress,
+    });
+
+    return sendSuccess(res, profile, 'Billing profile synced from Stripe');
+  } catch (error) {
+    logger.error('Sync billing profile from Stripe error', {
+      error: error.message,
+      storeId: req.ctx?.store?.id,
+      stack: error.stack,
     });
     next(error);
   }
