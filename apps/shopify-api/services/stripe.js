@@ -579,11 +579,14 @@ export async function createCustomer({ email, name, shopDomain }) {
 
 /**
  * Get Stripe subscription price ID from environment variables
+ * @deprecated Use plan-catalog.getPriceId() instead
  * @param {string} planType - 'starter' or 'pro'
  * @param {string} currency - Currency code (EUR, USD, etc.)
  * @returns {string|null} Stripe price ID or null
  */
 export function getStripeSubscriptionPriceId(planType, currency = 'EUR') {
+  // Legacy: fallback to old format (assumes starter=month, pro=year)
+  // Note: For new code, use plan-catalog.getPriceId() directly
   const upperCurrency = currency.toUpperCase();
   const envKey = `STRIPE_PRICE_ID_SUB_${planType.toUpperCase()}_${upperCurrency}`;
   return process.env[envKey] || null;
@@ -649,6 +652,7 @@ export async function createSubscriptionCheckoutSession({
   shopId,
   shopDomain: _shopDomain,
   planType,
+  interval = null,
   currency = 'EUR',
   stripeCustomerId = null,
   billingProfile = null,
@@ -663,10 +667,19 @@ export async function createSubscriptionCheckoutSession({
     throw new Error(`Invalid plan type: ${planType}`);
   }
 
-  const priceId = getStripeSubscriptionPriceId(planType, currency);
+  // Use Plan Catalog to resolve priceId
+  const planCatalog = await import('./plan-catalog.js');
+
+  // If interval not provided, use legacy defaults (starter=month, pro=year)
+  const resolvedInterval = interval || (planType === 'starter' ? 'month' : 'year');
+
+  const priceId = planCatalog.getPriceId(planType, resolvedInterval, currency);
   if (!priceId) {
+    const validation = planCatalog.validateCatalog();
     throw new Error(
-      `Stripe price ID not found for subscription plan ${planType} (${currency}). Please configure STRIPE_PRICE_ID_SUB_${planType.toUpperCase()}_${currency.toUpperCase()} in your environment variables.`,
+      `Stripe price ID not found for subscription plan ${planType}/${resolvedInterval}/${currency}. ` +
+      'Please configure the required environment variable. ' +
+      `Missing mappings: ${validation.missing.join(', ')}`,
     );
   }
 
@@ -1019,12 +1032,17 @@ export async function createCreditTopupCheckoutSession({
  * Update subscription to a new plan
  * @param {string} subscriptionId - Stripe subscription ID
  * @param {string} newPlanType - 'starter' or 'pro'
+ * @param {string} currency - Currency code (EUR, USD, etc.)
+ * @param {string} interval - 'month' or 'year' (optional, uses legacy defaults if not provided)
+ * @param {string} behavior - 'immediate' or 'period_end' (default: 'immediate')
  * @returns {Promise<Object>} Updated subscription
  */
 export async function updateSubscription(
   subscriptionId,
   newPlanType,
   currency = 'EUR',
+  interval = null,
+  behavior = 'immediate',
 ) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
@@ -1034,30 +1052,50 @@ export async function updateSubscription(
     throw new Error(`Invalid plan type: ${newPlanType}`);
   }
 
-  // Get subscription price ID for the new plan (with currency support)
-  const newPriceId = getStripeSubscriptionPriceId(newPlanType, currency);
+  // Use Plan Catalog to resolve priceId
+  const planCatalog = await import('./plan-catalog.js');
+
+  // If interval not provided, use legacy defaults (starter=month, pro=year)
+  const resolvedInterval = interval || (newPlanType === 'starter' ? 'month' : 'year');
+
+  const newPriceId = planCatalog.getPriceId(newPlanType, resolvedInterval, currency);
   if (!newPriceId) {
-    throw new Error(`Stripe price ID not found for ${newPlanType} plan`);
+    throw new Error(
+      `Stripe price ID not found for ${newPlanType}/${resolvedInterval}/${currency}. ` +
+      'Please configure the required environment variable.',
+    );
   }
 
   // Retrieve current subscription
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
+  // Determine proration behavior
+  const prorationBehavior = behavior === 'period_end' ? 'none' : 'always_invoice';
+  const billingCycleAnchor = behavior === 'period_end' ? subscription.current_period_end : undefined;
+
   // Update subscription with new price
-  const updated = await stripe.subscriptions.update(subscriptionId, {
+  const updateParams = {
     items: [
       {
         id: subscription.items.data[0].id,
         price: newPriceId,
       },
     ],
-    proration_behavior: 'always_invoice', // Prorate the change
+    proration_behavior: prorationBehavior,
     metadata: {
       planType: newPlanType,
+      interval: resolvedInterval,
       currency: String(currency).toUpperCase(),
       updatedAt: new Date().toISOString(),
     },
-  });
+  };
+
+  // If scheduling for period end, set billing_cycle_anchor
+  if (behavior === 'period_end' && billingCycleAnchor) {
+    updateParams.billing_cycle_anchor = 'unchanged';
+  }
+
+  const updated = await stripe.subscriptions.update(subscriptionId, updateParams);
 
   logger.info(
     { subscriptionId, newPlanType, newPriceId },

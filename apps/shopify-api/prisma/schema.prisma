@@ -659,12 +659,21 @@ model Subscription {
   stripeCustomerId     String?  @db.VarChar(255)
   stripeSubscriptionId String?  @unique @db.VarChar(255)
   planCode             String?  @db.VarChar(50)
+  interval             String?  @db.VarChar(10) // 'month' | 'year'
   status               String?  @db.VarChar(40)
   currency             String?  @db.VarChar(3)
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean  @default(false)
   trialEndsAt          DateTime?
+  // Pending change tracking (for scheduled changes)
+  pendingChangePlanCode     String?  @db.VarChar(50)
+  pendingChangeInterval     String?  @db.VarChar(10)
+  pendingChangeCurrency     String?  @db.VarChar(3)
+  pendingChangeEffectiveAt  DateTime?
+  // Reconciliation tracking
+  lastSyncedAt         DateTime?
+  sourceOfTruth        String?  @db.VarChar(20) // 'webhook' | 'reconcile' | 'finalize' | 'manual'
   metadata             Json?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -673,6 +682,7 @@ model Subscription {
   @@index([stripeCustomerId])
   @@index([stripeSubscriptionId])
   @@index([status])
+  @@index([interval])
 }
 
 model InvoiceRecord {

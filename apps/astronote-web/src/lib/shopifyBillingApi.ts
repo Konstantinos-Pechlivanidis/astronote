@@ -229,12 +229,15 @@ export interface CheckoutSessionResponse {
 
 export interface SubscribeRequest {
   planType: SubscriptionPlanType;
+  interval?: 'month' | 'year';
   currency?: string;
 }
 
 export interface UpdateSubscriptionRequest {
   planType: SubscriptionPlanType;
+  interval?: 'month' | 'year';
   currency?: string;
+  behavior?: 'immediate' | 'period_end';
 }
 
 export interface SwitchIntervalRequest {

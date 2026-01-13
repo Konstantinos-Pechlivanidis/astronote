@@ -117,7 +117,7 @@ export async function subscribe(req, res, next) {
   try {
     const shopId = getStoreId(req);
     const shopDomain = req.ctx?.store?.shopDomain;
-    const { planType } = req.body;
+    const { planType, interval, currency: requestedCurrencyParam } = req.body;
 
     // Check if shop already has an active subscription
     const currentSubscription = await getSubscriptionStatus(shopId);
@@ -141,16 +141,25 @@ export async function subscribe(req, res, next) {
       );
     }
 
+    // Validate and resolve interval
+    const validIntervals = ['month', 'year'];
+    let resolvedInterval = interval;
+    if (!resolvedInterval || !validIntervals.includes(resolvedInterval.toLowerCase())) {
+      // Legacy: use defaults (starter=month, pro=year)
+      resolvedInterval = planType === 'starter' ? 'month' : 'year';
+    } else {
+      resolvedInterval = resolvedInterval.toLowerCase();
+    }
+
     // Get currency from request or shop settings (aligned with Retail)
-    const requestedCurrency = req.body?.currency;
     const validCurrencies = ['EUR', 'USD'];
     let currency = 'EUR';
 
     if (
-      requestedCurrency &&
-      validCurrencies.includes(requestedCurrency.toUpperCase())
+      requestedCurrencyParam &&
+      validCurrencies.includes(requestedCurrencyParam.toUpperCase())
     ) {
-      currency = requestedCurrency.toUpperCase();
+      currency = requestedCurrencyParam.toUpperCase();
     } else {
       // Get shop currency
       const shop = await prisma.shop.findUnique({
@@ -302,6 +311,7 @@ export async function subscribe(req, res, next) {
       shopId,
       shopDomain,
       planType,
+      interval: resolvedInterval,
       currency, // Use resolved currency
       stripeCustomerId,
       billingProfile, // Pass billing profile for email
@@ -424,7 +434,7 @@ export async function switchInterval(req, res, next) {
 export async function update(req, res, next) {
   try {
     const shopId = getStoreId(req);
-    const { planType } = req.body;
+    const { planType, interval, currency: requestedCurrencyParam, behavior = 'immediate' } = req.body;
 
     const subscription = await getSubscriptionStatus(shopId);
 
@@ -437,15 +447,26 @@ export async function update(req, res, next) {
       );
     }
 
-    // Check if already on the requested plan
-    if (subscription.planType === planType) {
+    // Validate and resolve interval (keep current if not provided)
+    const validIntervals = ['month', 'year'];
+    let resolvedInterval = interval;
+    if (!resolvedInterval || !validIntervals.includes(resolvedInterval.toLowerCase())) {
+      // Keep current interval if not provided
+      resolvedInterval = subscription.interval || (planType === 'starter' ? 'month' : 'year');
+    } else {
+      resolvedInterval = resolvedInterval.toLowerCase();
+    }
+
+    // Check if already on the requested plan and interval
+    if (subscription.planType === planType && (!interval || subscription.interval === resolvedInterval)) {
       return sendError(
         res,
         400,
         'ALREADY_ON_PLAN',
-        `You are already on the ${planType} plan.`,
+        `You are already on the ${planType} plan${interval ? ` with ${resolvedInterval}ly billing` : ''}.`,
         {
           currentPlan: planType,
+          currentInterval: subscription.interval,
         },
       );
     }
@@ -502,15 +523,14 @@ export async function update(req, res, next) {
     }
 
     // Get currency from request or shop settings (aligned with Retail)
-    const requestedCurrency = req.body?.currency;
     const validCurrencies = ['EUR', 'USD'];
     let currency = 'EUR';
 
     if (
-      requestedCurrency &&
-      validCurrencies.includes(requestedCurrency.toUpperCase())
+      requestedCurrencyParam &&
+      validCurrencies.includes(requestedCurrencyParam.toUpperCase())
     ) {
-      currency = requestedCurrency.toUpperCase();
+      currency = requestedCurrencyParam.toUpperCase();
     } else {
       // Get shop currency
       const shop = await prisma.shop.findUnique({
@@ -528,7 +548,9 @@ export async function update(req, res, next) {
     await updateSubscription(
       subscription.stripeSubscriptionId,
       planType,
-      currency, // Pass currency to update (aligned with Retail)
+      currency,
+      resolvedInterval,
+      behavior,
     );
 
     // Update local DB immediately (idempotent - activateSubscription checks current state)
@@ -537,6 +559,7 @@ export async function update(req, res, next) {
       subscription.stripeCustomerId,
       subscription.stripeSubscriptionId,
       planType,
+      resolvedInterval,
     );
 
     logger.info(
@@ -553,9 +576,11 @@ export async function update(req, res, next) {
       res,
       {
         planType,
+        interval: resolvedInterval,
         currency, // Include currency in response (aligned with Retail)
+        behavior,
       },
-      `Subscription updated to ${planType} plan successfully`,
+      `Subscription updated to ${planType} plan (${resolvedInterval}ly) successfully`,
     );
   } catch (error) {
     logger.error('Update subscription error', {

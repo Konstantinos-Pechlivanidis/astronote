@@ -51,6 +51,8 @@ const normalizeStripeStatus = (status) => {
   return null;
 };
 
+// Deprecated: Use plan-catalog.resolvePlanFromPriceId() instead
+// eslint-disable-next-line no-unused-vars
 const resolvePlanTypeFromStripeSubscription = (subscription) => {
   const metadataPlanType = subscription?.metadata?.planType;
   if (metadataPlanType && ['starter', 'pro'].includes(metadataPlanType)) {
@@ -153,6 +155,23 @@ export async function getSubscriptionStatus(shopId) {
       },
     });
 
+    // Also get Subscription model for pendingChange and reconciliation tracking
+    const subscriptionRecord = await prisma.subscription.findUnique({
+      where: { shopId },
+      select: {
+        planCode: true,
+        interval: true,
+        currency: true,
+        status: true,
+        pendingChangePlanCode: true,
+        pendingChangeInterval: true,
+        pendingChangeCurrency: true,
+        pendingChangeEffectiveAt: true,
+        lastSyncedAt: true,
+        sourceOfTruth: true,
+      },
+    });
+
     if (!shop) {
       return {
         active: false,
@@ -161,15 +180,33 @@ export async function getSubscriptionStatus(shopId) {
       };
     }
 
+    // Prefer Subscription model fields if available (more accurate)
+    const planCode = subscriptionRecord?.planCode || shop.planType;
+    const interval = subscriptionRecord?.interval || shop.subscriptionInterval || null;
+    const currency = subscriptionRecord?.currency || shop.currency || 'EUR';
+    const status = subscriptionRecord?.status || shop.subscriptionStatus;
+
+    // Build pendingChange object if exists
+    const pendingChange = subscriptionRecord?.pendingChangePlanCode
+      ? {
+        planCode: subscriptionRecord.pendingChangePlanCode,
+        interval: subscriptionRecord.pendingChangeInterval || null,
+        currency: subscriptionRecord.pendingChangeCurrency || null,
+        effectiveAt: subscriptionRecord.pendingChangeEffectiveAt || null,
+      }
+      : null;
+
     return {
-      active: shop.subscriptionStatus === SubscriptionStatus.active,
-      planType: shop.planType,
-      status: shop.subscriptionStatus,
+      active: status === SubscriptionStatus.active,
+      planType: planCode,
+      planCode, // Alias for consistency
+      status,
       stripeCustomerId: shop.stripeCustomerId,
       stripeSubscriptionId: shop.stripeSubscriptionId,
       lastFreeCreditsAllocatedAt: shop.lastFreeCreditsAllocatedAt,
-      billingCurrency: shop.currency || 'EUR',
-      interval: shop.subscriptionInterval || null,
+      billingCurrency: currency,
+      currency, // Alias for consistency
+      interval,
       currentPeriodStart: shop.currentPeriodStart || null,
       currentPeriodEnd: shop.currentPeriodEnd || null,
       cancelAtPeriodEnd: shop.cancelAtPeriodEnd ?? false,
@@ -177,11 +214,14 @@ export async function getSubscriptionStatus(shopId) {
       usedSmsThisPeriod: shop.usedSmsThisPeriod || 0,
       remainingSmsThisPeriod: Math.max(
         0,
-        (shop.subscriptionStatus === SubscriptionStatus.active
+        (status === SubscriptionStatus.active
           ? shop.includedSmsPerPeriod || 0
           : 0) - (shop.usedSmsThisPeriod || 0),
       ),
       lastBillingError: shop.lastBillingError || null,
+      pendingChange,
+      lastSyncedAt: subscriptionRecord?.lastSyncedAt || null,
+      sourceOfTruth: subscriptionRecord?.sourceOfTruth || null,
     };
   } catch (err) {
     logger.error(
@@ -371,6 +411,7 @@ export async function activateSubscription(
   stripeCustomerId,
   stripeSubscriptionId,
   planType,
+  interval = null,
   stripeSubscription = null,
 ) {
   try {
@@ -384,15 +425,15 @@ export async function activateSubscription(
     }
 
     // Determine interval and period dates from Stripe subscription if provided
-    let interval = null;
+    let resolvedInterval = interval; // Use provided interval if available
     let currentPeriodStart = null;
     let currentPeriodEnd = null;
     let cancelAtPeriodEnd = false;
     let includedSms = null;
 
     if (stripeSubscription) {
-      if (stripeSubscription.items?.data?.[0]?.price?.recurring) {
-        interval = stripeSubscription.items.data[0].price.recurring.interval;
+      if (!resolvedInterval && stripeSubscription.items?.data?.[0]?.price?.recurring) {
+        resolvedInterval = stripeSubscription.items.data[0].price.recurring.interval;
       }
       if (stripeSubscription.current_period_start) {
         currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);
@@ -415,7 +456,7 @@ export async function activateSubscription(
         planType,
         subscriptionStatus: 'active',
         lastBillingError: null,
-        ...(interval && { subscriptionInterval: interval }),
+        ...(resolvedInterval && { subscriptionInterval: resolvedInterval }),
         ...(currentPeriodStart && { currentPeriodStart }),
         ...(currentPeriodEnd && { currentPeriodEnd }),
         cancelAtPeriodEnd,
@@ -444,6 +485,7 @@ export async function activateSubscription(
         stripeCustomerId,
         stripeSubscriptionId,
         planCode: planType,
+        interval: resolvedInterval,
         status: 'active',
         currency: subscriptionCurrency,
         currentPeriodStart,
@@ -453,6 +495,8 @@ export async function activateSubscription(
           ? new Date(stripeSubscription.trial_end * 1000)
           : null,
         metadata: stripeSubscription?.metadata || undefined,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'activateSubscription',
       },
       create: {
         shopId,
@@ -460,6 +504,7 @@ export async function activateSubscription(
         stripeCustomerId,
         stripeSubscriptionId,
         planCode: planType,
+        interval: resolvedInterval,
         status: 'active',
         currency: subscriptionCurrency,
         currentPeriodStart,
@@ -469,11 +514,13 @@ export async function activateSubscription(
           ? new Date(stripeSubscription.trial_end * 1000)
           : null,
         metadata: stripeSubscription?.metadata || undefined,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'activateSubscription',
       },
     });
 
     logger.info(
-      { shopId, planType, stripeSubscriptionId, interval, includedSms },
+      { shopId, planType, stripeSubscriptionId, interval: resolvedInterval, includedSms },
       'Subscription activated with allowance tracking',
     );
     return shop;
@@ -828,8 +875,41 @@ export async function reconcileSubscriptionFromStripe(shopId) {
   });
 
   const newStatus = normalizeStripeStatus(stripeSubscription.status) || shop.subscriptionStatus;
-  const newPlanType = resolvePlanTypeFromStripeSubscription(stripeSubscription) || shop.planType;
-  const interval = stripeSubscription.items?.data?.[0]?.price?.recurring?.interval || null;
+
+  // Use Plan Catalog to resolve planCode, interval, currency from priceId
+  const planCatalog = await import('./plan-catalog.js');
+  const priceId = stripeSubscription.items?.data?.[0]?.price?.id;
+
+  let newPlanType = shop.planType;
+  let interval = null;
+  let currency = shop.currency || 'EUR';
+
+  if (priceId) {
+    const resolved = planCatalog.resolvePlanFromPriceId(priceId);
+    if (resolved) {
+      newPlanType = resolved.planCode;
+      interval = resolved.interval;
+      currency = resolved.currency;
+    }
+  }
+
+  // Fallback: use metadata if Plan Catalog didn't resolve
+  if (!newPlanType) {
+    const metadataPlanType = stripeSubscription.metadata?.planType;
+    if (metadataPlanType && ['starter', 'pro'].includes(metadataPlanType)) {
+      newPlanType = metadataPlanType;
+    }
+  }
+
+  // Fallback: extract interval from Stripe subscription if not resolved
+  if (!interval && stripeSubscription.items?.data?.[0]?.price?.recurring) {
+    interval = stripeSubscription.items.data[0].price.recurring.interval;
+  }
+
+  // Fallback: extract currency from Stripe subscription if not resolved
+  if (!currency && stripeSubscription.items?.data?.[0]?.price?.currency) {
+    currency = String(stripeSubscription.items.data[0].price.currency).toUpperCase();
+  }
   const cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end || false;
   const currentPeriodStart = stripeSubscription.current_period_start
     ? new Date(stripeSubscription.current_period_start * 1000)
@@ -887,8 +967,9 @@ export async function reconcileSubscriptionFromStripe(shopId) {
       stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
       stripeSubscriptionId: subscriptionId,
       planCode: newPlanType,
+      interval: interval || undefined,
       status: newStatus,
-      currency: subscriptionCurrency,
+      currency: subscriptionCurrency || currency,
       currentPeriodStart,
       currentPeriodEnd,
       cancelAtPeriodEnd,
@@ -896,6 +977,8 @@ export async function reconcileSubscriptionFromStripe(shopId) {
         ? new Date(stripeSubscription.trial_end * 1000)
         : null,
       metadata: stripeSubscription.metadata || undefined,
+      lastSyncedAt: new Date(),
+      sourceOfTruth: 'reconcile',
     },
     create: {
       shopId,
@@ -903,8 +986,9 @@ export async function reconcileSubscriptionFromStripe(shopId) {
       stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
       stripeSubscriptionId: subscriptionId,
       planCode: newPlanType,
+      interval: interval || undefined,
       status: newStatus,
-      currency: subscriptionCurrency,
+      currency: subscriptionCurrency || currency,
       currentPeriodStart,
       currentPeriodEnd,
       cancelAtPeriodEnd,
@@ -912,6 +996,8 @@ export async function reconcileSubscriptionFromStripe(shopId) {
         ? new Date(stripeSubscription.trial_end * 1000)
         : null,
       metadata: stripeSubscription.metadata || undefined,
+      lastSyncedAt: new Date(),
+      sourceOfTruth: 'reconcile',
     },
   });
 
@@ -926,12 +1012,13 @@ export async function reconcileSubscriptionFromStripe(shopId) {
 }
 
 /**
- * Switch subscription interval (monthly/yearly)
+ * Switch subscription interval (monthly/yearly) - KEEPS SAME PLAN CODE
  * @param {string} shopId - Shop ID
  * @param {string} interval - 'month' or 'year'
+ * @param {string} behavior - 'immediate' or 'period_end' (default: 'immediate')
  * @returns {Promise<Object>} Switch result
  */
-export async function switchSubscriptionInterval(shopId, interval) {
+export async function switchSubscriptionInterval(shopId, interval, behavior = 'immediate') {
   try {
     if (!['month', 'year'].includes(interval)) {
       throw new Error(`Invalid interval: ${interval}. Must be 'month' or 'year'`);
@@ -947,22 +1034,21 @@ export async function switchSubscriptionInterval(shopId, interval) {
       throw new Error('Stripe is not configured');
     }
 
-    // Map interval to plan: month = starter, year = pro (aligned with Retail)
-    const intervalToPlan = {
-      month: SubscriptionPlanType.starter,
-      year: SubscriptionPlanType.pro,
-    };
-    const newPlanType = intervalToPlan[interval];
+    // Keep the same planCode, only change interval
+    const currentPlanCode = subscription.planType;
+    if (!currentPlanCode) {
+      throw new Error('Current subscription plan code not found');
+    }
 
-    // If already on the correct plan for this interval, no change needed
-    if (subscription.planType === newPlanType) {
+    // If already on the requested interval, no change needed
+    if (subscription.interval === interval) {
       logger.info(
-        { shopId, interval, planType: newPlanType },
-        'Subscription already on correct plan for interval',
+        { shopId, interval, planCode: currentPlanCode },
+        'Subscription already on requested interval',
       );
       return {
         interval,
-        planType: newPlanType,
+        planCode: currentPlanCode,
         alreadyUpdated: true,
       };
     }
@@ -972,32 +1058,36 @@ export async function switchSubscriptionInterval(shopId, interval) {
       where: { id: shopId },
       select: { currency: true },
     });
-    const currency = shop?.currency || 'EUR';
+    const currency = shop?.currency || subscription.billingCurrency || 'EUR';
 
-    // Update Stripe subscription with new plan's price ID
+    // Update Stripe subscription with new interval's price ID (same planCode, different interval)
     const { updateSubscription } = await import('./stripe.js');
     await updateSubscription(
       subscription.stripeSubscriptionId,
-      newPlanType,
+      currentPlanCode,
       currency,
+      interval,
+      behavior,
     );
 
     // Update local DB immediately (webhook will also update, but this prevents race conditions)
+    // Note: activateSubscription may need to be updated to accept interval
     await activateSubscription(
       shopId,
       subscription.stripeCustomerId,
       subscription.stripeSubscriptionId,
-      newPlanType,
+      currentPlanCode,
+      interval,
     );
 
     logger.info(
-      { shopId, interval, oldPlan: subscription.planType, newPlan: newPlanType },
+      { shopId, interval, oldInterval: subscription.interval, planCode: currentPlanCode },
       'Subscription interval switched',
     );
 
     return {
       interval,
-      planType: newPlanType,
+      planCode: currentPlanCode,
     };
   } catch (err) {
     logger.error(

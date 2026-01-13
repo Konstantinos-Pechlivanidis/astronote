@@ -1078,37 +1078,44 @@ async function handleSubscriptionUpdated(subscription) {
   }
 
   // Extract planType from subscription metadata or price ID
+  // Use Plan Catalog to resolve planCode, interval, currency from priceId
+  const planCatalog = await import('../services/plan-catalog.js');
+  const priceId = subscription.items?.data?.[0]?.price?.id;
+
   let newPlanType = shop.planType;
+  let interval = null;
+  let currency = shop.currency || 'EUR';
+
+  // Try metadata first (for backward compatibility)
   const subscriptionMetadata = subscription.metadata || {};
   const metadataPlanType = subscriptionMetadata.planType;
+  const metadataInterval = subscriptionMetadata.interval;
 
-  // Try to get planType from metadata first
   if (metadataPlanType && ['starter', 'pro'].includes(metadataPlanType)) {
     newPlanType = metadataPlanType;
-  } else {
-    // Fallback: determine planType from price ID
-    const priceId = subscription.items?.data?.[0]?.price?.id;
-    if (priceId) {
-      const starterPriceIds = [
-        process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR,
-        process.env.STRIPE_PRICE_ID_SUB_STARTER_USD,
-      ].filter(Boolean);
-      const proPriceIds = [
-        process.env.STRIPE_PRICE_ID_SUB_PRO_EUR,
-        process.env.STRIPE_PRICE_ID_SUB_PRO_USD,
-      ].filter(Boolean);
-      if (starterPriceIds.includes(priceId)) {
-        newPlanType = 'starter';
-      } else if (proPriceIds.includes(priceId)) {
-        newPlanType = 'pro';
-      }
+  }
+  if (metadataInterval && ['month', 'year'].includes(metadataInterval)) {
+    interval = metadataInterval;
+  }
+
+  // Use Plan Catalog to resolve from priceId (more reliable)
+  if (priceId) {
+    const resolved = planCatalog.resolvePlanFromPriceId(priceId);
+    if (resolved) {
+      newPlanType = resolved.planCode;
+      interval = resolved.interval;
+      currency = resolved.currency;
     }
   }
 
-  // Extract interval from subscription
-  let interval = null;
-  if (subscription.items?.data?.[0]?.price?.recurring) {
+  // Fallback: extract interval from Stripe subscription if not resolved
+  if (!interval && subscription.items?.data?.[0]?.price?.recurring) {
     interval = subscription.items.data[0].price.recurring.interval; // 'month' or 'year'
+  }
+
+  // Fallback: extract currency from Stripe subscription if not resolved
+  if (!currency && subscription.items?.data?.[0]?.price?.currency) {
+    currency = String(subscription.items.data[0].price.currency).toUpperCase();
   }
 
   // Extract cancelAtPeriodEnd
@@ -1230,6 +1237,7 @@ async function handleSubscriptionUpdated(subscription) {
     where: { shopId: shop.id },
     update: {
       stripeCustomerId: customerId,
+      interval: interval || undefined,
       stripeSubscriptionId: subscriptionId,
       planCode: newPlanType,
       status: newStatus,
@@ -1241,6 +1249,8 @@ async function handleSubscriptionUpdated(subscription) {
         ? new Date(subscription.trial_end * 1000)
         : null,
       metadata: subscription.metadata || undefined,
+      lastSyncedAt: new Date(),
+      sourceOfTruth: 'webhook',
     },
     create: {
       shopId: shop.id,
@@ -1248,6 +1258,7 @@ async function handleSubscriptionUpdated(subscription) {
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscriptionId,
       planCode: newPlanType,
+      interval: interval || undefined,
       status: newStatus,
       currency: subscriptionCurrency,
       currentPeriodStart,
@@ -1257,6 +1268,8 @@ async function handleSubscriptionUpdated(subscription) {
         ? new Date(subscription.trial_end * 1000)
         : null,
       metadata: subscription.metadata || undefined,
+      lastSyncedAt: new Date(),
+      sourceOfTruth: 'webhook',
     },
   });
 }
