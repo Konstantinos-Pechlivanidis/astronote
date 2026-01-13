@@ -6,12 +6,11 @@ import {
   activateSubscription,
   allocateFreeCredits,
   getPlanConfig,
-  reconcileSubscriptionFromStripe,
 } from '../services/subscription.js';
+import { getSubscriptionStatusWithStripeSync } from '../services/stripe-sync.js';
 import { SubscriptionPlanType } from '../utils/prismaEnums.js';
 import {
   createSubscriptionCheckoutSession,
-  updateSubscription,
   cancelSubscription,
   resumeSubscription,
   getCheckoutSession,
@@ -70,17 +69,35 @@ export async function reconcile(req, res) {
   const requestId = req.id || req.headers['x-request-id'] || 'unknown';
   try {
     const shopId = getStoreId(req);
-    const result = await reconcileSubscriptionFromStripe(shopId);
+    // Use StripeSyncService for absolute transparency
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
+    const reconciled = subscription.mismatchDetected || subscription.sourceOfTruth === 'stripe_verified';
 
-    if (!result.reconciled) {
+    if (!reconciled && !subscription.stripeSubscriptionId) {
       return sendSuccess(
         res,
-        result,
+        {
+          reconciled: false,
+          reason: 'No Stripe subscription to reconcile',
+          subscription: null,
+        },
         'No Stripe subscription to reconcile',
       );
     }
 
-    return sendSuccess(res, result, 'Subscription reconciled');
+    return sendSuccess(
+      res,
+      {
+        reconciled,
+        reason: reconciled
+          ? 'Subscription reconciled with Stripe'
+          : 'Subscription already in sync',
+        subscription,
+      },
+      reconciled
+        ? 'Subscription reconciled successfully'
+        : 'Subscription already in sync',
+    );
   } catch (error) {
     if (error.message?.includes('Stripe is not configured')) {
       return sendError(
@@ -381,9 +398,9 @@ export async function subscribe(req, res, next) {
 export async function switchInterval(req, res, next) {
   try {
     const shopId = getStoreId(req);
-    const { interval, planType } = req.body;
+    const { interval: targetInterval, planType: targetPlanCode } = req.body;
 
-    if (!interval && !planType) {
+    if (!targetInterval && !targetPlanCode) {
       return sendError(
         res,
         400,
@@ -392,7 +409,8 @@ export async function switchInterval(req, res, next) {
       );
     }
 
-    const subscription = await getSubscriptionStatus(shopId);
+    // Use StripeSyncService for absolute transparency
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
 
     if (!subscription.active || !subscription.stripeSubscriptionId) {
       return sendError(
@@ -403,27 +421,37 @@ export async function switchInterval(req, res, next) {
       );
     }
 
-    // Switch interval if provided
-    if (interval) {
+    // If planType is provided, use update endpoint logic
+    if (targetPlanCode) {
+      // Update will handle the change logic (including Pro Yearly downgrade exception)
+      return update(req, res, next);
+    }
+
+    // If only interval switch (same plan, different interval)
+    if (targetInterval) {
       const { switchSubscriptionInterval } = await import('../services/subscription.js');
-      await switchSubscriptionInterval(shopId, interval);
+      await switchSubscriptionInterval(shopId, targetInterval);
+
+      // Sync DB to Stripe immediately
+      const { fetchStripeSubscription, deriveCanonicalFields, syncDbToStripe } = await import('../services/stripe-sync.js');
+      const updatedStripeSubscription = await fetchStripeSubscription(subscription.stripeSubscriptionId);
+      if (updatedStripeSubscription) {
+        const canonicalFields = await deriveCanonicalFields(updatedStripeSubscription);
+        if (canonicalFields) {
+          await syncDbToStripe(shopId, canonicalFields, 'switch_interval');
+        }
+      }
     }
 
-    // Update plan if provided
-    if (planType) {
-      await update(req, res, next);
-      return; // update() already sends response
-    }
-
-    // If only interval was provided, return updated subscription status
-    const updatedStatus = await getSubscriptionStatus(shopId);
+    // Return updated subscription status (with Stripe sync)
+    const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
     return sendSuccess(
       res,
       {
-        interval,
+        interval: targetInterval,
         subscription: updatedStatus,
       },
-      `Subscription interval switched to ${interval} successfully`,
+      `Subscription interval switched to ${targetInterval} successfully`,
     );
   } catch (error) {
     logger.error('Switch subscription interval error', {
@@ -442,9 +470,10 @@ export async function switchInterval(req, res, next) {
 export async function update(req, res, next) {
   try {
     const shopId = getStoreId(req);
-    const { planType, interval, currency: requestedCurrencyParam, behavior = 'immediate' } = req.body;
+    const { planType: targetPlanCode, interval: targetInterval, currency: requestedCurrencyParam } = req.body;
 
-    const subscription = await getSubscriptionStatus(shopId);
+    // Use StripeSyncService for absolute transparency
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
 
     if (!subscription.active || !subscription.stripeSubscriptionId) {
       return sendError(
@@ -457,23 +486,23 @@ export async function update(req, res, next) {
 
     // Validate and resolve interval (keep current if not provided)
     const validIntervals = ['month', 'year'];
-    let resolvedInterval = interval;
+    let resolvedInterval = targetInterval;
     if (!resolvedInterval || !validIntervals.includes(resolvedInterval.toLowerCase())) {
       // Keep current interval if not provided
-      resolvedInterval = subscription.interval || (planType === 'starter' ? 'month' : 'year');
+      resolvedInterval = subscription.interval || (targetPlanCode === 'starter' ? 'month' : 'year');
     } else {
       resolvedInterval = resolvedInterval.toLowerCase();
     }
 
     // Check if already on the requested plan and interval
-    if (subscription.planType === planType && (!interval || subscription.interval === resolvedInterval)) {
+    if (subscription.planCode === targetPlanCode && (!targetInterval || subscription.interval === resolvedInterval)) {
       return sendError(
         res,
         400,
         'ALREADY_ON_PLAN',
-        `You are already on the ${planType} plan${interval ? ` with ${resolvedInterval}ly billing` : ''}.`,
+        `You are already on the ${targetPlanCode} plan${targetInterval ? ` with ${resolvedInterval}ly billing` : ''}.`,
         {
-          currentPlan: planType,
+          currentPlan: targetPlanCode,
           currentInterval: subscription.interval,
         },
       );
@@ -500,12 +529,12 @@ export async function update(req, res, next) {
       const stripeMetadata = stripeSubscription.metadata || {};
       const stripePlanType = stripeMetadata.planType;
 
-      if (stripePlanType === planType && subscription.planType === planType) {
+      if (stripePlanType === targetPlanCode && subscription.planCode === targetPlanCode) {
         logger.info(
           {
             shopId,
             subscriptionId: subscription.stripeSubscriptionId,
-            planType,
+            planType: targetPlanCode,
           },
           'Subscription already on requested plan (idempotency check)',
         );
@@ -513,10 +542,10 @@ export async function update(req, res, next) {
         return sendSuccess(
           res,
           {
-            planType,
+            planType: targetPlanCode,
             alreadyUpdated: true,
           },
-          `Subscription is already on the ${planType} plan`,
+          `Subscription is already on the ${targetPlanCode} plan`,
         );
       }
     } catch (err) {
@@ -553,42 +582,95 @@ export async function update(req, res, next) {
       }
     }
 
-    await updateSubscription(
+    // Determine change type and behavior
+    const planCatalog = await import('../services/plan-catalog.js');
+    const changeType = planCatalog.getPlanChangeType(subscription.planCode, targetPlanCode);
+    const isProYearlyDowngrade = subscription.planCode === 'pro' && subscription.interval === 'year' && changeType === 'downgrade';
+
+    // Determine behavior: immediate for all except Pro Yearly downgrades
+    const behavior = isProYearlyDowngrade ? 'period_end' : 'immediate';
+
+    // Update Stripe subscription
+    const { updateSubscription } = await import('../services/stripe.js');
+    const updatedStripeSubscription = await updateSubscription(
       subscription.stripeSubscriptionId,
-      planType,
+      targetPlanCode,
       currency,
       resolvedInterval,
       behavior,
     );
 
-    // Update local DB immediately (idempotent - activateSubscription checks current state)
-    await activateSubscription(
-      shopId,
-      subscription.stripeCustomerId,
-      subscription.stripeSubscriptionId,
-      planType,
-      resolvedInterval,
-    );
+    // If scheduled (Pro Yearly downgrade), store pendingChange in DB
+    if (behavior === 'period_end') {
+      const effectiveAt = subscription.currentPeriodEnd || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // Default to 1 year if not available
+
+      try {
+        await prisma.subscription.updateMany({
+          where: { shopId },
+          data: {
+            pendingChangePlanCode: targetPlanCode,
+            pendingChangeInterval: resolvedInterval,
+            pendingChangeCurrency: currency,
+            pendingChangeEffectiveAt: effectiveAt,
+          },
+        });
+      } catch (err) {
+        logger.warn('Could not update pendingChange in Subscription table', {
+          shopId,
+          error: err.message,
+        });
+      }
+    }
+
+    // Sync DB to Stripe immediately (even for scheduled changes, we update current state)
+    const { deriveCanonicalFields, syncDbToStripe } = await import('../services/stripe-sync.js');
+    const canonicalFields = await deriveCanonicalFields(updatedStripeSubscription);
+    if (canonicalFields) {
+      await syncDbToStripe(shopId, canonicalFields, 'subscription_change');
+    } else {
+      // Fallback: use activateSubscription
+      await activateSubscription(
+        shopId,
+        subscription.stripeCustomerId,
+        subscription.stripeSubscriptionId,
+        targetPlanCode,
+        resolvedInterval,
+      );
+    }
+
+    // Get updated status (with Stripe sync)
+    const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
 
     logger.info(
       {
         shopId,
-        oldPlan: subscription.planType,
-        newPlan: planType,
+        oldPlan: subscription.planCode,
+        newPlan: targetPlanCode,
+        oldInterval: subscription.interval,
+        newInterval: resolvedInterval,
+        behavior,
         subscriptionId: subscription.stripeSubscriptionId,
       },
       'Subscription plan updated',
     );
 
+    const message = behavior === 'period_end'
+      ? `Downgrade scheduled for end of term (${updatedStatus.currentPeriodEnd ? new Date(updatedStatus.currentPeriodEnd).toLocaleDateString() : 'period end'})`
+      : `Subscription updated to ${targetPlanCode} plan (${resolvedInterval}ly) successfully`;
+
     return sendSuccess(
       res,
       {
-        planType,
+        planType: targetPlanCode,
+        planCode: targetPlanCode,
         interval: resolvedInterval,
-        currency, // Include currency in response (aligned with Retail)
+        currency,
         behavior,
+        scheduled: behavior === 'period_end',
+        effectiveAt: behavior === 'period_end' ? updatedStatus.currentPeriodEnd : null,
+        subscription: updatedStatus,
       },
-      `Subscription updated to ${planType} plan (${resolvedInterval}ly) successfully`,
+      message,
     );
   } catch (error) {
     logger.error('Update subscription error', {
@@ -667,8 +749,17 @@ export async function cancel(req, res, next) {
       'Subscription cancelled',
     );
 
-    // Return updated status
-    const updatedStatus = await getSubscriptionStatus(shopId);
+    // Sync DB to Stripe and return updated status
+    const { fetchStripeSubscription, deriveCanonicalFields, syncDbToStripe } = await import('../services/stripe-sync.js');
+    const updatedStripeSubscription = await fetchStripeSubscription(subscription.stripeSubscriptionId);
+    if (updatedStripeSubscription) {
+      const canonicalFields = await deriveCanonicalFields(updatedStripeSubscription);
+      if (canonicalFields) {
+        await syncDbToStripe(shopId, canonicalFields, 'cancel');
+      }
+    }
+
+    const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
     return sendSuccess(
       res,
       {
@@ -694,7 +785,8 @@ export async function resume(req, res, next) {
   try {
     const shopId = getStoreId(req);
 
-    const subscription = await getSubscriptionStatus(shopId);
+    // Use StripeSyncService for absolute transparency
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
 
     if (!subscription.active || !subscription.stripeSubscriptionId) {
       return sendError(
@@ -758,8 +850,17 @@ export async function resume(req, res, next) {
       'Subscription resumed',
     );
 
-    // Return updated status
-    const updatedStatus = await getSubscriptionStatus(shopId);
+    // Sync DB to Stripe and return updated status
+    const { fetchStripeSubscription, deriveCanonicalFields, syncDbToStripe } = await import('../services/stripe-sync.js');
+    const updatedStripeSubscription = await fetchStripeSubscription(subscription.stripeSubscriptionId);
+    if (updatedStripeSubscription) {
+      const canonicalFields = await deriveCanonicalFields(updatedStripeSubscription);
+      if (canonicalFields) {
+        await syncDbToStripe(shopId, canonicalFields, 'resume');
+      }
+    }
+
+    const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
     return sendSuccess(
       res,
       {

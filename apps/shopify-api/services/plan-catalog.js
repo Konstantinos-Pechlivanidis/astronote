@@ -32,6 +32,46 @@ export const CURRENCIES = {
 };
 
 /**
+ * Plan ranking (for upgrade/downgrade logic)
+ * Lower number = lower tier
+ */
+export const PLAN_RANK = {
+  starter: 1,
+  pro: 2,
+  // Add more plans here as needed
+};
+
+/**
+ * Get plan rank
+ * @param {string} planCode - Plan code
+ * @returns {number} Plan rank (1 = lowest, higher = better)
+ */
+export function getPlanRank(planCode) {
+  return PLAN_RANK[planCode] || 0;
+}
+
+/**
+ * Determine if a plan change is an upgrade or downgrade
+ * @param {string} currentPlanCode - Current plan code
+ * @param {string} targetPlanCode - Target plan code
+ * @returns {'upgrade' | 'downgrade' | 'same'} Change type
+ */
+export function getPlanChangeType(currentPlanCode, targetPlanCode) {
+  if (!currentPlanCode || !targetPlanCode) {
+    return 'same';
+  }
+  const currentRank = getPlanRank(currentPlanCode);
+  const targetRank = getPlanRank(targetPlanCode);
+  if (targetRank > currentRank) {
+    return 'upgrade';
+  }
+  if (targetRank < currentRank) {
+    return 'downgrade';
+  }
+  return 'same';
+}
+
+/**
  * Plan Catalog Configuration
  * Maps: planCode + interval + currency -> Stripe priceId env var name
  */

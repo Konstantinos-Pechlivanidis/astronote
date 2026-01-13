@@ -288,6 +288,27 @@ function BillingPageContent() {
     return 'Current Plan';
   };
 
+  // Helper to get "what happens" message for a plan option
+  const getPlanChangeMessage = (targetPlanType: 'starter' | 'pro', _targetInterval: 'month' | 'year') => {
+    if (!isSubscriptionActive || !subscriptionPlan) {
+      return 'Takes effect immediately';
+    }
+
+    const currentRank = PLAN_RANK[subscriptionPlan as keyof typeof PLAN_RANK] || 0;
+    const targetRank = PLAN_RANK[targetPlanType] || 0;
+    const isDowngrade = currentRank > targetRank;
+    const isProYearlyDowngrade = subscriptionPlan === 'pro' && subscriptionInterval === 'year' && isDowngrade;
+
+    if (isProYearlyDowngrade) {
+      const effectiveDate = subscription.currentPeriodEnd
+        ? formatDateSafe(subscription.currentPeriodEnd)
+        : 'end of term';
+      return `Scheduled for end of term (${effectiveDate})`;
+    }
+
+    return 'Takes effect immediately';
+  };
+
   const handleSubscribe = async (planType: 'starter' | 'pro') => {
     try {
       // Explicitly set interval: starter = monthly, pro = yearly
@@ -320,7 +341,8 @@ function BillingPageContent() {
 
   const handleSwitchInterval = async (interval: 'month' | 'year') => {
     const intervalLabel = interval === 'month' ? 'monthly' : 'yearly';
-    const confirmMessage = `Are you sure you want to switch to ${intervalLabel} billing? This change will take effect at the end of your current billing period.`;
+    // Interval switches are IMMEDIATE (not scheduled at period end)
+    const confirmMessage = `Are you sure you want to switch to ${intervalLabel} billing? This change will take effect immediately.`;
 
     if (!window.confirm(confirmMessage)) {
       return;
@@ -586,7 +608,7 @@ function BillingPageContent() {
                       </div>
                     )}
                   </div>
-                  <ul className="space-y-3 mb-6">
+                  <ul className="space-y-3 mb-4">
                     <li className="flex items-center gap-3">
                       <Check className="h-4 w-4 text-accent flex-shrink-0" />
                       <span className="text-sm text-text-secondary">100 free credits per month</span>
@@ -596,6 +618,9 @@ function BillingPageContent() {
                       <span className="text-sm text-text-secondary">All features included</span>
                     </li>
                   </ul>
+                  <p className="text-xs text-text-tertiary mb-4 italic">
+                    {getPlanChangeMessage('starter', 'month')}
+                  </p>
                   <Button
                     onClick={() => handleSubscribe('starter')}
                     disabled={subscribe.isPending || (isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'month')}
