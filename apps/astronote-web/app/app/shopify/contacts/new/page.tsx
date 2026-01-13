@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCreateContact } from '@/src/features/shopify/contacts/hooks/useContactMutations';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
@@ -87,9 +88,10 @@ export default function NewContactPage() {
   };
 
   return (
-    <div>
+    <RetailPageLayout>
+      <div className="space-y-6">
       {/* Header */}
-      <div className="mb-6 flex items-center gap-4">
+        <div className="flex items-center gap-4">
         <Link href="/app/shopify/contacts">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -107,7 +109,7 @@ export default function NewContactPage() {
       <div className="max-w-2xl">
         <RetailCard className="p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Phone */}
+            {/* Phone - Full width */}
             <div>
               <label htmlFor="phoneE164" className="mb-2 block text-sm font-medium text-text-secondary">
                 Phone Number <span className="text-red-400">*</span>
@@ -128,6 +130,8 @@ export default function NewContactPage() {
               </p>
             </div>
 
+            {/* Name Fields - 2 columns on desktop */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {/* First Name */}
             <div>
               <label htmlFor="firstName" className="mb-2 block text-sm font-medium text-text-secondary">
@@ -156,6 +160,7 @@ export default function NewContactPage() {
                 placeholder="Doe"
                 maxLength={100}
               />
+              </div>
             </div>
 
             {/* Email */}
@@ -176,6 +181,8 @@ export default function NewContactPage() {
               )}
             </div>
 
+            {/* Gender and Birth Date - 2 columns on desktop */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             {/* Gender */}
             <div>
               <label htmlFor="gender" className="mb-2 block text-sm font-medium text-text-secondary">
@@ -215,6 +222,7 @@ export default function NewContactPage() {
               {errors.birthDate && (
                 <p className="mt-1 text-sm text-red-400">{errors.birthDate}</p>
               )}
+              </div>
             </div>
 
             {/* SMS Consent */}
@@ -258,6 +266,7 @@ export default function NewContactPage() {
         </RetailCard>
       </div>
     </div>
+    </RetailPageLayout>
   );
 }
 

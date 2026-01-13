@@ -12,12 +12,121 @@ const {
   getIncludedSmsForInterval,
   // calculateTopupPrice // Unused - kept for potential future use
 } = require('../services/subscription.service');
+const { resolveTaxTreatment, resolveTaxRateForInvoice } = require('../services/tax-resolver.service');
+const { upsertTaxEvidence } = require('../services/tax-evidence.service');
+const { upsertInvoiceRecord, recordSubscriptionInvoiceTransaction } = require('../services/invoices.service');
+const { syncBillingProfileFromStripe } = require('../services/billing-profile.service');
+const {
+  generateEventHash,
+  processWebhookWithReplayProtection,
+  recordWebhookEvent,
+} = require('../services/webhook-replay.service');
 const pino = require('pino');
 
 const router = express.Router();
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+
+const extractTaxId = (taxIds = []) => {
+  if (!Array.isArray(taxIds)) {
+    return null;
+  }
+  const vat = taxIds.find((entry) => entry.type === 'eu_vat') || taxIds[0];
+  if (!vat) {
+    return null;
+  }
+  return {
+    value: vat.value || vat.id || null,
+    country: vat.country || null,
+    verified: vat.verification?.status === 'verified',
+  };
+};
+
+const extractTaxDetailsFromSession = (session) => {
+  const customerDetails = session?.customer_details || {};
+  const taxId = extractTaxId(customerDetails.tax_ids || []);
+  const billingCountry = customerDetails.address?.country || null;
+  const subtotal = session.amount_subtotal ?? null;
+  const taxAmount = session.total_details?.amount_tax ?? null;
+
+  return {
+    billingCountry,
+    vatId: taxId?.value || null,
+    vatIdValidated: taxId?.verified || false,
+    subtotal,
+    taxAmount,
+  };
+};
+
+const extractTaxDetailsFromInvoice = (invoice) => {
+  const taxId = extractTaxId(invoice?.customer_tax_ids || []);
+  const billingCountry = invoice?.customer_address?.country || null;
+  const subtotal = invoice?.subtotal ?? null;
+  const taxAmount = invoice?.tax ?? null;
+
+  return {
+    billingCountry,
+    vatId: taxId?.value || null,
+    vatIdValidated: taxId?.verified || false,
+    subtotal,
+    taxAmount,
+  };
+};
+
+const resolveOwnerIdFromStripeEvent = async (event) => {
+  const object = event?.data?.object || {};
+  const metadata = object.metadata || {};
+  const metadataOwnerId = metadata.ownerId || metadata.userId;
+  if (metadataOwnerId) {
+    const parsed = Number(metadataOwnerId);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  const customerId =
+    typeof object.customer === 'string'
+      ? object.customer
+      : object.customer?.id;
+
+  if (customerId) {
+    const user = await prisma.user.findFirst({
+      where: { stripeCustomerId: customerId },
+      select: { id: true },
+    });
+    if (user?.id) {
+      return user.id;
+    }
+  }
+
+  let subscriptionId = null;
+  if (typeof object.subscription === 'string') {
+    subscriptionId = object.subscription;
+  } else if (object.object === 'subscription' && object.id) {
+    subscriptionId = object.id;
+  }
+
+  if (subscriptionId) {
+    const user = await prisma.user.findFirst({
+      where: { stripeSubscriptionId: subscriptionId },
+      select: { id: true },
+    });
+    if (user?.id) {
+      return user.id;
+    }
+
+    const record = await prisma.subscription.findFirst({
+      where: { stripeSubscriptionId: subscriptionId },
+      select: { ownerId: true },
+    });
+    if (record?.ownerId) {
+      return record.ownerId;
+    }
+  }
+
+  return null;
+};
 
 const mapStripeStatus = (status) => {
   switch (status) {
@@ -59,21 +168,38 @@ const extractSubscriptionPeriod = (subscription) => {
   };
 };
 
-/**
- * Persist webhook event for auditing
- */
-async function persistWebhookEvent(eventType, payload, stripeEventId) {
+async function recordBillingTransaction({
+  ownerId,
+  creditsAdded,
+  amount,
+  currency,
+  packageType,
+  stripeSessionId,
+  stripePaymentId,
+  idempotencyKey,
+}) {
   try {
-    await prisma.webhookEvent.create({
+    return await prisma.billingTransaction.create({
       data: {
-        provider: 'stripe',
-        eventType,
-        payload,
-        providerMessageId: stripeEventId || null,
+        ownerId,
+        creditsAdded,
+        amount,
+        currency,
+        packageType,
+        stripeSessionId: stripeSessionId || null,
+        stripePaymentId: stripePaymentId || null,
+        idempotencyKey: idempotencyKey || null,
+        status: 'paid',
       },
     });
-  } catch (e) {
-    logger.warn({ err: e?.message }, 'Failed to persist Stripe webhook event');
+  } catch (error) {
+    if (error?.code === 'P2002') {
+      return prisma.billingTransaction.findFirst({
+        where: { ownerId, idempotencyKey },
+      });
+    }
+    logger.error({ ownerId, error: error.message }, 'Failed to record billing transaction');
+    throw error;
   }
 }
 
@@ -195,6 +321,17 @@ async function handleCheckoutCompleted(session) {
         },
       }, tx);
     });
+
+    await recordBillingTransaction({
+      ownerId,
+      creditsAdded: units,
+      amount: session.amount_total || expectedAmountCents,
+      currency: currency || 'EUR',
+      packageType: 'package',
+      stripeSessionId: session.id,
+      stripePaymentId: session.payment_intent || null,
+      idempotencyKey: `stripe:payment_intent:${session.payment_intent || session.id}`,
+    });
   } catch (err) {
     logger.error({
       err,
@@ -307,6 +444,16 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
         },
       }, tx);
     });
+
+    await recordBillingTransaction({
+      ownerId,
+      creditsAdded: units,
+      amount: paymentIntent.amount || purchase.priceCents,
+      currency: currency || 'EUR',
+      packageType: 'package',
+      stripePaymentId: paymentIntent.id,
+      idempotencyKey: `stripe:payment_intent:${paymentIntent.id}`,
+    });
   } catch (err) {
     logger.error({
       err,
@@ -341,6 +488,14 @@ async function handlePaymentFailed(paymentIntent) {
     });
     logger.info({ purchaseId: purchase.id }, 'Purchase marked as failed');
   }
+
+  await prisma.billingTransaction.updateMany({
+    where: {
+      stripePaymentId: paymentIntent.id,
+      status: 'pending',
+    },
+    data: { status: 'failed' },
+  });
 }
 
 /**
@@ -383,6 +538,9 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
     }
 
     const period = extractSubscriptionPeriod(stripeSubscription);
+    const subscriptionCurrency = stripeSubscription?.items?.data?.[0]?.price?.currency
+      ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
+      : metadata.currency || null;
 
     // Activate subscription (sets planType and subscriptionStatus)
     logger.info({ ownerId, planType, subscriptionId }, 'Activating subscription');
@@ -391,6 +549,8 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
       currentPeriodStart: period.currentPeriodStart,
       currentPeriodEnd: period.currentPeriodEnd,
       cancelAtPeriodEnd: period.cancelAtPeriodEnd,
+      currency: subscriptionCurrency,
+      stripeSubscription,
     });
     logger.info({ ownerId, planType, subscriptionId }, 'Subscription activated successfully');
 
@@ -415,6 +575,36 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
         includedSmsPerPeriod: result.includedSmsPerPeriod,
         invoiceId: `sub_${subscriptionId}`,
       }, 'Subscription activated and allowance reset successfully');
+    }
+
+    const taxDetails = extractTaxDetailsFromSession(session);
+    if (taxDetails.billingCountry || taxDetails.vatId) {
+      const treatment = resolveTaxTreatment({
+        billingCountry: taxDetails.billingCountry,
+        vatId: taxDetails.vatId,
+        vatIdValidated: taxDetails.vatIdValidated,
+      });
+      const taxRateApplied = resolveTaxRateForInvoice({
+        subtotal: taxDetails.subtotal,
+        tax: taxDetails.taxAmount,
+      });
+
+      await upsertTaxEvidence({
+        ownerId,
+        billingCountry: taxDetails.billingCountry,
+        vatIdProvided: taxDetails.vatId,
+        vatIdValidated: taxDetails.vatIdValidated,
+        taxRateApplied,
+        taxJurisdiction: treatment.taxJurisdiction,
+        taxTreatment: treatment.mode,
+      });
+
+      await syncBillingProfileFromStripe({
+        ownerId,
+        session,
+        taxTreatment: treatment.mode,
+        taxExempt: treatment.taxRate === 0,
+      });
     }
   } catch (err) {
     logger.error({
@@ -504,6 +694,47 @@ async function handleCheckoutSessionCompletedForTopup(session) {
       }, tx);
     });
 
+    await recordBillingTransaction({
+      ownerId,
+      creditsAdded: credits,
+      amount: session.amount_total || expectedAmountCents,
+      currency: currency || 'EUR',
+      packageType: 'credit_topup',
+      stripeSessionId: session.id,
+      stripePaymentId: session.payment_intent || null,
+      idempotencyKey: `stripe:topup:${session.payment_intent || session.id}`,
+    });
+
+    const taxDetails = extractTaxDetailsFromSession(session);
+    if (taxDetails.billingCountry || taxDetails.vatId) {
+      const treatment = resolveTaxTreatment({
+        billingCountry: taxDetails.billingCountry,
+        vatId: taxDetails.vatId,
+        vatIdValidated: taxDetails.vatIdValidated,
+      });
+      const taxRateApplied = resolveTaxRateForInvoice({
+        subtotal: taxDetails.subtotal,
+        tax: taxDetails.taxAmount,
+      });
+
+      await upsertTaxEvidence({
+        ownerId,
+        billingCountry: taxDetails.billingCountry,
+        vatIdProvided: taxDetails.vatId,
+        vatIdValidated: taxDetails.vatIdValidated,
+        taxRateApplied,
+        taxJurisdiction: treatment.taxJurisdiction,
+        taxTreatment: treatment.mode,
+      });
+
+      await syncBillingProfileFromStripe({
+        ownerId,
+        session,
+        taxTreatment: treatment.mode,
+        taxExempt: treatment.taxRate === 0,
+      });
+    }
+
     logger.info({
       ownerId,
       credits,
@@ -576,13 +807,47 @@ async function handleInvoicePaymentSucceeded(invoice) {
     return;
   }
 
+  const invoiceRecord = await upsertInvoiceRecord(user.id, invoice);
+  const taxDetails = extractTaxDetailsFromInvoice(invoice);
+  const treatment = resolveTaxTreatment({
+    billingCountry: taxDetails.billingCountry,
+    vatId: taxDetails.vatId,
+    vatIdValidated: taxDetails.vatIdValidated,
+  });
+  const taxRateApplied = resolveTaxRateForInvoice({
+    subtotal: taxDetails.subtotal,
+    tax: taxDetails.taxAmount,
+  });
+
+  await upsertTaxEvidence({
+    ownerId: user.id,
+    invoiceId: invoiceRecord.id,
+    billingCountry: taxDetails.billingCountry,
+    vatIdProvided: taxDetails.vatId,
+    vatIdValidated: taxDetails.vatIdValidated,
+    taxRateApplied,
+    taxJurisdiction: treatment.taxJurisdiction,
+    taxTreatment: treatment.mode,
+  });
+
+  await syncBillingProfileFromStripe({
+    ownerId: user.id,
+    invoice,
+    taxTreatment: treatment.mode,
+    taxExempt: treatment.taxRate === 0,
+  });
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastBillingError: null },
+  });
+
   if (user.subscriptionStatus !== 'active') {
     logger.warn({
       userId: user.id,
       subscriptionStatus: user.subscriptionStatus,
       invoiceId: invoice.id,
-    }, 'User subscription not active - skipping credit allocation');
-    return;
+    }, 'User subscription not active - skipping allowance reset');
   }
 
   // Get subscription details from Stripe
@@ -598,47 +863,48 @@ async function handleInvoicePaymentSucceeded(invoice) {
     logger.warn({ subscriptionId, err: err.message }, 'Failed to retrieve subscription from Stripe');
   }
 
-  // Reset allowance for this billing cycle (idempotent)
-  logger.info({
-    userId: user.id,
-    planType: user.planType,
-    invoiceId: invoice.id,
-    subscriptionId,
-  }, 'Resetting allowance for billing cycle');
-
-  try {
-    const result = await resetAllowanceForPeriod(user.id, user.planType, invoice.id, stripeSubscription);
-    if (result.allocated) {
-      logger.info({
-        userId: user.id,
-        planType: user.planType,
-        invoiceId: invoice.id,
-        includedSmsPerPeriod: result.includedSmsPerPeriod,
-        subscriptionId,
-      }, 'Allowance reset successfully for billing cycle');
-    } else {
-      logger.info({
-        userId: user.id,
-        invoiceId: invoice.id,
-        reason: result.reason,
-        includedSmsPerPeriod: result.includedSmsPerPeriod || 0,
-      }, 'Allowance not reset (already allocated or other reason)');
-    }
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastBillingError: null },
-    });
-  } catch (err) {
-    logger.error({
+  if (user.subscriptionStatus === 'active') {
+    // Reset allowance for this billing cycle (idempotent)
+    logger.info({
       userId: user.id,
+      planType: user.planType,
       invoiceId: invoice.id,
       subscriptionId,
-      err: err.message,
-      stack: err.stack,
-    }, 'Failed to allocate free credits for invoice');
-    throw err;
+    }, 'Resetting allowance for billing cycle');
+
+    try {
+      const result = await resetAllowanceForPeriod(user.id, user.planType, invoice.id, stripeSubscription);
+      if (result.allocated) {
+        logger.info({
+          userId: user.id,
+          planType: user.planType,
+          invoiceId: invoice.id,
+          includedSmsPerPeriod: result.includedSmsPerPeriod,
+          subscriptionId,
+        }, 'Allowance reset successfully for billing cycle');
+      } else {
+        logger.info({
+          userId: user.id,
+          invoiceId: invoice.id,
+          reason: result.reason,
+          includedSmsPerPeriod: result.includedSmsPerPeriod || 0,
+        }, 'Allowance not reset (already allocated or other reason)');
+      }
+    } catch (err) {
+      logger.error({
+        userId: user.id,
+        invoiceId: invoice.id,
+        subscriptionId,
+        err: err.message,
+        stack: err.stack,
+      }, 'Failed to reset allowance for invoice');
+      throw err;
+    }
   }
+
+  await recordSubscriptionInvoiceTransaction(user.id, invoice, {
+    creditsAdded: 0,
+  });
 }
 
 /**
@@ -691,6 +957,8 @@ async function handleInvoicePaymentFailed(invoice) {
     }, 'Subscription ID mismatch between user and invoice');
     return;
   }
+
+  await upsertInvoiceRecord(user.id, invoice);
 
   // Get subscription from Stripe to check current status
   let stripeSubscription = null;
@@ -952,6 +1220,17 @@ async function handleSubscriptionDeleted(subscription) {
   // Deactivate subscription
   try {
     await deactivateSubscription(user.id, 'cancelled');
+    await prisma.subscription.update({
+      where: { ownerId: user.id },
+      data: {
+        status: 'cancelled',
+        cancelAtPeriodEnd: false,
+      },
+    }).catch((err) => {
+      if (err?.code !== 'P2025') {
+        logger.warn({ userId: user.id, err: err.message }, 'Failed to update subscription record on delete');
+      }
+    });
     logger.info({
       userId: user.id,
       subscriptionId,
@@ -1105,6 +1384,44 @@ async function handleSubscriptionUpdated(subscription) {
       stripeStatus: status,
     }, 'Subscription status and planType unchanged');
   }
+
+  const subscriptionCurrency = subscription.items?.data?.[0]?.price?.currency
+    ? String(subscription.items.data[0].price.currency).toUpperCase()
+    : null;
+
+  await prisma.subscription.upsert({
+    where: { ownerId: user.id },
+    update: {
+      stripeCustomerId: customerId || null,
+      stripeSubscriptionId: subscriptionId,
+      planCode: newPlanType,
+      status: newStatus,
+      currency: subscriptionCurrency,
+      currentPeriodStart: period.currentPeriodStart || null,
+      currentPeriodEnd: period.currentPeriodEnd || null,
+      cancelAtPeriodEnd: period.cancelAtPeriodEnd ?? false,
+      trialEndsAt: subscription.trial_end
+        ? new Date(subscription.trial_end * 1000)
+        : null,
+      metadata: subscription.metadata || undefined,
+    },
+    create: {
+      ownerId: user.id,
+      provider: 'stripe',
+      stripeCustomerId: customerId || null,
+      stripeSubscriptionId: subscriptionId,
+      planCode: newPlanType,
+      status: newStatus,
+      currency: subscriptionCurrency,
+      currentPeriodStart: period.currentPeriodStart || null,
+      currentPeriodEnd: period.currentPeriodEnd || null,
+      cancelAtPeriodEnd: period.cancelAtPeriodEnd ?? false,
+      trialEndsAt: subscription.trial_end
+        ? new Date(subscription.trial_end * 1000)
+        : null,
+      metadata: subscription.metadata || undefined,
+    },
+  });
 }
 
 /**
@@ -1132,50 +1449,80 @@ router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async
     return res.status(400).json({ message: `Webhook signature verification failed: ${err.message}`, code: 'INVALID_SIGNATURE' });
   }
 
-  // Persist webhook event (async, don't block)
-  persistWebhookEvent(event.type, event.data.object, event.id).catch(() => {});
+  const payloadHash = generateEventHash(req.body);
+  const ownerId = await resolveOwnerIdFromStripeEvent(event);
 
-  // Handle event
+  if (!ownerId) {
+    await recordWebhookEvent('stripe', event.id, {
+      eventType: event.type,
+      payloadHash,
+      payload: event.data?.object || null,
+      status: 'unmatched',
+    });
+    logger.warn({ eventType: event.type, eventId: event.id }, 'Stripe webhook could not be matched to tenant');
+    return res.json({ received: true, unmatched: true });
+  }
+
   try {
-    switch (event.type) {
-    case 'checkout.session.completed':
-      await handleCheckoutCompleted(event.data.object);
-      break;
+    const result = await processWebhookWithReplayProtection(
+      'stripe',
+      event.id,
+      async () => {
+        switch (event.type) {
+        case 'checkout.session.completed':
+          await handleCheckoutCompleted(event.data.object);
+          break;
 
-    case 'payment_intent.succeeded':
-      await handlePaymentIntentSucceeded(event.data.object);
-      break;
+        case 'payment_intent.succeeded':
+          await handlePaymentIntentSucceeded(event.data.object);
+          break;
 
-    case 'payment_intent.payment_failed':
-      await handlePaymentFailed(event.data.object);
-      break;
+        case 'payment_intent.payment_failed':
+          await handlePaymentFailed(event.data.object);
+          break;
 
-    case 'invoice.payment_succeeded':
-      await handleInvoicePaymentSucceeded(event.data.object);
-      break;
+        case 'invoice.payment_succeeded':
+          await handleInvoicePaymentSucceeded(event.data.object);
+          break;
 
-    case 'invoice.payment_failed':
-      await handleInvoicePaymentFailed(event.data.object);
-      break;
+        case 'invoice.payment_failed':
+          await handleInvoicePaymentFailed(event.data.object);
+          break;
 
-    case 'charge.refunded':
-      await handleChargeRefunded(event.data.object);
-      break;
+        case 'charge.refunded':
+          await handleChargeRefunded(event.data.object);
+          break;
 
-    case 'customer.subscription.deleted':
-      await handleSubscriptionDeleted(event.data.object);
-      break;
+        case 'customer.subscription.deleted':
+          await handleSubscriptionDeleted(event.data.object);
+          break;
 
-    case 'customer.subscription.updated':
-      await handleSubscriptionUpdated(event.data.object);
-      break;
+        case 'customer.subscription.updated':
+          await handleSubscriptionUpdated(event.data.object);
+          break;
 
-    default:
-      logger.debug({ type: event.type }, 'Unhandled Stripe event type');
+        default:
+          logger.debug({ type: event.type }, 'Unhandled Stripe event type');
+        }
+      },
+      {
+        payloadHash,
+        eventType: event.type,
+        ownerId,
+        payload: event.data?.object || null,
+        eventTimestamp: event.created ? new Date(event.created * 1000) : null,
+      },
+    );
+
+    if (!result.processed) {
+      return res.json({
+        received: true,
+        duplicate: result.reason === 'duplicate',
+        reason: result.reason,
+      });
     }
 
-    // Return 200 to acknowledge successful processing
-    res.json({ received: true });
+    return res.json({ received: true });
   } catch (err) {
     logger.error({ err, eventType: event.type, errMessage: err.message, errStack: err.stack }, 'Error processing Stripe webhook');
 

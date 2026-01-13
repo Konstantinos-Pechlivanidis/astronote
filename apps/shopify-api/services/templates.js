@@ -1,6 +1,7 @@
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
 import { NotFoundError } from '../utils/errors.js';
+import { mapTemplateToDTO, sanitizeCategoryForSelect } from '../utils/dto-mappers.js';
 
 /**
  * Templates Service
@@ -151,11 +152,31 @@ export async function listTemplates(shopId, filters = {}) {
     returned: templates.length,
   });
 
+  // Map templates to DTOs (ensure stable DTOs, no raw Prisma)
+  const templateDTOs = templates
+    .map(template => {
+      try {
+        return mapTemplateToDTO(template);
+      } catch (error) {
+        logger.warn('Failed to map template to DTO', {
+          templateId: template.id,
+          error: error.message,
+        });
+        return null;
+      }
+    })
+    .filter(t => t !== null); // Filter out failed mappings
+
+  // Sanitize categories (filter empty, ensure non-empty strings)
+  const sanitizedCategories = categories
+    .map(c => sanitizeCategoryForSelect(c.category))
+    .filter(c => c !== null);
+
   // Transform to Retail-aligned shape (items, total, page, pageSize)
   // Also include templates and pagination for backward compatibility
   return {
-    items: templates, // Retail-aligned field name
-    templates, // Backward compatibility
+    items: templateDTOs, // Retail-aligned field name (mapped DTOs)
+    templates: templateDTOs, // Backward compatibility
     total,
     page: pageNum,
     pageSize: pageSizeNum,
@@ -167,7 +188,7 @@ export async function listTemplates(shopId, filters = {}) {
       hasNextPage: pageNum < totalPages,
       hasPrevPage: pageNum > 1,
     },
-    categories: categories.map(c => c.category),
+    categories: sanitizedCategories,
   };
 }
 
@@ -218,7 +239,8 @@ export async function getTemplateById(shopId, templateId) {
 
   logger.info('Template retrieved successfully', { shopId, templateId });
 
-  return template;
+  // Map to DTO (ensure stable DTO, no raw Prisma)
+  return mapTemplateToDTO(template);
 }
 
 /**

@@ -1,6 +1,7 @@
 // apps/api/src/services/stripe.service.js
 const Stripe = require('stripe');
 const pino = require('pino');
+const prisma = require('../lib/prisma');
 const {
   getCreditTopupPriceId,
   getSubscriptionPriceId,
@@ -17,6 +18,119 @@ if (!STRIPE_SECRET_KEY) {
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: '2024-12-18.acacia',
 }) : null;
+
+const isStripeTaxEnabled = () =>
+  String(process.env.STRIPE_TAX_ENABLED || '').toLowerCase() === 'true';
+
+const isValidStripeCustomerId = (value) =>
+  typeof value === 'string' && value.startsWith('cus_');
+
+const normalizeStripeAddress = (address) => {
+  if (!address) {return null;}
+  return {
+    line1: address.line1 || null,
+    line2: address.line2 || null,
+    city: address.city || null,
+    state: address.state || null,
+    postal_code: address.postalCode || address.postal_code || null,
+    country: address.country || null,
+  };
+};
+
+async function ensureStripeCustomer({
+  ownerId,
+  userEmail,
+  userName,
+  currency,
+  stripeCustomerId,
+  billingProfile,
+}) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+
+  if (isValidStripeCustomerId(stripeCustomerId)) {
+    return stripeCustomerId;
+  }
+
+  const address = normalizeStripeAddress(billingProfile?.billingAddress);
+  const email = billingProfile?.billingEmail || userEmail || undefined;
+  const name = billingProfile?.legalName || userName || undefined;
+
+  const customer = await stripe.customers.create({
+    email,
+    name,
+    address: address || undefined,
+    metadata: {
+      ownerId: String(ownerId),
+      billingCurrency: currency || 'EUR',
+    },
+  });
+
+  if (billingProfile?.vatNumber) {
+    try {
+      await stripe.customers.createTaxId(customer.id, {
+        type: 'eu_vat',
+        value: billingProfile.vatNumber,
+      });
+    } catch (error) {
+      logger.warn(
+        { ownerId, customerId: customer.id, error: error.message },
+        'Failed to attach VAT ID to Stripe customer',
+      );
+    }
+  }
+
+  await prisma.user.update({
+    where: { id: ownerId },
+    data: { stripeCustomerId: customer.id },
+  });
+
+  return customer.id;
+}
+
+async function syncStripeCustomerBillingProfile({
+  stripeCustomerId,
+  billingProfile,
+}) {
+  if (!stripe || !isValidStripeCustomerId(stripeCustomerId)) {
+    return null;
+  }
+
+  const address = normalizeStripeAddress(billingProfile?.billingAddress);
+  const email = billingProfile?.billingEmail || undefined;
+  const name = billingProfile?.legalName || undefined;
+
+  await stripe.customers.update(stripeCustomerId, {
+    email,
+    name,
+    address: address || undefined,
+  });
+
+  if (billingProfile?.vatNumber) {
+    try {
+      const existing = await stripe.customers.listTaxIds(stripeCustomerId, {
+        limit: 100,
+      });
+      const alreadyExists = existing.data.some(
+        (taxId) => taxId.value === billingProfile.vatNumber,
+      );
+      if (!alreadyExists) {
+        await stripe.customers.createTaxId(stripeCustomerId, {
+          type: 'eu_vat',
+          value: billingProfile.vatNumber,
+        });
+      }
+    } catch (error) {
+      logger.warn(
+        { stripeCustomerId, error: error.message },
+        'Failed to sync Stripe customer tax ID',
+      );
+    }
+  }
+
+  return stripeCustomerId;
+}
 
 /**
  * Get Stripe price ID for a package and currency
@@ -72,6 +186,7 @@ async function createCheckoutSession({
   cancelUrl,
   idempotencyKey,
   priceId,
+  stripeCustomerId,
 }) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
@@ -83,32 +198,43 @@ async function createCheckoutSession({
     throw new Error(`Stripe price ID not found for package ${pkg.name} (${currency})`);
   }
 
-  const session = await stripe.checkout.sessions.create(
-    {
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: resolvedPriceId,
-          quantity: 1,
-        },
-      ],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: {
-        ownerId: String(ownerId),
-        packageId: String(pkg.id),
-        packageName: pkg.name,
-        units: String(pkg.units),
-        currency: currency.toUpperCase(),
+  const sessionParams = {
+    mode: 'payment',
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        price: resolvedPriceId,
+        quantity: 1,
       },
-      // Allow customer to enter email if not provided
-      customer_email: userEmail || undefined,
-      // Store ownerId in client_reference_id for easy lookup
-      client_reference_id: `owner_${ownerId}`,
-      // Expand line items to get price details in response
-      expand: ['line_items'],
+    ],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    metadata: {
+      ownerId: String(ownerId),
+      packageId: String(pkg.id),
+      packageName: pkg.name,
+      units: String(pkg.units),
+      currency: currency.toUpperCase(),
     },
+    ...(isValidStripeCustomerId(stripeCustomerId)
+      ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+      : {
+        customer_email: userEmail || undefined,
+        customer_creation: 'always',
+      }),
+    billing_address_collection: 'required',
+    client_reference_id: `owner_${ownerId}`,
+    expand: ['line_items'],
+    ...(isStripeTaxEnabled()
+      ? {
+        automatic_tax: { enabled: true },
+        tax_id_collection: { enabled: true },
+      }
+      : {}),
+  };
+
+  const session = await stripe.checkout.sessions.create(
+    sessionParams,
     idempotencyKey ? { idempotencyKey } : undefined,
   );
 
@@ -153,6 +279,7 @@ async function createSubscriptionCheckoutSession({
   currency = 'EUR',
   successUrl,
   cancelUrl,
+  stripeCustomerId,
 }) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
@@ -203,7 +330,12 @@ async function createSubscriptionCheckoutSession({
         type: 'subscription',
         currency: currency.toUpperCase(),
       },
-      customer_email: userEmail || undefined,
+      ...(isValidStripeCustomerId(stripeCustomerId)
+        ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+        : {
+          customer_email: userEmail || undefined,
+          customer_creation: 'always',
+        }),
       client_reference_id: `owner_${ownerId}`,
       subscription_data: {
         metadata: {
@@ -212,6 +344,12 @@ async function createSubscriptionCheckoutSession({
           currency: currency.toUpperCase(),
         },
       },
+      ...(isStripeTaxEnabled()
+        ? {
+          automatic_tax: { enabled: true },
+          tax_id_collection: { enabled: true },
+        }
+        : {}),
       expand: ['line_items', 'subscription'],
     });
 
@@ -248,6 +386,7 @@ async function createCreditTopupCheckoutSession({
   currency = 'EUR',
   successUrl,
   cancelUrl,
+  stripeCustomerId,
 }) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
@@ -282,8 +421,20 @@ async function createCreditTopupCheckoutSession({
       currency: currency.toUpperCase(),
       type: 'credit_topup',
     },
-    customer_email: userEmail || undefined,
+    ...(isValidStripeCustomerId(stripeCustomerId)
+      ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+      : {
+        customer_email: userEmail || undefined,
+        customer_creation: 'always',
+      }),
+    billing_address_collection: 'required',
     client_reference_id: `owner_${ownerId}_topup_${credits}`,
+    ...(isStripeTaxEnabled()
+      ? {
+        automatic_tax: { enabled: true },
+        tax_id_collection: { enabled: true },
+      }
+      : {}),
     expand: ['line_items'],
   });
 
@@ -389,4 +540,7 @@ module.exports = {
   getStripePriceId,
   getStripeSubscriptionPriceId,
   getStripeCreditTopupPriceId,
+  ensureStripeCustomer,
+  syncStripeCustomerBillingProfile,
+  isStripeTaxEnabled,
 };

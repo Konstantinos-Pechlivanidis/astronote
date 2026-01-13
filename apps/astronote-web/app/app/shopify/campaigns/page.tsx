@@ -24,6 +24,21 @@ import type { Campaign } from '@/src/lib/shopify/api/campaigns';
 const UI_ALL = '__all__';
 
 /**
+ * Campaign Skeleton Component
+ */
+function CampaignSkeleton() {
+  return (
+    <RetailCard>
+      <div className="space-y-4">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-16 animate-pulse rounded bg-surface-light"></div>
+        ))}
+      </div>
+    </RetailCard>
+  );
+}
+
+/**
  * Stats Cards Component
  */
 function StatsCards({ stats }: { stats: any }) {
@@ -129,6 +144,7 @@ export default function CampaignsPage() {
   const {
     data: campaignsData,
     error: campaignsError,
+    isLoading: campaignsLoading,
     refetch: refetchCampaigns,
   } = useCampaigns({
     page,
@@ -345,7 +361,11 @@ export default function CampaignsPage() {
           />
         </div>
 
+        {/* Loading State */}
+        {campaignsLoading && <CampaignSkeleton />}
+
         {/* Campaigns Table */}
+        {!campaignsLoading && (
         <div>
           <RetailDataTable
             columns={columns}
@@ -374,6 +394,7 @@ export default function CampaignsPage() {
             onRowClick={(campaign) => router.push(`/app/shopify/campaigns/${campaign.id}`)}
           />
         </div>
+        )}
 
         {/* Pagination */}
         {campaigns.length > 0 && (

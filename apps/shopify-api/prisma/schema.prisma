@@ -43,10 +43,14 @@ model Shop {
   shortLinks            ShortLink[]
   webhookEvents         WebhookEvent[]
   enqueueRequests       EnqueueRequest[]
+  billingProfile        ShopBillingProfile?
+  subscriptionRecord    Subscription?
+  invoiceRecords        InvoiceRecord[]
+  taxEvidenceRecords    TaxEvidence[]
 
   // Subscription fields
-  stripeCustomerId           String?               @db.VarChar(255)
-  stripeSubscriptionId       String?               @db.VarChar(255)
+  stripeCustomerId           String?               @unique @db.VarChar(255)
+  stripeSubscriptionId       String?               @unique @db.VarChar(255)
   planType                   SubscriptionPlanType?
   subscriptionStatus         SubscriptionStatus    @default(inactive)
   lastFreeCreditsAllocatedAt DateTime?
@@ -629,6 +633,94 @@ model ShopSettings {
   shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
 }
 
+model ShopBillingProfile {
+  id             String   @id @default(cuid())
+  shopId         String   @unique
+  legalName      String?
+  vatNumber      String?  @db.VarChar(32)
+  vatCountry     String?  @db.VarChar(2)
+  billingEmail   String?  @db.VarChar(255)
+  billingAddress Json?
+  currency       String   @default("EUR")
+  taxStatus      String?  @db.VarChar(32)
+  taxExempt      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([vatNumber])
+  @@index([vatCountry])
+}
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  shopId               String   @unique
+  provider             String   @default("stripe")
+  stripeCustomerId     String?  @db.VarChar(255)
+  stripeSubscriptionId String?  @unique @db.VarChar(255)
+  planCode             String?  @db.VarChar(50)
+  status               String?  @db.VarChar(40)
+  currency             String?  @db.VarChar(3)
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean  @default(false)
+  trialEndsAt          DateTime?
+  metadata             Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  shop                 Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+  @@index([status])
+}
+
+model InvoiceRecord {
+  id                   String   @id @default(cuid())
+  shopId               String
+  stripeInvoiceId      String   @unique @db.VarChar(255)
+  stripeCustomerId     String?  @db.VarChar(255)
+  stripeSubscriptionId String?  @db.VarChar(255)
+  invoiceNumber        String?  @db.VarChar(64)
+  subtotal             Int?
+  tax                  Int?
+  total                Int?
+  currency             String?  @db.VarChar(3)
+  pdfUrl               String?  @db.Text
+  hostedInvoiceUrl     String?  @db.Text
+  status               String?  @db.VarChar(40)
+  issuedAt             DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  shop                 Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  taxEvidence          TaxEvidence?
+
+  @@index([shopId])
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+  @@index([issuedAt])
+}
+
+model TaxEvidence {
+  id             String   @id @default(cuid())
+  shopId         String
+  invoiceId      String?  @unique
+  ipCountry      String?  @db.VarChar(2)
+  billingCountry String?  @db.VarChar(2)
+  vatIdProvided  String?  @db.VarChar(32)
+  vatIdValidated Boolean?
+  taxRateApplied Float?
+  taxJurisdiction String? @db.VarChar(64)
+  taxTreatment   String?  @db.VarChar(32)
+  createdAt      DateTime @default(now())
+  shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  invoice        InvoiceRecord? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([shopId])
+  @@index([billingCountry])
+  @@index([taxTreatment])
+}
+
 model BillingTransaction {
   id              String   @id @default(cuid())
   shopId          String
@@ -816,6 +908,8 @@ model WebhookEvent {
   provider   String    // 'shopify', 'stripe', 'mitto'
   eventId    String    // Provider's event ID
   eventHash  String?   // Optional hash for deduplication
+  payloadHash String?  // Optional payload hash for audit
+  eventType  String?   // Provider event type (e.g., stripe event type)
   shopId     String?   // Optional shop context
   receivedAt DateTime  @default(now())
   processedAt DateTime?

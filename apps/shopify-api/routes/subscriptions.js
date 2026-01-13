@@ -12,6 +12,9 @@ const r = express.Router();
 // GET /subscriptions/status - Get subscription status
 r.get('/status', ctrl.getStatus);
 
+// POST /subscriptions/reconcile - Manual reconciliation against Stripe
+r.post('/reconcile', ctrl.reconcile);
+
 // POST /subscriptions/subscribe - Create subscription checkout
 r.post('/subscribe', validateBody(subscriptionSubscribeSchema), ctrl.subscribe);
 

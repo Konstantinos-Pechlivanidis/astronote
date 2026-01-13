@@ -10,6 +10,7 @@ import {
   ScheduleType,
   SmsConsent,
 } from '../utils/prismaEnums.js';
+import { mapCampaignToDTO } from '../utils/dto-mappers.js';
 
 /**
  * Campaigns Service
@@ -377,14 +378,16 @@ export async function listCampaigns(storeId, filters = {}) {
         }
       }
 
-      return {
+      // Map to DTO with metrics
+      const campaignDTO = mapCampaignToDTO({
         ...campaign,
         recipientCount,
         sentCount,
         deliveredCount,
         failedCount,
         totalRecipients: recipientCount, // Alias for backward compatibility
-      };
+      });
+      return campaignDTO;
     }),
   );
 

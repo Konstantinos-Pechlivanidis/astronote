@@ -319,8 +319,16 @@ if (issues.length > 0) {
   lines.push('- All checks passed');
 }
 
+// Try to write report file, but don't fail if we can't (e.g., sandbox restrictions)
+try {
 fs.mkdirSync(path.dirname(reportPath), { recursive: true });
 fs.writeFileSync(reportPath, lines.join('\n'));
+} catch (err) {
+  // If write fails (e.g., sandbox permissions), continue - we still output to console
+  if (err.code !== 'EPERM') {
+    console.warn(`Warning: Could not write report file: ${err.message}`);
+  }
+}
 
 console.log(lines.join('\n'));
 if (issues.length > 0) {

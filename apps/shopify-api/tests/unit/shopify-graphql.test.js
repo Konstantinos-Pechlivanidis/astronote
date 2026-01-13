@@ -60,8 +60,8 @@ describe('Shopify GraphQL Service', () => {
   });
 
   describe('formatLineItems', () => {
-    it('should format line items as readable string', () => {
-      const { formatLineItems } = require('../../services/shopify-graphql.js');
+    it('should format line items as readable string', async () => {
+      const { formatLineItems } = await import('../../services/shopify-graphql.js');
 
       const lineItems = {
         edges: [
@@ -74,8 +74,8 @@ describe('Shopify GraphQL Service', () => {
       expect(result).toBe('Product A x2, Product B x1');
     });
 
-    it('should handle empty line items', () => {
-      const { formatLineItems } = require('../../services/shopify-graphql.js');
+    it('should handle empty line items', async () => {
+      const { formatLineItems } = await import('../../services/shopify-graphql.js');
       const result = formatLineItems([]);
       expect(result).toBe('');
     });

@@ -3,7 +3,9 @@ const prisma = require('../lib/prisma');
 const SUPPORTED_CURRENCIES = ['EUR', 'USD'];
 
 const normalizeCurrency = (value) => {
-  if (!value) return null;
+  if (!value) {
+    return null;
+  }
   const normalized = String(value).trim().toUpperCase();
   if (!SUPPORTED_CURRENCIES.includes(normalized)) {
     return null;

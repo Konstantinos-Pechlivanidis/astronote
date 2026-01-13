@@ -1,4 +1,6 @@
 import { getBaseUrl, getBaseUrlSync } from './baseUrl.js';
+import { normalizeBaseUrl, buildUrl } from './url-helpers.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Frontend URL Utilities
@@ -63,14 +65,35 @@ export function getFrontendBaseUrlSync() {
 /**
  * Build a frontend URL path
  * Ensures the path starts with /shopify if it's an app route
+ * Uses robust URL construction with validation
  * @param {string} path - Path to append (e.g., '/app/billing' or 'app/billing')
  * @param {string} baseUrl - Optional base URL (defaults to env var)
- * @returns {string} Full frontend URL
+ * @param {Object} query - Optional query parameters
+ * @returns {string} Full frontend URL (validated)
+ * @throws {Error} If base URL is invalid or missing
  */
-export function buildFrontendUrl(path, baseUrl = null) {
-  const normalizedBase = baseUrl
-    ? normalizeFrontendBaseUrl(baseUrl)
-    : getFrontendBaseUrl();
+export function buildFrontendUrl(path, baseUrl = null, query = null) {
+  // Get base URL (use sync version since this function is sync)
+  let base = baseUrl;
+  if (!base) {
+    base = getFrontendBaseUrlSync();
+  }
+
+  // Normalize and validate base URL
+  const normalizedBase = normalizeFrontendBaseUrl(base);
+  if (!normalizedBase) {
+    throw new Error(
+      `Invalid frontend base URL. Please set FRONTEND_URL, FRONTEND_BASE_URL, or WEB_APP_URL environment variable. Current value: ${base || '(empty)'}`,
+    );
+  }
+
+  // Ensure base URL is valid absolute URL
+  const validBase = normalizeBaseUrl(normalizedBase);
+  if (!validBase) {
+    throw new Error(
+      `Frontend base URL is not a valid absolute URL: "${normalizedBase}". Must include protocol (https://) and hostname.`,
+    );
+  }
 
   // Ensure path starts with /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -81,5 +104,17 @@ export function buildFrontendUrl(path, baseUrl = null) {
     ? normalizedPath
     : `/shopify${normalizedPath}`;
 
-  return `${normalizedBase}${finalPath}`;
+  // Use buildUrl for robust URL construction
+  try {
+    return buildUrl(validBase, finalPath, query);
+  } catch (error) {
+    logger.error('Failed to build frontend URL', {
+      base: validBase,
+      path: finalPath,
+      error: error.message,
+    });
+    throw new Error(
+      `Failed to build frontend URL: ${error.message}. Please check FRONTEND_URL configuration.`,
+    );
+  }
 }

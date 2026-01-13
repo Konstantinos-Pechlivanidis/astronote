@@ -29,8 +29,8 @@ model User {
   timezone   String? @db.VarChar(50) // IANA timezone (e.g. "Europe/Athens", "America/New_York")
 
   // Subscription fields
-  stripeCustomerId        String?              @db.VarChar(255)
-  stripeSubscriptionId    String?              @db.VarChar(255)
+  stripeCustomerId        String?              @unique @db.VarChar(255)
+  stripeSubscriptionId    String?              @unique @db.VarChar(255)
   planType                SubscriptionPlanType?
   subscriptionStatus      SubscriptionStatus   @default(inactive)
   lastFreeCreditsAllocatedAt DateTime?
@@ -51,9 +51,14 @@ model User {
   templates         MessageTemplate[]
   messages          CampaignMessage[]
   redemptions       Redemption[]
-  Wallet            Wallet?
-  CreditTransaction CreditTransaction[]
-  Purchase          Purchase[]
+  Wallet               Wallet?
+  CreditTransaction    CreditTransaction[]
+  Purchase             Purchase[]
+  BillingProfile       BillingProfile?
+  SubscriptionRecord   Subscription?
+  InvoiceRecords       InvoiceRecord[]
+  TaxEvidenceRecords   TaxEvidence[]
+  BillingTransactions  BillingTransaction[]
   nfcTags           NfcTag[]            @relation("NfcTagCreator")
   nfcTagStores      NfcTag[]            @relation("NfcTagStore")
   nfcScans          NfcScan[]           @relation("NfcScanStore")
@@ -68,6 +73,7 @@ model User {
   publicSignupEvents PublicSignupEvent[] @relation("PublicSignupEventOwner")
   retailJoinBranding RetailJoinBranding? @relation("RetailJoinBrandingOwner")
   retailAssets RetailAsset[] @relation("RetailAssetOwner")
+  webhookEvents WebhookEvent[]
 
   @@index([stripeCustomerId])
   @@index([stripeSubscriptionId])
@@ -523,13 +529,24 @@ model Redemption {
 model WebhookEvent {
   id                Int      @id @default(autoincrement())
   provider          String
+  eventId           String
   eventType         String
+  payloadHash       String?
+  ownerId           Int?
   receivedAt        DateTime @default(now())
-  payload           Json
-  providerMessageId String?
+  processedAt       DateTime?
+  status            String   @default("received") // received, processed, failed, unmatched
+  payload           Json?
+  providerMessageId String? // legacy (kept for backward compatibility)
+  error             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  owner             User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
-  @@index([provider, eventType])
-  @@index([providerMessageId])
+  @@unique([provider, eventId])
+  @@index([ownerId])
+  @@index([provider, status])
+  @@index([receivedAt])
 }
 
 enum PaymentStatus {
@@ -569,6 +586,115 @@ enum SubscriptionInterval {
 enum BillingCurrency {
   EUR
   USD
+}
+
+model BillingProfile {
+  id             Int      @id @default(autoincrement())
+  ownerId        Int      @unique
+  owner          User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  legalName      String?
+  vatNumber      String?  @db.VarChar(32)
+  vatCountry     String?  @db.VarChar(2)
+  billingEmail   String?  @db.VarChar(255)
+  billingAddress Json?
+  currency       BillingCurrency @default(EUR)
+  taxStatus      String?  @db.VarChar(32)
+  taxExempt      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([vatNumber])
+  @@index([vatCountry])
+}
+
+model Subscription {
+  id                   Int      @id @default(autoincrement())
+  ownerId              Int      @unique
+  owner                User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  provider             String   @default("stripe")
+  stripeCustomerId     String?  @db.VarChar(255)
+  stripeSubscriptionId String?  @unique @db.VarChar(255)
+  planCode             String?  @db.VarChar(50)
+  status               String?  @db.VarChar(40)
+  currency             String?  @db.VarChar(3)
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean  @default(false)
+  trialEndsAt          DateTime?
+  metadata             Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+  @@index([status])
+}
+
+model InvoiceRecord {
+  id                   Int      @id @default(autoincrement())
+  ownerId              Int
+  owner                User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  stripeInvoiceId      String   @unique @db.VarChar(255)
+  stripeCustomerId     String?  @db.VarChar(255)
+  stripeSubscriptionId String?  @db.VarChar(255)
+  invoiceNumber        String?  @db.VarChar(64)
+  subtotal             Int?
+  tax                  Int?
+  total                Int?
+  currency             String?  @db.VarChar(3)
+  pdfUrl               String?  @db.Text
+  hostedInvoiceUrl     String?  @db.Text
+  status               String?  @db.VarChar(40)
+  issuedAt             DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  taxEvidence          TaxEvidence?
+
+  @@index([ownerId])
+  @@index([stripeCustomerId])
+  @@index([stripeSubscriptionId])
+  @@index([issuedAt])
+}
+
+model TaxEvidence {
+  id              Int      @id @default(autoincrement())
+  ownerId          Int
+  owner            User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  invoiceId        Int?     @unique
+  invoice          InvoiceRecord? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  ipCountry        String?  @db.VarChar(2)
+  billingCountry   String?  @db.VarChar(2)
+  vatIdProvided    String?  @db.VarChar(32)
+  vatIdValidated   Boolean?
+  taxRateApplied   Float?
+  taxJurisdiction  String?  @db.VarChar(64)
+  taxTreatment     String?  @db.VarChar(32)
+  createdAt        DateTime @default(now())
+
+  @@index([ownerId])
+  @@index([billingCountry])
+  @@index([taxTreatment])
+}
+
+model BillingTransaction {
+  id              Int      @id @default(autoincrement())
+  ownerId          Int
+  owner            User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  creditsAdded     Int
+  amount           Int      // Amount in cents
+  currency         BillingCurrency @default(EUR)
+  packageType      String
+  stripeSessionId  String?
+  stripePaymentId  String?
+  idempotencyKey   String?
+  status           PaymentStatus @default(pending)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([ownerId, idempotencyKey])
+  @@index([ownerId, createdAt])
+  @@index([stripeSessionId])
+  @@index([stripePaymentId])
 }
 
 model Wallet {

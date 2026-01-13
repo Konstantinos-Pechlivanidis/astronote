@@ -15,12 +15,109 @@ import Stripe from 'stripe';
 import { sendSuccess } from '../utils/response.js';
 import { ValidationError } from '../utils/errors.js';
 import { PaymentStatus } from '../utils/prismaEnums.js';
+import { resolveTaxTreatment, resolveTaxRateForInvoice } from '../services/tax-resolver.js';
+import { upsertTaxEvidence } from '../services/tax-evidence.js';
+import { upsertInvoiceRecord, recordSubscriptionInvoiceTransaction } from '../services/invoices.js';
+import { syncBillingProfileFromStripe } from '../services/billing-profile.js';
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: '2024-06-20',
   })
   : null;
+
+const extractTaxId = (taxIds = []) => {
+  if (!Array.isArray(taxIds)) return null;
+  const vat = taxIds.find((entry) => entry.type === 'eu_vat') || taxIds[0];
+  if (!vat) return null;
+  return {
+    value: vat.value || vat.id || null,
+    country: vat.country || null,
+    verified: vat.verification?.status === 'verified',
+  };
+};
+
+const extractTaxDetailsFromSession = (session) => {
+  const customerDetails = session?.customer_details || {};
+  const taxId = extractTaxId(customerDetails.tax_ids || []);
+  const billingCountry = customerDetails.address?.country || null;
+  const subtotal = session.amount_subtotal ?? null;
+  const taxAmount = session.total_details?.amount_tax ?? null;
+
+  return {
+    billingCountry,
+    vatId: taxId?.value || null,
+    vatIdValidated: taxId?.verified || false,
+    subtotal,
+    taxAmount,
+  };
+};
+
+const extractTaxDetailsFromInvoice = (invoice) => {
+  const taxId = extractTaxId(invoice?.customer_tax_ids || []);
+  const billingCountry = invoice?.customer_address?.country || null;
+  const subtotal = invoice?.subtotal ?? null;
+  const taxAmount = invoice?.tax ?? null;
+
+  return {
+    billingCountry,
+    vatId: taxId?.value || null,
+    vatIdValidated: taxId?.verified || false,
+    subtotal,
+    taxAmount,
+  };
+};
+
+const resolveShopIdFromStripeEvent = async (event) => {
+  const object = event?.data?.object || {};
+  const metadata = object.metadata || {};
+  const metadataShopId = metadata.shopId || metadata.storeId;
+  if (metadataShopId) {
+    return metadataShopId;
+  }
+
+  const customerId =
+    typeof object.customer === 'string'
+      ? object.customer
+      : object.customer?.id;
+
+  if (customerId) {
+    const shop = await prisma.shop.findFirst({
+      where: { stripeCustomerId: customerId },
+      select: { id: true },
+    });
+    if (shop?.id) {
+      return shop.id;
+    }
+  }
+
+  let subscriptionId = null;
+  if (typeof object.subscription === 'string') {
+    subscriptionId = object.subscription;
+  } else if (object.object === 'subscription' && object.id) {
+    subscriptionId = object.id;
+  }
+
+  if (subscriptionId) {
+    const shop = await prisma.shop.findFirst({
+      where: { stripeSubscriptionId: subscriptionId },
+      select: { id: true },
+    });
+    if (shop?.id) {
+      return shop.id;
+    }
+
+    const record = await prisma.subscription.findFirst({
+      where: { stripeSubscriptionId: subscriptionId },
+      select: { shopId: true },
+    });
+    if (record?.shopId) {
+      return record.shopId;
+    }
+  }
+
+  return null;
+};
 
 /**
  * Handle Stripe webhook events
@@ -39,7 +136,37 @@ export async function handleStripeWebhook(req, res) {
 
     // P0: Webhook replay protection
     const webhookReplay = (await import('../services/webhook-replay.js')).default;
-    const shopId = event.data?.object?.metadata?.shopId || event.data?.object?.metadata?.storeId || null;
+    const shopId = await resolveShopIdFromStripeEvent(event);
+
+    if (!shopId) {
+      const payloadHash = webhookReplay.generateEventHash(payload);
+      const existing = await webhookReplay.checkWebhookReplay(
+        'stripe',
+        event.id,
+        payloadHash,
+        null,
+      );
+      if (!existing) {
+        await webhookReplay.recordWebhookEvent('stripe', event.id, {
+          eventHash: payloadHash,
+          payloadHash,
+          eventType: event.type,
+          shopId: null,
+          payload: event,
+          status: 'unmatched',
+        });
+      }
+
+      logger.warn('Stripe webhook unmatched (no shop resolved)', {
+        eventType: event.type,
+        eventId: event.id,
+      });
+
+      return sendSuccess(res, {
+        message: 'Webhook received (unmatched)',
+        unmatched: true,
+      });
+    }
     const result = await webhookReplay.processWebhookWithReplayProtection(
       'stripe',
       event.id,
@@ -100,6 +227,8 @@ export async function handleStripeWebhook(req, res) {
       },
       {
         eventHash: webhookReplay.generateEventHash(payload),
+        payloadHash: webhookReplay.generateEventHash(payload),
+        eventType: event.type,
         shopId,
         payload: event,
         eventTimestamp: new Date(event.created * 1000), // Stripe uses Unix timestamp
@@ -271,6 +400,36 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
         'Free credits not allocated (already allocated or other reason)',
       );
     }
+
+    const taxDetails = extractTaxDetailsFromSession(session);
+    if (taxDetails.billingCountry || taxDetails.vatId) {
+      const treatment = resolveTaxTreatment({
+        billingCountry: taxDetails.billingCountry,
+        vatId: taxDetails.vatId,
+        vatIdValidated: taxDetails.vatIdValidated,
+      });
+      const taxRateApplied = resolveTaxRateForInvoice({
+        subtotal: taxDetails.subtotal,
+        tax: taxDetails.taxAmount,
+      });
+
+      await upsertTaxEvidence({
+        shopId,
+        billingCountry: taxDetails.billingCountry,
+        vatIdProvided: taxDetails.vatId,
+        vatIdValidated: taxDetails.vatIdValidated,
+        taxRateApplied,
+        taxJurisdiction: treatment.taxJurisdiction,
+        taxTreatment: treatment.mode,
+      });
+
+      await syncBillingProfileFromStripe({
+        shopId,
+        session,
+        taxTreatment: treatment.mode,
+        taxExempt: treatment.taxRate === 0,
+      });
+    }
   } catch (err) {
     logger.error(
       {
@@ -370,11 +529,61 @@ async function handleCheckoutSessionCompletedForTopup(session) {
             customerId: session.customer || null,
             credits,
             priceEur,
+            currency: session.currency?.toUpperCase() || 'EUR',
             purchasedAt: new Date().toISOString(),
           },
         },
         tx,
       );
+
+      // Record billing transaction (idempotent)
+      try {
+        await tx.billingTransaction.create({
+          data: {
+            shopId,
+            creditsAdded: credits,
+            amount: actualAmountCents,
+            currency: session.currency?.toUpperCase() || 'EUR',
+            packageType: 'topup',
+            stripeSessionId: session.id,
+            stripePaymentId: session.payment_intent || null,
+            idempotencyKey: `stripe:topup:${session.id}`,
+            status: 'completed',
+          },
+        });
+      } catch (err) {
+        if (err?.code !== 'P2002') {
+          throw err;
+        }
+      }
+    });
+
+    const taxDetails = extractTaxDetailsFromSession(session);
+    const treatment = resolveTaxTreatment({
+      billingCountry: taxDetails.billingCountry,
+      vatId: taxDetails.vatId,
+      vatIdValidated: taxDetails.vatIdValidated,
+    });
+    const taxRateApplied = resolveTaxRateForInvoice({
+      subtotal: taxDetails.subtotal,
+      tax: taxDetails.taxAmount,
+    });
+
+    await upsertTaxEvidence({
+      shopId,
+      billingCountry: taxDetails.billingCountry,
+      vatIdProvided: taxDetails.vatId,
+      vatIdValidated: taxDetails.vatIdValidated,
+      taxRateApplied,
+      taxJurisdiction: treatment.taxJurisdiction,
+      taxTreatment: treatment.mode,
+    });
+
+    await syncBillingProfileFromStripe({
+      shopId,
+      session,
+      taxTreatment: treatment.mode,
+      taxExempt: treatment.taxRate === 0,
     });
 
     logger.info(
@@ -488,32 +697,12 @@ async function handleInvoicePaymentSucceeded(invoice) {
     'Processing invoice payment succeeded',
   );
 
-  // Skip subscription_create invoices - they are handled by checkout.session.completed
-  // This prevents race conditions where invoice.payment_succeeded fires before checkout.session.completed
-  if (invoice.billing_reason === 'subscription_create') {
-    logger.debug(
-      { invoiceId: invoice.id, billingReason: invoice.billing_reason },
-      'Skipping subscription_create invoice (handled by checkout.session.completed)',
-    );
-    return;
-  }
-
-  // Only process subscription_cycle invoices (recurring billing)
-  if (invoice.billing_reason !== 'subscription_cycle') {
-    logger.debug(
-      { invoiceId: invoice.id, billingReason: invoice.billing_reason },
-      'Skipping non-subscription-cycle invoice',
-    );
-    return;
-  }
-
-  const subscriptionId = invoice.subscription;
   const customerId = invoice.customer;
 
-  if (!subscriptionId || !customerId) {
+  if (!customerId) {
     logger.warn(
       { invoiceId: invoice.id },
-      'Invoice missing subscription or customer ID',
+      'Invoice missing customer ID',
     );
     return;
   }
@@ -544,6 +733,34 @@ async function handleInvoicePaymentSucceeded(invoice) {
     return;
   }
 
+  // Skip subscription_create invoices - they are handled by checkout.session.completed
+  if (invoice.billing_reason === 'subscription_create') {
+    logger.debug(
+      { invoiceId: invoice.id, billingReason: invoice.billing_reason },
+      'Skipping subscription_create invoice (handled by checkout.session.completed)',
+    );
+    return;
+  }
+
+  // Only process subscription_cycle invoices (recurring billing)
+  if (invoice.billing_reason !== 'subscription_cycle') {
+    logger.debug(
+      { invoiceId: invoice.id, billingReason: invoice.billing_reason },
+      'Skipping non-subscription-cycle invoice',
+    );
+    return;
+  }
+
+  const subscriptionId = invoice.subscription;
+
+  if (!subscriptionId) {
+    logger.warn(
+      { invoiceId: invoice.id },
+      'Invoice missing subscription ID',
+    );
+    return;
+  }
+
   // Verify subscription ID matches
   if (shop.stripeSubscriptionId !== subscriptionId) {
     logger.warn(
@@ -557,12 +774,43 @@ async function handleInvoicePaymentSucceeded(invoice) {
     return;
   }
 
+  const invoiceRecord = await upsertInvoiceRecord(shop.id, invoice);
+  const taxDetails = extractTaxDetailsFromInvoice(invoice);
+  const treatment = resolveTaxTreatment({
+    billingCountry: taxDetails.billingCountry,
+    vatId: taxDetails.vatId,
+    vatIdValidated: taxDetails.vatIdValidated,
+  });
+  const taxRateApplied = resolveTaxRateForInvoice({
+    subtotal: taxDetails.subtotal,
+    tax: taxDetails.taxAmount,
+  });
+
+  await upsertTaxEvidence({
+    shopId: shop.id,
+    invoiceId: invoiceRecord.id,
+    billingCountry: taxDetails.billingCountry,
+    vatIdProvided: taxDetails.vatId,
+    vatIdValidated: taxDetails.vatIdValidated,
+    taxRateApplied,
+    taxJurisdiction: treatment.taxJurisdiction,
+    taxTreatment: treatment.mode,
+  });
+
+  await syncBillingProfileFromStripe({
+    shopId: shop.id,
+    invoice,
+    taxTreatment: treatment.mode,
+    taxExempt: treatment.taxRate === 0,
+  });
+
   // Clear last billing error on successful payment
   await prisma.shop.update({
     where: { id: shop.id },
     data: { lastBillingError: null },
   });
 
+  let allocatedCredits = 0;
   if (shop.subscriptionStatus !== 'active') {
     logger.warn(
       {
@@ -572,7 +820,6 @@ async function handleInvoicePaymentSucceeded(invoice) {
       },
       'Shop subscription not active - skipping credit allocation',
     );
-    return;
   }
 
   // Get subscription details from Stripe
@@ -634,59 +881,66 @@ async function handleInvoicePaymentSucceeded(invoice) {
     }
   }
 
-  // Allocate free credits for this billing cycle (idempotent)
-  logger.info(
-    {
-      shopId: shop.id,
-      planType: shop.planType,
-      invoiceId: invoice.id,
-      subscriptionId,
-    },
-    'Allocating free credits for billing cycle',
-  );
-
-  try {
-    const result = await allocateFreeCredits(
-      shop.id,
-      shop.planType,
-      invoice.id,
-      stripeSubscription,
-    );
-    if (result.allocated) {
-      logger.info(
-        {
-          shopId: shop.id,
-          planType: shop.planType,
-          invoiceId: invoice.id,
-          credits: result.credits,
-          subscriptionId,
-        },
-        'Free credits allocated successfully for billing cycle',
-      );
-    } else {
-      logger.info(
-        {
-          shopId: shop.id,
-          invoiceId: invoice.id,
-          reason: result.reason,
-          credits: result.credits || 0,
-        },
-        'Free credits not allocated (already allocated or other reason)',
-      );
-    }
-  } catch (err) {
-    logger.error(
+  if (shop.subscriptionStatus === 'active') {
+    // Allocate free credits for this billing cycle (idempotent)
+    logger.info(
       {
         shopId: shop.id,
+        planType: shop.planType,
         invoiceId: invoice.id,
         subscriptionId,
-        err: err.message,
-        stack: err.stack,
       },
-      'Failed to allocate free credits for billing cycle',
+      'Allocating free credits for billing cycle',
     );
-    throw err;
+
+    try {
+      const result = await allocateFreeCredits(
+        shop.id,
+        shop.planType,
+        invoice.id,
+        stripeSubscription,
+      );
+      if (result.allocated) {
+        allocatedCredits = result.credits || 0;
+        logger.info(
+          {
+            shopId: shop.id,
+            planType: shop.planType,
+            invoiceId: invoice.id,
+            credits: result.credits,
+            subscriptionId,
+          },
+          'Free credits allocated successfully for billing cycle',
+        );
+      } else {
+        logger.info(
+          {
+            shopId: shop.id,
+            invoiceId: invoice.id,
+            reason: result.reason,
+            credits: result.credits || 0,
+          },
+          'Free credits not allocated (already allocated or other reason)',
+        );
+      }
+    } catch (err) {
+      logger.error(
+        {
+          shopId: shop.id,
+          invoiceId: invoice.id,
+          subscriptionId,
+          err: err.message,
+          stack: err.stack,
+        },
+        'Failed to allocate free credits for billing cycle',
+      );
+      throw err;
+    }
   }
+
+  await recordSubscriptionInvoiceTransaction(shop.id, invoice, {
+    creditsAdded: allocatedCredits,
+  });
 }
 
 /**
@@ -967,6 +1221,44 @@ async function handleSubscriptionUpdated(subscription) {
       'Subscription unchanged',
     );
   }
+
+  const subscriptionCurrency = subscription.items?.data?.[0]?.price?.currency
+    ? String(subscription.items.data[0].price.currency).toUpperCase()
+    : null;
+
+  await prisma.subscription.upsert({
+    where: { shopId: shop.id },
+    update: {
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      planCode: newPlanType,
+      status: newStatus,
+      currency: subscriptionCurrency,
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAtPeriodEnd,
+      trialEndsAt: subscription.trial_end
+        ? new Date(subscription.trial_end * 1000)
+        : null,
+      metadata: subscription.metadata || undefined,
+    },
+    create: {
+      shopId: shop.id,
+      provider: 'stripe',
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      planCode: newPlanType,
+      status: newStatus,
+      currency: subscriptionCurrency,
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAtPeriodEnd,
+      trialEndsAt: subscription.trial_end
+        ? new Date(subscription.trial_end * 1000)
+        : null,
+      metadata: subscription.metadata || undefined,
+    },
+  });
 }
 
 /**
@@ -1021,6 +1313,14 @@ async function handleSubscriptionDeleted(subscription) {
 
   // Deactivate subscription
   await deactivateSubscription(shop.id, 'cancelled');
+
+  await prisma.subscription.updateMany({
+    where: { shopId: shop.id },
+    data: {
+      status: 'cancelled',
+      cancelAtPeriodEnd: false,
+    },
+  });
 
   logger.info(
     {

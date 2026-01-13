@@ -8,6 +8,7 @@
     "start:all": "node src/server.js",
     "start:server-only": "cross-env START_WORKER=0 node src/server.js",
     "lint": "eslint . --ext .js",
+    "test": "node --test tests/**/*.test.js",
     "build": "node -c src/server.js",
     "worker:sms": "cross-env NODE_PATH=./node_modules node ../worker/src/sms.worker.js",
     "worker:scheduler": "cross-env NODE_PATH=./node_modules node ../worker/src/scheduler.worker.js",

@@ -132,6 +132,31 @@ export const billingHistoryQuerySchema = z.object({
   status: transactionStatusSchema.optional(),
 });
 
+export const invoicesQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+  status: z.string().trim().optional(),
+});
+
+export const billingProfileSchema = z.object({
+  legalName: z.string().trim().max(255).optional().nullable(),
+  vatNumber: z.string().trim().max(32).optional().nullable(),
+  vatCountry: z.string().trim().length(2).optional().nullable(),
+  billingEmail: z.string().trim().email().optional().nullable(),
+  billingAddress: z
+    .object({
+      line1: z.string().trim().optional().nullable(),
+      line2: z.string().trim().optional().nullable(),
+      city: z.string().trim().optional().nullable(),
+      state: z.string().trim().optional().nullable(),
+      postalCode: z.string().trim().optional().nullable(),
+      country: z.string().trim().length(2).optional().nullable(),
+    })
+    .optional()
+    .nullable(),
+  currency: currencySchema.optional(),
+});
+
 /**
  * Top-up Calculate Query Schema
  */
@@ -141,6 +166,7 @@ export const topupCalculateQuerySchema = z.object({
     .int()
     .positive()
     .max(1000000, 'Maximum 1,000,000 credits allowed per purchase'),
+  currency: currencySchema.optional(),
 });
 
 /**
@@ -182,12 +208,15 @@ export const topupCreateSchema = z.object({
       },
       { message: 'Cancel URL must be a valid URL' },
     ),
+  currency: currencySchema.optional(),
 });
 
 export default {
   createPurchaseSchema,
   transactionHistoryQuerySchema,
   billingHistoryQuerySchema,
+  invoicesQuerySchema,
+  billingProfileSchema,
   topupCalculateQuerySchema,
   topupCreateSchema,
   currencySchema,

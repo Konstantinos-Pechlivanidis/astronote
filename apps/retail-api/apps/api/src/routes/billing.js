@@ -1,6 +1,8 @@
 // apps/api/src/routes/billing.js
 const { Router } = require('express');
 const prisma = require('../lib/prisma');
+const { buildRetailFrontendUrl } = require('../lib/frontendUrl');
+const { isValidAbsoluteUrl } = require('../lib/url-helpers');
 const requireAuth = require('../middleware/requireAuth');
 const { getBalance } = require('../services/wallet.service');
 const {
@@ -8,7 +10,10 @@ const {
   getPlanConfig,
   calculateTopupPrice,
   getIntervalForPlan,
+  reconcileSubscriptionFromStripe,
 } = require('../services/subscription.service');
+const { getBillingProfile, upsertBillingProfile } = require('../services/billing-profile.service');
+const { listInvoices } = require('../services/invoices.service');
 const { resolveBillingCurrency } = require('../billing/currency');
 const { CONFIG_ERROR_CODE, getPackagePriceId } = require('../billing/stripePrices');
 const {
@@ -16,6 +21,8 @@ const {
   createCreditTopupCheckoutSession,
   getCustomerPortalUrl,
   cancelSubscription,
+  ensureStripeCustomer,
+  syncStripeCustomerBillingProfile,
 } = require('../services/stripe.service');
 const pino = require('pino');
 const crypto = require('crypto');
@@ -67,15 +74,15 @@ async function resolveStripeCustomerId({
       where: { id: userId },
       select: { email: true, company: true, billingCurrency: true },
     });
-    const customer = await stripe.customers.create({
-      email: user?.email || undefined,
-      name: user?.company || undefined,
-      metadata: {
-        ownerId: String(userId),
-        billingCurrency: user?.billingCurrency || 'EUR',
-      },
+    const billingProfile = await getBillingProfile(userId);
+    stripeCustomerId = await ensureStripeCustomer({
+      ownerId: userId,
+      userEmail: user?.email || undefined,
+      userName: user?.company || undefined,
+      currency: user?.billingCurrency || 'EUR',
+      stripeCustomerId,
+      billingProfile,
     });
-    stripeCustomerId = customer.id;
   }
 
   if (!isValidStripeCustomerId(stripeCustomerId)) {
@@ -176,6 +183,99 @@ r.get('/billing/summary', requireAuth, async (req, res, next) => {
       allowance,
       billingCurrency: subscription?.billingCurrency || 'EUR',
     });
+  } catch (e) { next(e); }
+});
+
+/**
+ * GET /billing/profile
+ * Returns billing profile for the tenant
+ */
+r.get('/billing/profile', requireAuth, async (req, res, next) => {
+  try {
+    const profile = await getBillingProfile(req.user.id);
+
+    if (!profile) {
+      return res.json({
+        legalName: null,
+        vatNumber: null,
+        vatCountry: null,
+        billingEmail: null,
+        billingAddress: null,
+        currency: 'EUR',
+        taxStatus: null,
+        taxExempt: false,
+      });
+    }
+
+    res.json(profile);
+  } catch (e) { next(e); }
+});
+
+/**
+ * PUT /billing/profile
+ * Update billing profile
+ */
+r.put('/billing/profile', requireAuth, async (req, res, next) => {
+  try {
+    const input = req.body || {};
+    const currency = typeof input.currency === 'string'
+      ? input.currency.trim().toUpperCase()
+      : null;
+    const normalizedCurrency = ['EUR', 'USD'].includes(currency) ? currency : null;
+
+    if (input.currency && !normalizedCurrency) {
+      return res.status(400).json({
+        message: 'Unsupported currency. Use EUR or USD.',
+        code: 'INVALID_CURRENCY',
+      });
+    }
+
+    const payload = {
+      legalName: input.legalName ? String(input.legalName).trim() : null,
+      vatNumber: input.vatNumber ? String(input.vatNumber).trim() : null,
+      vatCountry: input.vatCountry ? String(input.vatCountry).trim().toUpperCase() : null,
+      billingEmail: input.billingEmail ? String(input.billingEmail).trim() : null,
+      billingAddress: input.billingAddress && typeof input.billingAddress === 'object'
+        ? input.billingAddress
+        : null,
+      ...(normalizedCurrency ? { currency: normalizedCurrency } : {}),
+      taxExempt: typeof input.taxExempt === 'boolean' ? input.taxExempt : undefined,
+    };
+
+    const profile = await upsertBillingProfile(req.user.id, payload);
+
+    if (normalizedCurrency) {
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { billingCurrency: normalizedCurrency },
+      });
+    }
+
+    if (profile?.currency && profile.currency !== normalizedCurrency && normalizedCurrency) {
+      profile.currency = normalizedCurrency;
+    }
+
+    const subscription = await getSubscriptionStatus(req.user.id);
+    await syncStripeCustomerBillingProfile({
+      stripeCustomerId: subscription?.stripeCustomerId,
+      billingProfile: profile,
+    });
+
+    res.json({ ok: true, billingProfile: profile });
+  } catch (e) { next(e); }
+});
+
+/**
+ * GET /billing/invoices
+ * Returns invoice history
+ */
+r.get('/billing/invoices', requireAuth, async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize || 20)));
+    const status = req.query.status ? String(req.query.status) : undefined;
+    const result = await listInvoices(req.user.id, { page, pageSize, status });
+    res.json(result);
   } catch (e) { next(e); }
 });
 
@@ -407,6 +507,14 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
         ? pkg.priceCentsUsd
         : pkg.priceCents;
 
+    const subscription = await getSubscriptionStatus(req.user.id);
+    if (!subscription.active) {
+      return res.status(402).json({
+        message: 'An active subscription is required to purchase credit packs.',
+        code: 'INACTIVE_SUBSCRIPTION',
+      });
+    }
+
     const stripePriceId = getPackagePriceId(pkg.name, currency, pkg);
     if (!stripePriceId) {
       const err = new Error(`Stripe price ID not configured for package ${pkg.name} (${currency})`);
@@ -477,22 +585,27 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
       throw new Error('Failed to create purchase record');
     }
 
-    // Helper to ensure /retail path is included
-    const ensureRetailPath = (url) => {
-      if (!url || url.includes('localhost')) {
-        return url; // Don't modify localhost URLs
-      }
-      const trimmed = url.trim().replace(/\/$/, '');
-      if (!trimmed.endsWith('/retail')) {
-        return `${trimmed}/retail`;
-      }
-      return trimmed;
-    };
+    const billingProfile = await getBillingProfile(req.user.id);
+    const stripeCustomerId = await ensureStripeCustomer({
+      ownerId: req.user.id,
+      userEmail: req.user.email,
+      userName: req.user.company,
+      currency,
+      stripeCustomerId: subscription.stripeCustomerId,
+      billingProfile,
+    });
 
-    const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'https://astronote-retail-frontend.onrender.com';
-    const frontendUrl = ensureRetailPath(baseUrl);
-    const successUrl = `${frontendUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${frontendUrl}/billing/cancel`;
+    const successUrl = buildRetailFrontendUrl('/billing/success', null, {
+      session_id: '{CHECKOUT_SESSION_ID}',
+    });
+    const cancelUrl = buildRetailFrontendUrl('/billing/cancel');
+
+    if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
+      return res.status(500).json({
+        message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',
+        code: 'CONFIG_ERROR',
+      });
+    }
 
     // Create Stripe checkout session
     const { createCheckoutSession } = require('../services/stripe.service');
@@ -505,6 +618,7 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
       successUrl,
       cancelUrl,
       idempotencyKey,
+      stripeCustomerId,
     });
 
     // Link session ID to purchase
@@ -552,6 +666,52 @@ r.get('/subscriptions/current', requireAuth, async (req, res, next) => {
 });
 
 /**
+ * POST /api/subscriptions/reconcile
+ * Manual reconciliation against Stripe (recovery for missed webhooks)
+ */
+r.post('/subscriptions/reconcile', requireAuth, async (req, res) => {
+  const requestId =
+    req.id ||
+    req.headers['x-request-id'] ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+  try {
+    const result = await reconcileSubscriptionFromStripe(req.user.id);
+
+    if (!result.reconciled) {
+      return res.json({
+        ok: true,
+        ...result,
+      });
+    }
+
+    res.json({
+      ok: true,
+      ...result,
+    });
+  } catch (e) {
+    if (e.message?.includes('Stripe is not configured')) {
+      return res.status(503).json({
+        message: 'Payment processing unavailable',
+        code: 'STRIPE_NOT_CONFIGURED',
+        requestId,
+      });
+    }
+    logger.error({
+      requestId,
+      userId: req.user.id,
+      err: e.message,
+      stack: e.stack,
+    }, 'Subscription reconciliation failed');
+    return res.status(500).json({
+      message: 'Failed to reconcile subscription',
+      code: 'RECONCILE_FAILED',
+      requestId,
+    });
+  }
+});
+
+/**
  * POST /api/subscriptions/subscribe
  * Create subscription checkout session
  * Body: { planType: 'starter' | 'pro' }
@@ -582,27 +742,32 @@ r.post('/subscriptions/subscribe', requireAuth, async (req, res, next) => {
       });
     }
 
-    // Helper to ensure /retail path is included
-    const ensureRetailPath = (url) => {
-      if (!url || url.includes('localhost')) {
-        return url; // Don't modify localhost URLs
-      }
-      const trimmed = url.trim().replace(/\/$/, '');
-      if (!trimmed.endsWith('/retail')) {
-        return `${trimmed}/retail`;
-      }
-      return trimmed;
-    };
-
-    const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'https://astronote-retail-frontend.onrender.com';
-    const frontendUrl = ensureRetailPath(baseUrl);
-    const successUrl = `${frontendUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${frontendUrl}/billing/cancel`;
-
     const currency = await resolveBillingCurrency({
       userId: req.user.id,
       currency: req.body?.currency,
     });
+
+    const billingProfile = await getBillingProfile(req.user.id);
+    const stripeCustomerId = await ensureStripeCustomer({
+      ownerId: req.user.id,
+      userEmail: req.user.email,
+      userName: req.user.company,
+      currency,
+      stripeCustomerId: currentSubscription.stripeCustomerId,
+      billingProfile,
+    });
+
+    const successUrl = buildRetailFrontendUrl('/billing/success', null, {
+      session_id: '{CHECKOUT_SESSION_ID}',
+    });
+    const cancelUrl = buildRetailFrontendUrl('/billing/cancel');
+
+    if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
+      return res.status(500).json({
+        message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',
+        code: 'CONFIG_ERROR',
+      });
+    }
 
     const session = await createSubscriptionCheckoutSession({
       ownerId: req.user.id,
@@ -611,6 +776,7 @@ r.post('/subscriptions/subscribe', requireAuth, async (req, res, next) => {
       currency,
       successUrl,
       cancelUrl,
+      stripeCustomerId,
     });
 
     res.status(201).json({
@@ -1006,7 +1172,7 @@ r.post('/subscriptions/cancel', requireAuth, async (req, res, next) => {
  * GET /api/subscriptions/portal
  * Get Stripe customer portal URL for self-service management
  */
-r.get('/subscriptions/portal', requireAuth, async (req, res, next) => {
+r.get('/subscriptions/portal', requireAuth, async (req, res) => {
   const requestId =
     req.id ||
     req.headers['x-request-id'] ||
@@ -1028,15 +1194,14 @@ r.get('/subscriptions/portal', requireAuth, async (req, res, next) => {
       });
     }
 
-    const returnUrl = (() => {
-      const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'https://astronote-retail-frontend.onrender.com';
-      if (baseUrl.includes('localhost')) {
-        return `${baseUrl}/app/retail/billing`;
-      }
-      const trimmed = baseUrl.trim().replace(/\/$/, '');
-      const url = trimmed.endsWith('/retail') ? trimmed : `${trimmed}/retail`;
-      return `${url}/app/retail/billing`;
-    })();
+    const returnUrl = buildRetailFrontendUrl('/app/retail/billing');
+    if (!isValidAbsoluteUrl(returnUrl)) {
+      return res.status(500).json({
+        message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',
+        code: 'CONFIG_ERROR',
+        requestId,
+      });
+    }
 
     const portalUrl = await getCustomerPortalUrl(stripeCustomerId, returnUrl);
 
@@ -1096,25 +1261,41 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       currency: req.body?.currency || req.query?.currency,
     });
 
-    // Calculate price
-    const price = calculateTopupPrice(credits, currency);
+    const billingProfile = await getBillingProfile(req.user.id);
+    const billingCountry =
+      billingProfile?.billingAddress?.country ||
+      billingProfile?.vatCountry ||
+      null;
+    const vatIdValidated = billingProfile?.taxStatus === 'verified';
 
-    // Helper to ensure /retail path is included
-    const ensureRetailPath = (url) => {
-      if (!url || url.includes('localhost')) {
-        return url; // Don't modify localhost URLs
-      }
-      const trimmed = url.trim().replace(/\/$/, '');
-      if (!trimmed.endsWith('/retail')) {
-        return `${trimmed}/retail`;
-      }
-      return trimmed;
-    };
+    const price = calculateTopupPrice(credits, {
+      currency,
+      billingCountry,
+      vatId: billingProfile?.vatNumber || null,
+      vatIdValidated,
+      ipCountry: req.headers['cf-ipcountry'] || req.headers['x-country'] || null,
+    });
 
-    const baseUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'https://astronote-retail-frontend.onrender.com';
-    const frontendUrl = ensureRetailPath(baseUrl);
-    const successUrl = `${frontendUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${frontendUrl}/billing/cancel`;
+    const stripeCustomerId = await ensureStripeCustomer({
+      ownerId: req.user.id,
+      userEmail: req.user.email,
+      userName: req.user.company,
+      currency,
+      stripeCustomerId: null,
+      billingProfile,
+    });
+
+    const successUrl = buildRetailFrontendUrl('/billing/success', null, {
+      session_id: '{CHECKOUT_SESSION_ID}',
+    });
+    const cancelUrl = buildRetailFrontendUrl('/billing/cancel');
+
+    if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
+      return res.status(500).json({
+        message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',
+        code: 'CONFIG_ERROR',
+      });
+    }
 
     const session = await createCreditTopupCheckoutSession({
       ownerId: req.user.id,
@@ -1124,6 +1305,7 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       currency,
       successUrl,
       cancelUrl,
+      stripeCustomerId,
     });
 
     res.status(201).json({
@@ -1183,7 +1365,19 @@ r.get('/billing/topup/calculate', requireAuth, async (req, res, next) => {
       userId: req.user.id,
       currency: req.query.currency,
     });
-    const price = calculateTopupPrice(credits, currency);
+    const billingProfile = await getBillingProfile(req.user.id);
+    const billingCountry =
+      billingProfile?.billingAddress?.country ||
+      billingProfile?.vatCountry ||
+      null;
+    const vatIdValidated = billingProfile?.taxStatus === 'verified';
+    const price = calculateTopupPrice(credits, {
+      currency,
+      billingCountry,
+      vatId: billingProfile?.vatNumber || null,
+      vatIdValidated,
+      ipCountry: req.headers['cf-ipcountry'] || req.headers['x-country'] || null,
+    });
 
     res.json(price);
   } catch (e) {

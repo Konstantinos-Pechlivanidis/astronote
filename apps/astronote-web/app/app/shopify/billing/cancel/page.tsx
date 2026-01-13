@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,8 @@ import { XCircle, ArrowLeft } from 'lucide-react';
  */
 export default function BillingCancelPage() {
   return (
-    <div>
+    <RetailPageLayout>
+      <div className="space-y-6">
       <RetailPageHeader title="Payment Cancelled" />
       <RetailCard className="p-6">
         <div className="text-center py-8">
@@ -31,6 +33,7 @@ export default function BillingCancelPage() {
         </div>
       </RetailCard>
     </div>
+    </RetailPageLayout>
   );
 }
 

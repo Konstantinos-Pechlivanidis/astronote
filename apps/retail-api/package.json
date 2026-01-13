@@ -6,6 +6,8 @@
   "main": "index.js",
   "scripts": {
     "build": "prisma generate",
+    "lint": "cd apps/api && npm run lint",
+    "test": "cd apps/api && npm run test",
     "prisma:init": "prisma init --datasource-provider postgresql",
     "prisma:migrate": "node scripts/migrate.js",
     "prisma:migrate:dev": "prisma migrate dev",

@@ -7,6 +7,7 @@ import {
   deactivateSubscription,
   allocateFreeCredits,
   getPlanConfig,
+  reconcileSubscriptionFromStripe,
 } from '../services/subscription.js';
 import { SubscriptionPlanType } from '../utils/prismaEnums.js';
 import {
@@ -14,9 +15,11 @@ import {
   updateSubscription,
   cancelSubscription,
   getCheckoutSession,
+  ensureStripeCustomer,
 } from '../services/stripe.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
+import { getBillingProfile } from '../services/billing-profile.js';
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -53,6 +56,52 @@ export async function getStatus(req, res, next) {
       shopId: getStoreId(req),
     });
     next(error);
+  }
+}
+
+/**
+ * POST /api/subscriptions/reconcile
+ * Manual reconciliation against Stripe (recovery for missed webhooks)
+ */
+export async function reconcile(req, res) {
+  const requestId = req.id || req.headers['x-request-id'] || 'unknown';
+  try {
+    const shopId = getStoreId(req);
+    const result = await reconcileSubscriptionFromStripe(shopId);
+
+    if (!result.reconciled) {
+      return sendSuccess(
+        res,
+        result,
+        'No Stripe subscription to reconcile',
+      );
+    }
+
+    return sendSuccess(res, result, 'Subscription reconciled');
+  } catch (error) {
+    if (error.message?.includes('Stripe is not configured')) {
+      return sendError(
+        res,
+        503,
+        'STRIPE_NOT_CONFIGURED',
+        'Payment processing unavailable',
+        { requestId },
+      );
+    }
+
+    logger.error('Subscription reconcile error', {
+      requestId,
+      error: error.message,
+      shopId: getStoreId(req),
+      stack: error.stack,
+    });
+    return sendError(
+      res,
+      500,
+      'RECONCILE_FAILED',
+      'Failed to reconcile subscription',
+      { requestId },
+    );
   }
 }
 
@@ -114,17 +163,62 @@ export async function subscribe(req, res, next) {
     }
 
     const { buildFrontendUrl } = await import('../utils/frontendUrl.js');
-    const baseUrl = buildFrontendUrl(
-      '/app/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription',
-    );
-    const successUrl = baseUrl;
+
+    // Build success URL with query parameters
+    // Note: Stripe requires {CHECKOUT_SESSION_ID} as literal string in URL
+    const successUrl = buildFrontendUrl('/app/billing/success', null, {
+      session_id: '{CHECKOUT_SESSION_ID}',
+      type: 'subscription',
+    });
+
+    // Build cancel URL
     const cancelUrl = buildFrontendUrl('/app/billing/cancel');
+
+    // Validate URLs before passing to Stripe (fail fast with clear error)
+    const { isValidAbsoluteUrl } = await import('../utils/url-helpers.js');
+    if (!isValidAbsoluteUrl(successUrl)) {
+      logger.error('Invalid success URL for subscription checkout', {
+        successUrl,
+        shopId,
+        planType,
+      });
+      return sendError(
+        res,
+        500,
+        'CONFIG_ERROR',
+        `Invalid frontend URL configuration. Success URL is not valid: ${successUrl}. Please set FRONTEND_URL environment variable to a valid absolute URL (e.g., https://astronote.onrender.com).`,
+      );
+    }
+    if (!isValidAbsoluteUrl(cancelUrl)) {
+      logger.error('Invalid cancel URL for subscription checkout', {
+        cancelUrl,
+        shopId,
+        planType,
+      });
+      return sendError(
+        res,
+        500,
+        'CONFIG_ERROR',
+        `Invalid frontend URL configuration. Cancel URL is not valid: ${cancelUrl}. Please set FRONTEND_URL environment variable to a valid absolute URL (e.g., https://astronote.onrender.com).`,
+      );
+    }
+
+    const billingProfile = await getBillingProfile(shopId);
+    const stripeCustomerId = await ensureStripeCustomer({
+      shopId,
+      shopDomain,
+      shopName: req.ctx?.store?.shopName,
+      currency,
+      stripeCustomerId: currentSubscription.stripeCustomerId,
+      billingProfile,
+    });
 
     const session = await createSubscriptionCheckoutSession({
       shopId,
       shopDomain,
       planType,
       currency, // Use resolved currency
+      stripeCustomerId,
       successUrl,
       cancelUrl,
     });

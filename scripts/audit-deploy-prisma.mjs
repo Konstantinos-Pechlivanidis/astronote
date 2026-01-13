@@ -506,6 +506,16 @@ function isTenantScoped(queryObj, modelName, operation, file, content, queryStar
     }
   }
 
+  // For upsert operations, check if shopId is in create/update data
+  if (operation === 'upsert' && queryObj.data) {
+    // Check both create and update clauses in upsert
+    if (queryObj.data.includes('shopId') || queryObj.data.includes('storeId') ||
+        queryObj.data.includes('create:') && queryObj.data.includes('shopId') ||
+        queryObj.data.includes('update:') && queryObj.data.includes('shopId')) {
+      return true;
+    }
+  }
+
   // For update operations, if using id in where, it's acceptable if the id is tenant-scoped
   // (e.g., contactId is already tenant-scoped via the contact record)
   if (operation === 'update' || operation === 'findUnique') {
@@ -600,6 +610,27 @@ function isTenantScoped(queryObj, modelName, operation, file, content, queryStar
         // Unique constraints are tenant-safe by design
         return true;
       }
+
+      // Check for upsert operations by unique identifier (stripeInvoiceId, invoiceId, etc.)
+      if (operation === 'upsert' && queryObj.where) {
+        // Upsert by unique identifier is tenant-safe
+        if (queryObj.where.includes('stripeInvoiceId') || 
+            queryObj.where.includes('invoiceId') ||
+            queryObj.where.includes('stripeSubscriptionId') ||
+            queryObj.where.includes('stripeCustomerId')) {
+          return true;
+        }
+      }
+
+      // Check for findFirst by unique identifier
+      if (operation === 'findFirst' && queryObj.where) {
+        if (queryObj.where.includes('stripeSubscriptionId') ||
+            queryObj.where.includes('stripeInvoiceId') ||
+            queryObj.where.includes('stripeCustomerId')) {
+          // Unique identifiers are tenant-safe
+          return true;
+        }
+      }
       
       // Check for MessageLog queries by providerMsgId - these are scoped by unique provider message ID
       if (modelName === 'MessageLog' && queryObj.where && queryObj.where.includes('providerMsgId')) {
@@ -629,6 +660,9 @@ function isTenantScoped(queryObj, modelName, operation, file, content, queryStar
       // Check for queries by unique identifiers (stripePaymentIntentId, etc.) - these are tenant-safe
       if (queryObj.where && (queryObj.where.includes('stripePaymentIntentId') || 
                              queryObj.where.includes('stripeSessionId') ||
+                             queryObj.where.includes('stripeSubscriptionId') ||
+                             queryObj.where.includes('stripeInvoiceId') ||
+                             queryObj.where.includes('stripeCustomerId') ||
                              queryObj.where.includes('providerMsgId'))) {
         // Unique identifiers are tenant-safe
         return true;
@@ -670,6 +704,36 @@ function isTenantScoped(queryObj, modelName, operation, file, content, queryStar
       // Check if prismaData includes shopId (common pattern in createContact, etc.)
       if (operation === 'create' && beforeQuery.includes('prismaData') && beforeQuery.includes('shopId: storeId')) {
         return true;
+      }
+
+      // Check if payload/data variable includes shopId (common pattern in upsertInvoiceRecord, upsertTaxEvidence)
+      if ((operation === 'create' || operation === 'upsert') && 
+          (beforeQuery.includes('payload') || beforeQuery.includes('data')) &&
+          (beforeQuery.includes('shopId:') || beforeQuery.includes('shopId,') || 
+           beforeQuery.includes('shopId =') || beforeQuery.includes('shopId:'))) {
+        // Check if the variable is used in the query
+        const varName = queryObj.data ? (queryObj.data.includes('payload') ? 'payload' : 
+                                         queryObj.data.includes('data') ? 'data' : null) : null;
+        if (varName && beforeQuery.includes(`${varName} =`) && beforeQuery.includes('shopId')) {
+          return true;
+        }
+      }
+
+      // Check if function receives shopId and builds data/payload with it
+      if ((operation === 'create' || operation === 'upsert') && 
+          beforeQuery.includes('shopId') && 
+          (beforeQuery.includes('const data =') || beforeQuery.includes('const payload =') ||
+           beforeQuery.includes('let data =') || beforeQuery.includes('let payload ='))) {
+        // Function receives shopId and builds data/payload - check if shopId is in the object
+        const dataMatch = beforeQuery.match(/(?:const|let)\s+(data|payload)\s*=\s*\{([^}]+)\}/);
+        if (dataMatch && dataMatch[2].includes('shopId')) {
+          return true;
+        }
+        // Also check multiline object construction
+        const multilineMatch = beforeQuery.match(/(?:const|let)\s+(data|payload)\s*=\s*\{[\s\S]{0,500}shopId[\s\S]{0,500}\}/);
+        if (multilineMatch) {
+          return true;
+        }
       }
       
       // Check for admin controllers - intentionally cross-tenant

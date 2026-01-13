@@ -3,7 +3,9 @@ import { logger } from '../utils/logger.js';
 import billingService from '../services/billing.js';
 import { getSubscriptionStatus } from '../services/subscription.js';
 import { calculateTopupPrice } from '../services/subscription.js';
-import { createCreditTopupCheckoutSession } from '../services/stripe.js';
+import { createCreditTopupCheckoutSession, ensureStripeCustomer, syncStripeCustomerBillingProfile } from '../services/stripe.js';
+import { getBillingProfile, upsertBillingProfile } from '../services/billing-profile.js';
+import { listInvoices } from '../services/invoices.js';
 import prisma from '../services/prisma.js';
 import { sendSuccess, sendPaginated, sendError } from '../utils/response.js';
 import crypto from 'crypto';
@@ -113,6 +115,14 @@ export async function getPackages(req, res, next) {
         validCurrencies.includes(shop.settings.currency.toUpperCase())
       ) {
         currency = shop.settings.currency.toUpperCase();
+      } else {
+        const billingProfile = await getBillingProfile(storeId);
+        if (
+          billingProfile?.currency &&
+          validCurrencies.includes(String(billingProfile.currency).toUpperCase())
+        ) {
+          currency = String(billingProfile.currency).toUpperCase();
+        }
       }
     }
 
@@ -203,6 +213,16 @@ export async function createPurchase(req, res, next) {
     }
 
     const { packageId, successUrl, cancelUrl, currency } = req.body;
+
+    const { isValidAbsoluteUrl } = await import('../utils/url-helpers.js');
+    if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
+      return sendError(
+        res,
+        400,
+        'INVALID_URL',
+        'Success and cancel URLs must be valid absolute URLs.',
+      );
+    }
 
     // Get idempotency key from headers (aligned with Retail)
     const idempotencyKeyHeader =
@@ -330,6 +350,8 @@ export async function createPurchase(req, res, next) {
 export async function calculateTopup(req, res, next) {
   try {
     const credits = parseInt(req.query.credits);
+    const requestedCurrency = req.query.currency;
+    const validCurrencies = ['EUR', 'USD'];
 
     if (!credits || !Number.isInteger(credits) || credits <= 0) {
       return sendError(
@@ -340,7 +362,43 @@ export async function calculateTopup(req, res, next) {
       );
     }
 
-    const priceBreakdown = calculateTopupPrice(credits);
+    const storeId = getStoreId(req);
+    const shop = req.ctx?.store || null;
+    const billingProfile = await getBillingProfile(storeId);
+
+    let currency = 'EUR';
+    if (
+      requestedCurrency &&
+      validCurrencies.includes(String(requestedCurrency).toUpperCase())
+    ) {
+      currency = String(requestedCurrency).toUpperCase();
+    } else if (
+      shop?.currency &&
+      validCurrencies.includes(String(shop.currency).toUpperCase())
+    ) {
+      currency = String(shop.currency).toUpperCase();
+    } else if (
+      billingProfile?.currency &&
+      validCurrencies.includes(String(billingProfile.currency).toUpperCase())
+    ) {
+      currency = String(billingProfile.currency).toUpperCase();
+    }
+
+    const billingCountry =
+      billingProfile?.billingAddress?.country ||
+      billingProfile?.vatCountry ||
+      shop?.country ||
+      null;
+
+    const vatIdValidated = billingProfile?.taxStatus === 'verified';
+
+    const priceBreakdown = calculateTopupPrice(credits, {
+      currency,
+      billingCountry,
+      vatId: billingProfile?.vatNumber || null,
+      vatIdValidated,
+      ipCountry: req.headers['cf-ipcountry'] || req.headers['x-country'] || null,
+    });
 
     return sendSuccess(res, priceBreakdown, 'Price calculated successfully');
   } catch (error) {
@@ -359,19 +417,73 @@ export async function calculateTopup(req, res, next) {
 export async function createTopup(req, res, next) {
   try {
     const storeId = getStoreId(req);
-    const shopDomain = req.ctx?.store?.shopDomain;
-    const { credits, successUrl, cancelUrl } = req.body;
+    const shop = req.ctx?.store || null;
+    const shopDomain = shop?.shopDomain;
+    const { credits, successUrl, cancelUrl, currency: requestedCurrency } = req.body;
+
+    const { isValidAbsoluteUrl } = await import('../utils/url-helpers.js');
+    if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
+      return sendError(
+        res,
+        400,
+        'INVALID_URL',
+        'Success and cancel URLs must be valid absolute URLs.',
+      );
+    }
+
+    const billingProfile = await getBillingProfile(storeId);
+    const validCurrencies = ['EUR', 'USD'];
+    let currency = 'EUR';
+    if (
+      requestedCurrency &&
+      validCurrencies.includes(String(requestedCurrency).toUpperCase())
+    ) {
+      currency = String(requestedCurrency).toUpperCase();
+    } else if (
+      shop?.currency &&
+      validCurrencies.includes(String(shop.currency).toUpperCase())
+    ) {
+      currency = String(shop.currency).toUpperCase();
+    } else if (
+      billingProfile?.currency &&
+      validCurrencies.includes(String(billingProfile.currency).toUpperCase())
+    ) {
+      currency = String(billingProfile.currency).toUpperCase();
+    }
+
+    const billingCountry =
+      billingProfile?.billingAddress?.country ||
+      billingProfile?.vatCountry ||
+      shop?.country ||
+      null;
+    const vatIdValidated = billingProfile?.taxStatus === 'verified';
 
     // Calculate price
-    const priceBreakdown = calculateTopupPrice(credits);
+    const priceBreakdown = calculateTopupPrice(credits, {
+      currency,
+      billingCountry,
+      vatId: billingProfile?.vatNumber || null,
+      vatIdValidated,
+      ipCountry: req.headers['cf-ipcountry'] || req.headers['x-country'] || null,
+    });
+
+    const stripeCustomerId = await ensureStripeCustomer({
+      shopId: storeId,
+      shopDomain,
+      shopName: shop?.shopName,
+      currency,
+      stripeCustomerId: shop?.stripeCustomerId,
+      billingProfile,
+    });
 
     // Create Stripe checkout session
     const session = await createCreditTopupCheckoutSession({
       shopId: storeId,
       shopDomain,
       credits,
-      priceEur: priceBreakdown.priceEurWithVat,
-      currency: 'EUR',
+      priceEur: priceBreakdown.totalPrice,
+      currency,
+      stripeCustomerId,
       successUrl,
       cancelUrl,
     });
@@ -388,7 +500,7 @@ export async function createTopup(req, res, next) {
         checkoutUrl: session.url,
         sessionId: session.id,
         credits,
-        priceEur: priceBreakdown.priceEurWithVat,
+        priceEur: priceBreakdown.totalPrice,
         priceBreakdown,
       },
       'Top-up checkout session created successfully',
@@ -496,6 +608,128 @@ export async function getSummary(req, res, next) {
   }
 }
 
+/**
+ * Get billing profile for shop
+ * @route GET /billing/profile
+ */
+export async function getProfile(req, res, next) {
+  try {
+    const storeId = getStoreId(req);
+    const profile = await getBillingProfile(storeId);
+    if (!profile) {
+      const shop = req.ctx?.store || null;
+      return sendSuccess(
+        res,
+        {
+          shopId: storeId,
+          legalName: null,
+          vatNumber: null,
+          vatCountry: null,
+          billingEmail: null,
+          billingAddress: null,
+          currency: shop?.currency || 'EUR',
+          taxStatus: null,
+          taxExempt: false,
+        },
+        'Billing profile retrieved',
+      );
+    }
+
+    return sendSuccess(res, profile, 'Billing profile retrieved');
+  } catch (error) {
+    logger.error('Get billing profile error', {
+      error: error.message,
+      storeId: req.ctx?.store?.id,
+    });
+    next(error);
+  }
+}
+
+/**
+ * Update billing profile for shop
+ * @route PUT /billing/profile
+ */
+export async function updateProfile(req, res, next) {
+  try {
+    const storeId = getStoreId(req);
+    const shop = req.ctx?.store || null;
+    const {
+      legalName,
+      vatNumber,
+      vatCountry,
+      billingEmail,
+      billingAddress,
+      currency,
+    } = req.body;
+
+    const profile = await upsertBillingProfile(storeId, {
+      legalName: legalName || null,
+      vatNumber: vatNumber || null,
+      vatCountry: vatCountry || null,
+      billingEmail: billingEmail || null,
+      billingAddress: billingAddress || null,
+      currency: currency || undefined,
+    });
+
+    if (currency) {
+      await prisma.shop.update({
+        where: { id: storeId },
+        data: { currency },
+      });
+    }
+
+    const stripeCustomerId = await ensureStripeCustomer({
+      shopId: storeId,
+      shopDomain: shop?.shopDomain,
+      shopName: shop?.shopName,
+      currency: currency || shop?.currency || 'EUR',
+      stripeCustomerId: shop?.stripeCustomerId,
+      billingProfile: profile,
+    });
+
+    await syncStripeCustomerBillingProfile({
+      stripeCustomerId,
+      billingProfile: profile,
+    });
+
+    return sendSuccess(res, profile, 'Billing profile updated');
+  } catch (error) {
+    logger.error('Update billing profile error', {
+      error: error.message,
+      storeId: req.ctx?.store?.id,
+    });
+    next(error);
+  }
+}
+
+/**
+ * List invoices for shop
+ * @route GET /billing/invoices
+ */
+export async function getInvoices(req, res, next) {
+  try {
+    const storeId = getStoreId(req);
+    const filters = {
+      page: req.query.page,
+      pageSize: req.query.pageSize,
+      status: req.query.status,
+    };
+
+    const result = await listInvoices(storeId, filters);
+
+    return sendPaginated(res, result.invoices, result.pagination, {
+      invoices: result.invoices,
+    });
+  } catch (error) {
+    logger.error('Get invoices error', {
+      error: error.message,
+      storeId: req.ctx?.store?.id,
+      query: req.query,
+    });
+    next(error);
+  }
+}
+
 export default {
   getBalance,
   getPackages,
@@ -505,4 +739,7 @@ export default {
   getHistory,
   getBillingHistory,
   getSummary,
+  getProfile,
+  updateProfile,
+  getInvoices,
 };

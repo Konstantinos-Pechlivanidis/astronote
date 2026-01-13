@@ -3,6 +3,7 @@
 
 const prisma = require('../lib/prisma');
 const { debit } = require('./wallet.service');
+const { resolveTaxTreatment } = require('./tax-resolver.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'subscription-service' });
@@ -40,6 +41,56 @@ const CREDIT_PRICE_EUR = Number(process.env.CREDIT_PRICE_EUR || 0.045); // Base 
 const CREDIT_PRICE_USD = Number(process.env.CREDIT_PRICE_USD || CREDIT_PRICE_EUR);
 const VAT_RATE = Number(process.env.CREDIT_VAT_RATE || 0.24); // 24% VAT
 const VAT_RATE_USD = Number(process.env.CREDIT_VAT_RATE_USD || 0);
+
+const normalizeStripeStatus = (status) => {
+  if (!status) {return null;}
+  const normalized = String(status).toLowerCase();
+  switch (normalized) {
+  case 'active':
+    return 'active';
+  case 'trialing':
+    return 'trialing';
+  case 'past_due':
+    return 'past_due';
+  case 'unpaid':
+    return 'unpaid';
+  case 'incomplete':
+    return 'incomplete';
+  case 'paused':
+    return 'paused';
+  case 'canceled':
+  case 'cancelled':
+  case 'incomplete_expired':
+    return 'cancelled';
+  default:
+    return 'inactive';
+  }
+};
+
+const resolvePlanTypeFromStripeSubscription = (stripeSubscription) => {
+  if (!stripeSubscription) {return null;}
+  const metadataPlan = stripeSubscription.metadata?.planType;
+  if (metadataPlan && ['starter', 'pro'].includes(metadataPlan)) {
+    return metadataPlan;
+  }
+
+  const priceId = stripeSubscription.items?.data?.[0]?.price?.id;
+  if (!priceId) {return null;}
+
+  const { getStripeSubscriptionPriceId } = require('./stripe.service');
+  const starterPriceIds = [
+    getStripeSubscriptionPriceId('starter', 'EUR'),
+    getStripeSubscriptionPriceId('starter', 'USD'),
+  ].filter(Boolean);
+  const proPriceIds = [
+    getStripeSubscriptionPriceId('pro', 'EUR'),
+    getStripeSubscriptionPriceId('pro', 'USD'),
+  ].filter(Boolean);
+
+  if (starterPriceIds.includes(priceId)) {return 'starter';}
+  if (proPriceIds.includes(priceId)) {return 'pro';}
+  return null;
+};
 
 /**
  * Get free credits for a plan
@@ -327,6 +378,49 @@ async function activateSubscription(userId, stripeCustomerId, stripeSubscription
       },
     });
 
+    const stripeSubscription = options.stripeSubscription || null;
+    const subscriptionCurrency = stripeSubscription?.items?.data?.[0]?.price?.currency
+      ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
+      : options.currency || null;
+
+    try {
+      await prisma.subscription.upsert({
+        where: { ownerId: userId },
+        update: {
+          stripeCustomerId,
+          stripeSubscriptionId,
+          planCode: planType,
+          status: 'active',
+          currency: subscriptionCurrency,
+          currentPeriodStart: options.currentPeriodStart || null,
+          currentPeriodEnd: options.currentPeriodEnd || null,
+          cancelAtPeriodEnd: options.cancelAtPeriodEnd ?? false,
+          trialEndsAt: stripeSubscription?.trial_end
+            ? new Date(stripeSubscription.trial_end * 1000)
+            : null,
+          metadata: stripeSubscription?.metadata || undefined,
+        },
+        create: {
+          ownerId: userId,
+          provider: 'stripe',
+          stripeCustomerId,
+          stripeSubscriptionId,
+          planCode: planType,
+          status: 'active',
+          currency: subscriptionCurrency,
+          currentPeriodStart: options.currentPeriodStart || null,
+          currentPeriodEnd: options.currentPeriodEnd || null,
+          cancelAtPeriodEnd: options.cancelAtPeriodEnd ?? false,
+          trialEndsAt: stripeSubscription?.trial_end
+            ? new Date(stripeSubscription.trial_end * 1000)
+            : null,
+          metadata: stripeSubscription?.metadata || undefined,
+        },
+      });
+    } catch (err) {
+      logger.warn({ userId, err: err.message }, 'Failed to upsert subscription record');
+    }
+
     logger.info({ userId, planType, stripeSubscriptionId }, 'Subscription activated');
     return user;
   } catch (err) {
@@ -360,6 +454,20 @@ async function deactivateSubscription(userId, reason = 'cancelled') {
       },
     });
 
+    try {
+      await prisma.subscription.update({
+        where: { ownerId: userId },
+        data: {
+          status,
+          cancelAtPeriodEnd: false,
+        },
+      });
+    } catch (err) {
+      if (err?.code !== 'P2025') {
+        logger.warn({ userId, err: err.message }, 'Failed to update subscription record on deactivate');
+      }
+    }
+
     logger.info({ userId, reason, status }, 'Subscription deactivated');
     return user;
   } catch (err) {
@@ -374,15 +482,38 @@ async function deactivateSubscription(userId, reason = 'cancelled') {
  * @param {string} currency - Currency code (EUR/USD)
  * @returns {Object} Price breakdown
  */
-function calculateTopupPrice(credits, currency = 'EUR') {
+function calculateTopupPrice(credits, input = 'EUR') {
   if (!Number.isInteger(credits) || credits <= 0) {
     throw new Error('Invalid credits amount');
+  }
+
+  let currency = 'EUR';
+  let billingCountry = null;
+  let vatId = null;
+  let vatIdValidated = null;
+  let ipCountry = null;
+
+  if (input && typeof input === 'object') {
+    currency = input.currency || 'EUR';
+    billingCountry = input.billingCountry || null;
+    vatId = input.vatId || null;
+    vatIdValidated = input.vatIdValidated ?? null;
+    ipCountry = input.ipCountry || null;
+  } else {
+    currency = input || 'EUR';
   }
 
   const normalizedCurrency = String(currency || 'EUR').toUpperCase();
   const pricePerCredit =
     normalizedCurrency === 'USD' ? CREDIT_PRICE_USD : CREDIT_PRICE_EUR;
-  const vatRate = normalizedCurrency === 'USD' ? VAT_RATE_USD : VAT_RATE;
+  const fallbackRate = normalizedCurrency === 'USD' ? VAT_RATE_USD : VAT_RATE;
+  const treatment = resolveTaxTreatment({
+    billingCountry,
+    vatId,
+    vatIdValidated,
+    ipCountry,
+  });
+  const vatRate = Number.isFinite(treatment.taxRate) ? treatment.taxRate : fallbackRate;
 
   const basePrice = credits * pricePerCredit;
   const vatAmount = basePrice * vatRate;
@@ -400,6 +531,9 @@ function calculateTopupPrice(credits, currency = 'EUR') {
     priceEurWithVat: normalizedCurrency === 'EUR' ? Number(totalPrice.toFixed(2)) : null,
     priceUsd: normalizedCurrency === 'USD' ? Number(basePrice.toFixed(2)) : null,
     priceUsdWithVat: normalizedCurrency === 'USD' ? Number(totalPrice.toFixed(2)) : null,
+    taxRate: vatRate,
+    taxTreatment: treatment.mode,
+    taxJurisdiction: treatment.taxJurisdiction,
   };
 }
 
@@ -543,6 +677,146 @@ async function consumeMessageBilling(userId, amount, opts = {}) {
   });
 }
 
+async function reconcileSubscriptionFromStripe(userId) {
+  const { stripe } = require('./stripe.service');
+
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      stripeCustomerId: true,
+      stripeSubscriptionId: true,
+      planType: true,
+      subscriptionStatus: true,
+      subscriptionInterval: true,
+      subscriptionCurrentPeriodStart: true,
+      subscriptionCurrentPeriodEnd: true,
+    },
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  let subscriptionId = user.stripeSubscriptionId;
+  if (!subscriptionId) {
+    const record = await prisma.subscription.findUnique({
+      where: { ownerId: userId },
+      select: { stripeSubscriptionId: true },
+    });
+    subscriptionId = record?.stripeSubscriptionId || null;
+  }
+
+  if (!subscriptionId) {
+    return { reconciled: false, reason: 'missing_subscription_id' };
+  }
+
+  const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['items.data.price'],
+  });
+
+  const newStatus = normalizeStripeStatus(stripeSubscription.status) || user.subscriptionStatus;
+  const newPlanType = resolvePlanTypeFromStripeSubscription(stripeSubscription) || user.planType;
+  const interval = stripeSubscription.items?.data?.[0]?.price?.recurring?.interval || null;
+  const cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end || false;
+  const currentPeriodStart = stripeSubscription.current_period_start
+    ? new Date(stripeSubscription.current_period_start * 1000)
+    : null;
+  const currentPeriodEnd = stripeSubscription.current_period_end
+    ? new Date(stripeSubscription.current_period_end * 1000)
+    : null;
+
+  const periodChanged =
+    currentPeriodStart &&
+    user.subscriptionCurrentPeriodStart &&
+    currentPeriodStart.getTime() !== user.subscriptionCurrentPeriodStart.getTime();
+  const statusChanged = newStatus && user.subscriptionStatus !== newStatus;
+  const planTypeChanged = newPlanType && user.planType !== newPlanType;
+  const intervalChanged = interval && user.subscriptionInterval !== interval;
+
+  if (periodChanged && stripeSubscription) {
+    try {
+      await resetAllowanceForPeriod(
+        userId,
+        newPlanType || user.planType,
+        `reconcile_${subscriptionId}_${stripeSubscription.current_period_start || 0}`,
+        stripeSubscription,
+      );
+    } catch (err) {
+      logger.warn({ userId, err: err.message }, 'Allowance reset failed during reconciliation');
+    }
+  }
+
+  if (statusChanged || planTypeChanged || intervalChanged || periodChanged) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(statusChanged && { subscriptionStatus: newStatus }),
+        ...(statusChanged && newStatus === 'active' && { lastBillingError: null }),
+        ...(planTypeChanged && { planType: newPlanType }),
+        ...(intervalChanged && { subscriptionInterval: interval }),
+        ...(periodChanged && {
+          subscriptionCurrentPeriodStart: currentPeriodStart,
+          subscriptionCurrentPeriodEnd: currentPeriodEnd,
+        }),
+        cancelAtPeriodEnd,
+      },
+    });
+  }
+
+  const subscriptionCurrency = stripeSubscription.items?.data?.[0]?.price?.currency
+    ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
+    : null;
+
+  await prisma.subscription.upsert({
+    where: { ownerId: userId },
+    update: {
+      stripeCustomerId: user.stripeCustomerId || stripeSubscription.customer || null,
+      stripeSubscriptionId: subscriptionId,
+      planCode: newPlanType,
+      status: newStatus,
+      currency: subscriptionCurrency,
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAtPeriodEnd,
+      trialEndsAt: stripeSubscription.trial_end
+        ? new Date(stripeSubscription.trial_end * 1000)
+        : null,
+      metadata: stripeSubscription.metadata || undefined,
+    },
+    create: {
+      ownerId: userId,
+      provider: 'stripe',
+      stripeCustomerId: user.stripeCustomerId || stripeSubscription.customer || null,
+      stripeSubscriptionId: subscriptionId,
+      planCode: newPlanType,
+      status: newStatus,
+      currency: subscriptionCurrency,
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAtPeriodEnd,
+      trialEndsAt: stripeSubscription.trial_end
+        ? new Date(stripeSubscription.trial_end * 1000)
+        : null,
+      metadata: stripeSubscription.metadata || undefined,
+    },
+  });
+
+  return {
+    reconciled: true,
+    subscriptionId,
+    status: newStatus,
+    planType: newPlanType,
+    interval,
+    currentPeriodStart,
+    currentPeriodEnd,
+    cancelAtPeriodEnd,
+  };
+}
+
 module.exports = {
   PLANS,
   CREDIT_PRICE_EUR,
@@ -560,6 +834,7 @@ module.exports = {
   getAllowanceStatus,
   consumeAllowanceThenCredits,
   consumeMessageBilling,
+  reconcileSubscriptionFromStripe,
   getIntervalForPlan,
   getIncludedSmsForInterval,
   resolveIntervalFromStripe,

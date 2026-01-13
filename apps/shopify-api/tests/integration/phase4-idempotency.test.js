@@ -56,6 +56,7 @@ describe('Phase 4: Idempotency Tests', () => {
           name: 'Test Campaign Idempotency',
           message: 'Test message',
           status: 'draft',
+          scheduleType: 'immediate',
           audience: { type: 'all' },
         },
       });

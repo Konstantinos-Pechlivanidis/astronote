@@ -116,8 +116,14 @@ export interface PackagesResponse {
 
 export interface TopupPrice {
   credits: number;
-  price: number;
   currency: string;
+  basePrice?: number;
+  taxRate?: number;
+  taxAmount?: number;
+  totalPrice?: number;
+  taxTreatment?: string;
+  taxJurisdiction?: string;
+  price?: number;
   priceEur?: number;
   priceEurWithVat?: number;
   vatAmount?: number;
@@ -146,6 +152,52 @@ export interface TransactionHistoryResponse {
   };
 }
 
+export interface BillingProfile {
+  shopId?: string;
+  legalName?: string | null;
+  vatNumber?: string | null;
+  vatCountry?: string | null;
+  billingEmail?: string | null;
+  billingAddress?: {
+    line1?: string | null;
+    line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+  } | null;
+  currency?: string;
+  taxStatus?: string | null;
+  taxExempt?: boolean;
+}
+
+export interface InvoiceRecord {
+  id: string;
+  stripeInvoiceId: string;
+  invoiceNumber?: string | null;
+  subtotal?: number | null;
+  tax?: number | null;
+  total?: number | null;
+  currency?: string | null;
+  pdfUrl?: string | null;
+  hostedInvoiceUrl?: string | null;
+  status?: string | null;
+  issuedAt?: string | null;
+  createdAt?: string | null;
+}
+
+export interface InvoicesResponse {
+  invoices: InvoiceRecord[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  };
+}
+
 export interface CreatePurchaseRequest {
   packageId: string;
   successUrl: string;
@@ -157,6 +209,15 @@ export interface CreateTopupRequest {
   credits: number;
   successUrl: string;
   cancelUrl: string;
+  currency?: string;
+}
+
+export interface UpdateBillingProfileRequest {
+  legalName?: string | null;
+  vatNumber?: string | null;
+  vatCountry?: string | null;
+  billingEmail?: string | null;
+  billingAddress?: BillingProfile['billingAddress'];
   currency?: string;
 }
 
@@ -245,6 +306,63 @@ const billingSummarySchema = z
   })
   .passthrough();
 
+const billingProfileSchema = z
+  .object({
+    shopId: z.string().optional(),
+    legalName: z.string().nullable().optional(),
+    vatNumber: z.string().nullable().optional(),
+    vatCountry: z.string().nullable().optional(),
+    billingEmail: z.string().nullable().optional(),
+    billingAddress: z
+      .object({
+        line1: z.string().nullable().optional(),
+        line2: z.string().nullable().optional(),
+        city: z.string().nullable().optional(),
+        state: z.string().nullable().optional(),
+        postalCode: z.string().nullable().optional(),
+        country: z.string().nullable().optional(),
+      })
+      .nullable()
+      .optional(),
+    currency: z.string().optional(),
+    taxStatus: z.string().nullable().optional(),
+    taxExempt: z.boolean().optional(),
+  })
+  .passthrough();
+
+const invoiceRecordSchema = z
+  .object({
+    id: z.string(),
+    stripeInvoiceId: z.string(),
+    invoiceNumber: z.string().nullable().optional(),
+    subtotal: z.number().nullable().optional(),
+    tax: z.number().nullable().optional(),
+    total: z.number().nullable().optional(),
+    currency: z.string().nullable().optional(),
+    pdfUrl: z.string().nullable().optional(),
+    hostedInvoiceUrl: z.string().nullable().optional(),
+    status: z.string().nullable().optional(),
+    issuedAt: z.string().nullable().optional(),
+    createdAt: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const invoicesResponseSchema = z
+  .object({
+    invoices: z.array(invoiceRecordSchema).optional(),
+    pagination: z
+      .object({
+        page: z.number().optional(),
+        pageSize: z.number().optional(),
+        total: z.number().optional(),
+        totalPages: z.number().optional(),
+        hasNextPage: z.boolean().optional(),
+        hasPrevPage: z.boolean().optional(),
+      })
+      .optional(),
+  })
+  .passthrough();
+
 const defaultSummary: BillingSummary = {
   subscription: {
     active: false,
@@ -283,6 +401,48 @@ const parseBillingSummary = (payload: unknown): BillingSummary => {
     credits: {
       ...defaultSummary.credits,
       ...(parsed.data.credits || {}),
+    },
+  };
+};
+
+const defaultBillingProfile: BillingProfile = {
+  currency: 'EUR',
+  taxExempt: false,
+};
+
+const parseBillingProfile = (payload: unknown): BillingProfile => {
+  const parsed = billingProfileSchema.safeParse(payload);
+  if (!parsed.success) {
+    return defaultBillingProfile;
+  }
+  return {
+    ...defaultBillingProfile,
+    ...parsed.data,
+  };
+};
+
+const defaultInvoicesResponse: InvoicesResponse = {
+  invoices: [],
+  pagination: {
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  },
+};
+
+const parseInvoicesResponse = (payload: unknown): InvoicesResponse => {
+  const parsed = invoicesResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    return defaultInvoicesResponse;
+  }
+  return {
+    invoices: parsed.data.invoices || [],
+    pagination: {
+      ...defaultInvoicesResponse.pagination,
+      ...(parsed.data.pagination || {}),
     },
   };
 };
@@ -326,10 +486,11 @@ export const shopifyBillingApi = {
       return response as unknown as TransactionHistoryResponse;
     }, 'Failed to load Stripe transactions'),
 
-  calculateTopup: async (credits: number): Promise<TopupPrice> =>
+  calculateTopup: async (credits: number, currency?: string): Promise<TopupPrice> =>
     safeRequest(async () => {
+      const params = currency ? { credits, currency } : { credits };
       const response = await shopifyApi.get<TopupPrice>('/billing/topup/calculate', {
-        params: { credits },
+        params,
       });
       return response as unknown as TopupPrice;
     }, 'Failed to calculate top-up'),
@@ -395,6 +556,24 @@ export const shopifyBillingApi = {
       const response = await shopifyApi.get<PortalResponse>('/subscriptions/portal');
       return response as unknown as PortalResponse;
     }, 'Failed to open billing portal'),
+
+  getBillingProfile: async (): Promise<BillingProfile> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<BillingProfile>('/billing/profile');
+      return parseBillingProfile(response);
+    }, 'Failed to load billing profile'),
+
+  updateBillingProfile: async (data: UpdateBillingProfileRequest): Promise<BillingProfile> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.put<BillingProfile>('/billing/profile', data);
+      return parseBillingProfile(response);
+    }, 'Failed to update billing profile'),
+
+  getInvoices: async (params: { page?: number; pageSize?: number; status?: string } = {}): Promise<InvoicesResponse> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.get<InvoicesResponse>('/billing/invoices', { params });
+      return parseInvoicesResponse(response);
+    }, 'Failed to load invoices'),
 };
 
 export const billingApi = {
@@ -406,6 +585,9 @@ export const billingApi = {
   getHistory: shopifyBillingApi.getHistory,
   getBillingHistory: shopifyBillingApi.getBillingHistory,
   getSummary: shopifyBillingApi.getBillingSummary,
+  getProfile: shopifyBillingApi.getBillingProfile,
+  updateProfile: shopifyBillingApi.updateBillingProfile,
+  getInvoices: shopifyBillingApi.getInvoices,
 };
 
 export const subscriptionsApi = {

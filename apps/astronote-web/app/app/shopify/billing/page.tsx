@@ -8,6 +8,8 @@ import { useBillingPackages } from '@/src/features/shopify/billing/hooks/useBill
 import { useBillingHistory } from '@/src/features/shopify/billing/hooks/useBillingHistory';
 import { useBillingSummary } from '@/src/features/shopify/billing/hooks/useBillingSummary';
 import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
+import { useBillingProfile } from '@/src/features/shopify/billing/hooks/useBillingProfile';
+import { useBillingInvoices } from '@/src/features/shopify/billing/hooks/useBillingInvoices';
 import {
   useCreatePurchase,
   useCreateTopup,
@@ -19,6 +21,7 @@ import {
   useGetPortal,
   useSwitchInterval,
 } from '@/src/features/shopify/billing/hooks/useSubscriptionMutations';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
@@ -47,6 +50,7 @@ function BillingPageContent() {
   const [currencyTouched, setCurrencyTouched] = useState(false);
   const [topupCredits, setTopupCredits] = useState<string>('');
   const [page, setPage] = useState(1);
+  const [invoicePage, setInvoicePage] = useState(1);
   const pageSize = 20;
 
   // Handle URL params for success/cancel
@@ -64,6 +68,8 @@ function BillingPageContent() {
   const { data: subscriptionData, isLoading: subscriptionLoading } = useSubscriptionStatus();
   const { data: packagesData, isLoading: packagesLoading } = useBillingPackages(selectedCurrency);
   const { data: historyData, isLoading: historyLoading } = useBillingHistory({ page, pageSize });
+  const { data: billingProfile } = useBillingProfile();
+  const { data: invoicesData, isLoading: invoicesLoading } = useBillingInvoices({ page: invoicePage, pageSize });
 
   // Mutations
   const createPurchase = useCreatePurchase();
@@ -77,6 +83,7 @@ function BillingPageContent() {
   const creditsNum = topupCredits ? parseInt(topupCredits) : null;
   const { data: topupPriceData, isLoading: topupPriceLoading } = useCalculateTopup(
     creditsNum && creditsNum > 0 && creditsNum <= 1000000 ? creditsNum : null,
+    selectedCurrency,
   );
 
   // Normalize data - prefer billing summary if available, fallback to individual calls
@@ -84,10 +91,13 @@ function BillingPageContent() {
   const billingCurrency =
     summary?.billingCurrency ||
     (summary?.subscription as any)?.billingCurrency ||
+    billingProfile?.currency ||
     balanceData?.currency ||
     'EUR';
   const balance = summary?.credits?.balance || balanceData?.credits || balanceData?.balance || 0;
   const currency = summary?.credits?.currency || balanceData?.currency || billingCurrency || selectedCurrency || 'EUR';
+  const currencySymbol = currency === 'USD' ? '$' : '€';
+  const showEurPricing = currency === 'EUR';
   const subscriptionRaw = summary?.subscription || subscriptionData || { status: 'inactive', planType: null, interval: null, active: false };
   // Handle subscription type - can be string or object
   const subscription = typeof subscriptionRaw === 'string'
@@ -123,6 +133,15 @@ function BillingPageContent() {
   const packages = packagesData?.packages || [];
   const subscriptionRequired = packagesData?.subscriptionRequired === false ? false : packages.length === 0 && isSubscriptionActive === false;
   const history = historyData?.transactions || [];
+  const invoices = invoicesData?.invoices || [];
+  const invoicesPagination = invoicesData?.pagination || {
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  };
   const pagination = historyData?.pagination || {
     page: 1,
     pageSize: 20,
@@ -132,6 +151,13 @@ function BillingPageContent() {
     hasPrevPage: false,
   };
   const topupPrice = topupPriceData;
+  const topupCurrency = topupPrice?.currency || selectedCurrency || currency || 'EUR';
+  const topupBase = topupPrice?.basePrice ?? topupPrice?.priceEur ?? 0;
+  const topupTax = topupPrice?.taxAmount ?? topupPrice?.vatAmount ?? 0;
+  const topupTotal = topupPrice?.totalPrice ?? topupPrice?.priceEurWithVat ?? 0;
+  const topupTaxRate = Number.isFinite(topupPrice?.taxRate)
+    ? Math.round((topupPrice?.taxRate || 0) * 100)
+    : null;
 
   useEffect(() => {
     if (currencyTouched) return;
@@ -145,6 +171,30 @@ function BillingPageContent() {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? null : format(date, 'MMM d, yyyy');
   };
+
+  const maskedVat = billingProfile?.vatNumber
+    ? `${billingProfile.vatNumber.slice(0, 4)}•••${billingProfile.vatNumber.slice(-2)}`
+    : null;
+  const billingCountry =
+    billingProfile?.billingAddress?.country || billingProfile?.vatCountry || null;
+  const taxStatus = billingProfile?.taxStatus || null;
+  const taxStatusLabel = taxStatus
+    ? taxStatus === 'verified'
+      ? 'Verified'
+      : taxStatus === 'pending'
+        ? 'Pending'
+        : taxStatus === 'unverified'
+          ? 'Unverified'
+          : 'Invalid'
+    : 'Not provided';
+  const taxStatusVariant =
+    taxStatus === 'verified'
+      ? 'success'
+      : taxStatus === 'pending'
+        ? 'warning'
+        : taxStatus
+          ? 'danger'
+          : 'warning';
 
   // Get frontend URL for checkout redirects
   const getFrontendUrl = (path: string) => {
@@ -192,6 +242,7 @@ function BillingPageContent() {
         credits,
         successUrl,
         cancelUrl,
+        currency: selectedCurrency,
       });
     } catch (error) {
       // Error handled by mutation hook
@@ -200,7 +251,7 @@ function BillingPageContent() {
 
   const handleSubscribe = async (planType: 'starter' | 'pro') => {
     try {
-      await subscribe.mutateAsync({ planType });
+      await subscribe.mutateAsync({ planType, currency });
     } catch (error) {
       // Error handled by mutation hook
     }
@@ -241,14 +292,13 @@ function BillingPageContent() {
   const isLowBalance = balance < 100;
 
   return (
-    <div>
+    <RetailPageLayout>
+      <div className="space-y-6">
       {/* Header */}
       <RetailPageHeader
         title="Billing"
         description="Manage your SMS credits and subscription"
       />
-
-      <div className="space-y-6">
         {/* Subscription Required Banner */}
         {!isSubscriptionActive && (
           <RetailCard className="p-6 border-2 border-red-500/50 bg-red-500/10">
@@ -338,8 +388,8 @@ function BillingPageContent() {
                 <div className="space-y-2">
                   <p className="text-base text-text-secondary">
                     {subscriptionPlan === 'starter'
-                      ? '€40/month - 100 free SMS per month'
-                      : '€240/year - 500 free SMS per year'}
+                      ? `${showEurPricing ? `${currencySymbol}40/month` : `Billed in ${currency}`} - 100 free SMS per month`
+                      : `${showEurPricing ? `${currencySymbol}240/year` : `Billed in ${currency}`} - 500 free SMS per year`}
                   </p>
                   {allowance && (
                     <div className="text-sm text-text-secondary space-y-1">
@@ -420,10 +470,16 @@ function BillingPageContent() {
                 <div className="space-y-4">
                   <div>
                     <h3 className="text-xl font-bold mb-2 text-text-primary">Starter Plan</h3>
-                    <div className="flex items-baseline gap-2 mb-4">
-                      <span className="text-3xl font-bold text-text-primary">€40</span>
-                      <span className="text-base text-text-secondary">/month</span>
-                    </div>
+                    {showEurPricing ? (
+                      <div className="flex items-baseline gap-2 mb-4">
+                        <span className="text-3xl font-bold text-text-primary">{currencySymbol}40</span>
+                        <span className="text-base text-text-secondary">/month</span>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-text-secondary mb-4">
+                        Pricing shown at checkout in {currency}
+                      </div>
+                    )}
                   </div>
                   <ul className="space-y-3 mb-6">
                     <li className="flex items-center gap-3">
@@ -453,10 +509,16 @@ function BillingPageContent() {
                 <div className="space-y-4">
                   <div>
                     <h3 className="text-xl font-bold mb-2 text-text-primary">Pro Plan</h3>
-                    <div className="flex items-baseline gap-2 mb-4">
-                      <span className="text-3xl font-bold text-text-primary">€240</span>
-                      <span className="text-base text-text-secondary">/year</span>
-                    </div>
+                    {showEurPricing ? (
+                      <div className="flex items-baseline gap-2 mb-4">
+                        <span className="text-3xl font-bold text-text-primary">{currencySymbol}240</span>
+                        <span className="text-base text-text-secondary">/year</span>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-text-secondary mb-4">
+                        Pricing shown at checkout in {currency}
+                      </div>
+                    )}
                   </div>
                   <ul className="space-y-3 mb-6">
                     <li className="flex items-center gap-3">
@@ -485,11 +547,66 @@ function BillingPageContent() {
           )}
         </RetailCard>
 
+        {/* Billing Details */}
+        <RetailCard className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+            <h2 className="text-2xl font-bold text-text-primary">Billing Details</h2>
+            <Button
+              variant="outline"
+              onClick={handleManageSubscription}
+              disabled={getPortal.isPending}
+            >
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Manage in Stripe
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-border bg-surface-light p-4">
+              <div className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
+                Legal Name
+              </div>
+              <div className="text-sm text-text-primary">
+                {billingProfile?.legalName || 'Not provided'}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-surface-light p-4">
+              <div className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
+                Billing Country
+              </div>
+              <div className="text-sm text-text-primary">
+                {billingCountry || 'Not provided'}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-surface-light p-4">
+              <div className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
+                VAT Number
+              </div>
+              <div className="text-sm text-text-primary">
+                {maskedVat || 'Not provided'}
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-surface-light p-4">
+              <div className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
+                VAT Status
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusBadge status={taxStatusVariant} label={taxStatusLabel} />
+                {billingProfile?.taxExempt && (
+                  <span className="text-xs text-text-tertiary">Tax exempt</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <p className="mt-4 text-xs text-text-tertiary">
+            Billing details are collected during Stripe checkout and used to calculate VAT.
+          </p>
+        </RetailCard>
+
         {/* Credit Top-up Section */}
         <RetailCard className="p-6">
           <h2 className="text-2xl font-bold text-text-primary mb-6">Credit Top-up</h2>
           <p className="text-sm text-text-secondary mb-6">
-            Purchase additional credits at €0.045 per credit (24% VAT included)
+            Purchase additional credits. Tax is calculated at checkout based on your billing details.
           </p>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -525,29 +642,38 @@ function BillingPageContent() {
                       <span className="text-sm text-text-secondary">Calculating...</span>
                     </div>
                   </RetailCard>
-                ) : topupPrice?.priceEurWithVat ? (
+                ) : topupPrice ? (
                   <RetailCard className="p-6 bg-surface-light">
                     <div className="space-y-3">
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-text-secondary">Base Price:</span>
                         <span className="text-text-primary font-semibold">
-                          €{topupPrice?.priceEur?.toFixed(2) || '0.00'}
+                          {topupBase.toFixed(2)} {topupCurrency}
                         </span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
-                        <span className="text-text-secondary">VAT (24%):</span>
+                        <span className="text-text-secondary">
+                          {topupTaxRate !== null ? `Tax (${topupTaxRate}%)` : 'Tax'}
+                        </span>
                         <span className="text-text-primary font-semibold">
-                          €{topupPrice?.vatAmount?.toFixed(2) || '0.00'}
+                          {topupTaxRate !== null
+                            ? `${topupTax.toFixed(2)} ${topupCurrency}`
+                            : 'Calculated at checkout'}
                         </span>
                       </div>
                       <div className="pt-3 border-t border-border">
                         <div className="flex justify-between items-center">
                           <span className="text-base font-semibold text-text-primary">Total:</span>
                           <span className="text-xl font-bold text-accent">
-                            €{topupPrice?.priceEurWithVat?.toFixed(2) || '0.00'}
+                            {topupTotal.toFixed(2)} {topupCurrency}
                           </span>
                         </div>
                       </div>
+                      {topupPrice?.taxTreatment && (
+                        <p className="text-xs text-text-tertiary">
+                          Tax treatment: {topupPrice.taxTreatment.replace(/_/g, ' ')}
+                        </p>
+                      )}
                     </div>
                   </RetailCard>
                 ) : (
@@ -771,8 +897,120 @@ function BillingPageContent() {
             </>
           )}
         </RetailCard>
+
+        {/* Invoices */}
+        <RetailCard className="p-6">
+          <h2 className="text-2xl font-bold text-text-primary mb-6">Invoices</h2>
+
+          {invoicesLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-text-tertiary" />
+            </div>
+          ) : invoices.length === 0 ? (
+            <EmptyState
+              icon={History}
+              title="No invoices yet"
+              description="Invoices will appear here after successful subscription payments."
+            />
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-surface-light">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
+                        Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
+                        Invoice
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
+                        Amount
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {invoices.map((invoice) => (
+                      <tr key={invoice.id}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                          {invoice.issuedAt
+                            ? format(new Date(invoice.issuedAt), 'MMM d, yyyy')
+                            : '—'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                          {invoice.invoiceNumber || invoice.stripeInvoiceId?.slice(-8) || '—'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                          {invoice.total?.toFixed(2) || '0.00'} {invoice.currency || currency}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <StatusBadge
+                            status={invoice.status === 'paid' ? 'success' : invoice.status === 'open' ? 'warning' : 'danger'}
+                            label={invoice.status || 'unknown'}
+                          />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                          {invoice.hostedInvoiceUrl ? (
+                            <a
+                              href={invoice.hostedInvoiceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-accent hover:underline"
+                            >
+                              View
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {invoicesPagination.totalPages > 1 && (
+                <div className="mt-6 flex items-center justify-between">
+                  <div className="text-sm text-text-secondary">
+                    Showing {((invoicesPagination.page - 1) * invoicesPagination.pageSize) + 1} to{' '}
+                    {Math.min(invoicesPagination.page * invoicesPagination.pageSize, invoicesPagination.total)} of{' '}
+                    {invoicesPagination.total} invoices
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setInvoicePage((p) => Math.max(1, p - 1))}
+                      disabled={!invoicesPagination.hasPrevPage || invoicesLoading}
+                    >
+                      Previous
+                    </Button>
+                    <div className="text-sm text-text-secondary">
+                      Page {invoicesPagination.page} of {invoicesPagination.totalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setInvoicePage((p) => Math.min(invoicesPagination.totalPages, p + 1))}
+                      disabled={!invoicesPagination.hasNextPage || invoicesLoading}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </RetailCard>
       </div>
-    </div>
+    </RetailPageLayout>
   );
 }
 
@@ -784,19 +1022,19 @@ export default function BillingPage() {
   return (
     <Suspense
       fallback={
-        <div>
+        <RetailPageLayout>
+          <div className="space-y-6">
           <RetailPageHeader
             title="Billing"
             description="Manage your SMS credits and subscription"
           />
-          <div className="space-y-6">
             <RetailCard className="p-6">
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="h-8 w-8 animate-spin text-text-tertiary" />
               </div>
             </RetailCard>
           </div>
-        </div>
+        </RetailPageLayout>
       }
     >
       <BillingPageContent />

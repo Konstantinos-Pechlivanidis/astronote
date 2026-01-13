@@ -75,6 +75,7 @@
     "release:gate": "node scripts/audit-release-gate.mjs && npm run stamp:release:gate",
     "stamp:release:gate": "node scripts/stamp-release-gate.mjs",
     "shopify:gate": "node scripts/shopify-gate.mjs",
+    "retail:gate": "node scripts/retail-gate.mjs",
     "install:all": "npm install"
   },
   "devDependencies": {

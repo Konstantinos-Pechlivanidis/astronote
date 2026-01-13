@@ -6,6 +6,7 @@ import {
   SubscriptionPlanType,
 } from '../utils/prismaEnums.js';
 import Stripe from 'stripe';
+import { resolveTaxTreatment } from './tax-resolver.js';
 
 // Initialize Stripe (only if API key is available)
 const stripe = process.env.STRIPE_SECRET_KEY
@@ -36,9 +37,51 @@ export const PLANS = {
   },
 };
 
+const normalizeStripeStatus = (status) => {
+  if (!status) return null;
+  if (status === 'active') return 'active';
+  if (status === 'trialing') return 'trialing';
+  if (status === 'past_due') return 'past_due';
+  if (status === 'unpaid') return 'unpaid';
+  if (status === 'incomplete') return 'incomplete';
+  if (status === 'paused') return 'paused';
+  if (status === 'canceled' || status === 'incomplete_expired') {
+    return 'cancelled';
+  }
+  return null;
+};
+
+const resolvePlanTypeFromStripeSubscription = (subscription) => {
+  const metadataPlanType = subscription?.metadata?.planType;
+  if (metadataPlanType && ['starter', 'pro'].includes(metadataPlanType)) {
+    return metadataPlanType;
+  }
+
+  const priceId = subscription?.items?.data?.[0]?.price?.id;
+  if (!priceId) return null;
+
+  const starterPriceIds = [
+    process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR,
+    process.env.STRIPE_PRICE_ID_SUB_STARTER_USD,
+  ].filter(Boolean);
+  const proPriceIds = [
+    process.env.STRIPE_PRICE_ID_SUB_PRO_EUR,
+    process.env.STRIPE_PRICE_ID_SUB_PRO_USD,
+  ].filter(Boolean);
+
+  if (starterPriceIds.includes(priceId)) return 'starter';
+  if (proPriceIds.includes(priceId)) return 'pro';
+  return null;
+};
+
 // Credit top-up pricing
-export const CREDIT_PRICE_EUR = 0.045; // Base price per credit
-export const VAT_RATE = 0.24; // 24% VAT
+export const CREDIT_PRICE_EUR = Number.parseFloat(
+  process.env.CREDIT_PRICE_EUR || '0.045',
+);
+export const CREDIT_PRICE_USD = Number.parseFloat(
+  process.env.CREDIT_PRICE_USD || process.env.CREDIT_PRICE_EUR || '0.045',
+);
+export const VAT_RATE = 0.24; // Legacy fallback (GR default)
 
 /**
  * Get free credits for a plan
@@ -387,6 +430,45 @@ export async function activateSubscription(
         stripeCustomerId: true,
         stripeSubscriptionId: true,
         subscriptionInterval: true,
+        currency: true,
+      },
+    });
+
+    const subscriptionCurrency = stripeSubscription?.items?.data?.[0]?.price?.currency
+      ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
+      : shop.currency || null;
+
+    await prisma.subscription.upsert({
+      where: { shopId },
+      update: {
+        stripeCustomerId,
+        stripeSubscriptionId,
+        planCode: planType,
+        status: 'active',
+        currency: subscriptionCurrency,
+        currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd,
+        trialEndsAt: stripeSubscription?.trial_end
+          ? new Date(stripeSubscription.trial_end * 1000)
+          : null,
+        metadata: stripeSubscription?.metadata || undefined,
+      },
+      create: {
+        shopId,
+        provider: 'stripe',
+        stripeCustomerId,
+        stripeSubscriptionId,
+        planCode: planType,
+        status: 'active',
+        currency: subscriptionCurrency,
+        currentPeriodStart,
+        currentPeriodEnd,
+        cancelAtPeriodEnd,
+        trialEndsAt: stripeSubscription?.trial_end
+          ? new Date(stripeSubscription.trial_end * 1000)
+          : null,
+        metadata: stripeSubscription?.metadata || undefined,
       },
     });
 
@@ -431,6 +513,14 @@ export async function deactivateSubscription(shopId, reason = 'cancelled') {
       },
     });
 
+    await prisma.subscription.updateMany({
+      where: { shopId },
+      data: {
+        status,
+        cancelAtPeriodEnd: false,
+      },
+    });
+
     logger.info({ shopId, reason, status }, 'Subscription deactivated');
     return shop;
   } catch (err) {
@@ -447,20 +537,44 @@ export async function deactivateSubscription(shopId, reason = 'cancelled') {
  * @param {number} credits - Number of credits
  * @returns {Object} Price breakdown
  */
-export function calculateTopupPrice(credits) {
+export function calculateTopupPrice(credits, options = {}) {
+  const { currency = 'EUR', billingCountry, vatId, vatIdValidated, ipCountry } = options;
   if (!Number.isInteger(credits) || credits <= 0) {
     throw new Error('Invalid credits amount');
   }
 
-  const basePrice = credits * CREDIT_PRICE_EUR;
-  const vatAmount = basePrice * VAT_RATE;
-  const totalPrice = basePrice + vatAmount;
+  const normalizedCurrency = String(currency || 'EUR').toUpperCase();
+  const pricePerCredit =
+    normalizedCurrency === 'USD' ? CREDIT_PRICE_USD : CREDIT_PRICE_EUR;
+
+  const basePrice = credits * pricePerCredit;
+  const taxTreatment = resolveTaxTreatment({
+    billingCountry,
+    ipCountry,
+    vatId,
+    vatIdValidated,
+  });
+  const taxRate = taxTreatment.taxRate ?? 0;
+  const taxAmount = basePrice * taxRate;
+  const totalPrice = basePrice + taxAmount;
 
   return {
     credits,
-    priceEur: Number(basePrice.toFixed(2)),
-    vatAmount: Number(vatAmount.toFixed(2)),
-    priceEurWithVat: Number(totalPrice.toFixed(2)),
+    currency: normalizedCurrency,
+    basePrice: Number(basePrice.toFixed(2)),
+    taxRate,
+    taxAmount: Number(taxAmount.toFixed(2)),
+    totalPrice: Number(totalPrice.toFixed(2)),
+    taxTreatment: taxTreatment.mode,
+    taxJurisdiction: taxTreatment.taxJurisdiction,
+    priceEur:
+      normalizedCurrency === 'EUR' ? Number(basePrice.toFixed(2)) : undefined,
+    vatAmount:
+      normalizedCurrency === 'EUR' ? Number(taxAmount.toFixed(2)) : undefined,
+    priceEurWithVat:
+      normalizedCurrency === 'EUR'
+        ? Number(totalPrice.toFixed(2))
+        : undefined,
   };
 }
 
@@ -667,6 +781,151 @@ export async function resetAllowanceForNewPeriod(shopId, stripeSubscription) {
 }
 
 /**
+ * Reconcile subscription state against Stripe (manual recovery helper)
+ * @param {string} shopId - Shop ID
+ * @returns {Promise<Object>} Reconciliation result
+ */
+export async function reconcileSubscriptionFromStripe(shopId) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+
+  const shop = await prisma.shop.findUnique({
+    where: { id: shopId },
+    select: {
+      stripeCustomerId: true,
+      stripeSubscriptionId: true,
+      planType: true,
+      subscriptionStatus: true,
+      subscriptionInterval: true,
+      currentPeriodStart: true,
+      currentPeriodEnd: true,
+    },
+  });
+
+  if (!shop) {
+    throw new Error('Shop not found');
+  }
+
+  let subscriptionId = shop.stripeSubscriptionId;
+  if (!subscriptionId) {
+    const record = await prisma.subscription.findUnique({
+      where: { shopId },
+      select: { stripeSubscriptionId: true },
+    });
+    subscriptionId = record?.stripeSubscriptionId || null;
+  }
+
+  if (!subscriptionId) {
+    return {
+      reconciled: false,
+      reason: 'missing_subscription_id',
+    };
+  }
+
+  const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['items.data.price'],
+  });
+
+  const newStatus = normalizeStripeStatus(stripeSubscription.status) || shop.subscriptionStatus;
+  const newPlanType = resolvePlanTypeFromStripeSubscription(stripeSubscription) || shop.planType;
+  const interval = stripeSubscription.items?.data?.[0]?.price?.recurring?.interval || null;
+  const cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end || false;
+  const currentPeriodStart = stripeSubscription.current_period_start
+    ? new Date(stripeSubscription.current_period_start * 1000)
+    : null;
+  const currentPeriodEnd = stripeSubscription.current_period_end
+    ? new Date(stripeSubscription.current_period_end * 1000)
+    : null;
+
+  const periodChanged =
+    currentPeriodStart &&
+    shop.currentPeriodStart &&
+    currentPeriodStart.getTime() !== shop.currentPeriodStart.getTime();
+  const statusChanged = newStatus && shop.subscriptionStatus !== newStatus;
+  const planTypeChanged = newPlanType && shop.planType !== newPlanType;
+  const intervalChanged = interval && shop.subscriptionInterval !== interval;
+
+  if (periodChanged && stripeSubscription) {
+    const resetResult = await resetAllowanceForNewPeriod(shopId, stripeSubscription);
+    if (resetResult.reset) {
+      logger.info(
+        {
+          shopId,
+          periodStart: resetResult.periodStart,
+          periodEnd: resetResult.periodEnd,
+        },
+        'Allowance reset during reconciliation',
+      );
+    }
+  }
+
+  if (statusChanged || planTypeChanged || intervalChanged || periodChanged) {
+    await prisma.shop.update({
+      where: { id: shopId },
+      data: {
+        ...(statusChanged && { subscriptionStatus: newStatus }),
+        ...(statusChanged && newStatus === 'active' && { lastBillingError: null }),
+        ...(planTypeChanged && { planType: newPlanType }),
+        ...(intervalChanged && { subscriptionInterval: interval }),
+        ...(periodChanged && {
+          currentPeriodStart,
+          currentPeriodEnd,
+        }),
+        cancelAtPeriodEnd,
+      },
+    });
+  }
+
+  const subscriptionCurrency = stripeSubscription.items?.data?.[0]?.price?.currency
+    ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
+    : null;
+
+  await prisma.subscription.upsert({
+    where: { shopId },
+    update: {
+      stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
+      stripeSubscriptionId: subscriptionId,
+      planCode: newPlanType,
+      status: newStatus,
+      currency: subscriptionCurrency,
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAtPeriodEnd,
+      trialEndsAt: stripeSubscription.trial_end
+        ? new Date(stripeSubscription.trial_end * 1000)
+        : null,
+      metadata: stripeSubscription.metadata || undefined,
+    },
+    create: {
+      shopId,
+      provider: 'stripe',
+      stripeCustomerId: shop.stripeCustomerId || stripeSubscription.customer || null,
+      stripeSubscriptionId: subscriptionId,
+      planCode: newPlanType,
+      status: newStatus,
+      currency: subscriptionCurrency,
+      currentPeriodStart,
+      currentPeriodEnd,
+      cancelAtPeriodEnd,
+      trialEndsAt: stripeSubscription.trial_end
+        ? new Date(stripeSubscription.trial_end * 1000)
+        : null,
+      metadata: stripeSubscription.metadata || undefined,
+    },
+  });
+
+  return {
+    reconciled: true,
+    subscriptionId,
+    status: newStatus,
+    planType: newPlanType,
+    interval,
+    updated: statusChanged || planTypeChanged || intervalChanged || periodChanged,
+  };
+}
+
+/**
  * Switch subscription interval (monthly/yearly)
  * @param {string} shopId - Shop ID
  * @param {string} interval - 'month' or 'year'
@@ -752,6 +1011,7 @@ export async function switchSubscriptionInterval(shopId, interval) {
 export default {
   PLANS,
   CREDIT_PRICE_EUR,
+  CREDIT_PRICE_USD,
   VAT_RATE,
   getFreeCreditsForPlan,
   getPlanConfig,
@@ -766,4 +1026,5 @@ export default {
   trackSmsUsage,
   resetAllowanceForNewPeriod,
   switchSubscriptionInterval,
+  reconcileSubscriptionFromStripe,
 };

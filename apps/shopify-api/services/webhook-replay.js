@@ -52,8 +52,11 @@ export async function checkWebhookReplay(provider, eventId, eventHash = null, sh
       const byHash = await prisma.webhookEvent.findFirst({
         where: {
           provider,
-          eventHash,
           shopId: shopId || undefined,
+          OR: [
+            { eventHash },
+            { payloadHash: eventHash },
+          ],
         },
         orderBy: { receivedAt: 'desc' },
       });
@@ -92,7 +95,7 @@ export async function checkWebhookReplay(provider, eventId, eventHash = null, sh
  * @returns {Promise<Object>} WebhookEvent record
  */
 export async function recordWebhookEvent(provider, eventId, options = {}) {
-  const { eventHash, shopId, payload } = options;
+  const { eventHash, payloadHash, eventType, shopId, payload, status } = options;
 
   try {
     // Use create with skipDuplicates for idempotency
@@ -100,10 +103,12 @@ export async function recordWebhookEvent(provider, eventId, options = {}) {
       data: {
         provider,
         eventId,
-        eventHash: eventHash || null,
+        eventHash: eventHash || payloadHash || null,
+        payloadHash: payloadHash || eventHash || null,
+        eventType: eventType || null,
         shopId: shopId || null,
         payload: payload || null,
-        status: 'received',
+        status: status || 'received',
       },
     });
 
@@ -197,10 +202,11 @@ export async function processWebhookWithReplayProtection(
   processor,
   options = {},
 ) {
-  const { eventHash, shopId, payload, eventTimestamp } = options;
+  const { eventHash, payloadHash, eventType, shopId, payload, eventTimestamp } = options;
 
   // Check replay
-  const existing = await checkWebhookReplay(provider, eventId, eventHash, shopId);
+  const replayHash = eventHash || payloadHash || null;
+  const existing = await checkWebhookReplay(provider, eventId, replayHash, shopId);
   if (existing) {
     // Return 200 OK but do nothing (prevent retries)
     logger.info('Webhook replay detected, returning success without processing', {
@@ -226,6 +232,8 @@ export async function processWebhookWithReplayProtection(
   // Record event
   const webhookEvent = await recordWebhookEvent(provider, eventId, {
     eventHash,
+    payloadHash,
+    eventType,
     shopId,
     payload,
   });
@@ -261,4 +269,3 @@ export default {
   processWebhookWithReplayProtection,
   generateEventHash,
 };
-

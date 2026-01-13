@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.js';
+import { validateUrlConfig } from '../utils/url-helpers.js';
 
 /**
  * Environment Variable Validation
@@ -113,7 +114,71 @@ export function validateAndLogEnvironment() {
     optional: validation.warnings.length,
   });
 
+  // Validate URL configurations (critical for Stripe redirects)
+  validateUrlConfigurations(env);
+
   return validation;
+}
+
+/**
+ * Validate URL configurations (FRONTEND_URL, etc.)
+ * Critical for Stripe checkout redirects
+ * @param {string} env - Environment
+ */
+function validateUrlConfigurations(env) {
+  // Check FRONTEND_URL (used for Stripe redirects)
+  const frontendUrl =
+    process.env.FRONTEND_URL ||
+    process.env.FRONTEND_BASE_URL ||
+    process.env.WEB_APP_URL;
+
+  if (env === 'production') {
+    if (!frontendUrl) {
+      logger.warn(
+        'FRONTEND_URL, FRONTEND_BASE_URL, or WEB_APP_URL is not set. Stripe checkout redirects may fail.',
+      );
+    } else {
+      const validated = validateUrlConfig(frontendUrl, 'FRONTEND_URL');
+      if (!validated) {
+        logger.error(
+          `FRONTEND_URL is invalid: "${frontendUrl}". Stripe checkout will fail. Please set a valid absolute URL (e.g., https://astronote.onrender.com).`,
+        );
+      } else {
+        logger.info('FRONTEND_URL validated', {
+          url: validated,
+          // Don't log full URL in production for security, just confirm it's set
+          configured: true,
+        });
+      }
+    }
+  } else {
+    // In development/test, just warn
+    if (frontendUrl) {
+      const validated = validateUrlConfig(frontendUrl, 'FRONTEND_URL');
+      if (!validated) {
+        logger.warn(
+          `FRONTEND_URL is invalid: "${frontendUrl}". Stripe checkout redirects may fail.`,
+        );
+      }
+    }
+  }
+
+  // Validate Stripe configuration
+  if (process.env.STRIPE_SECRET_KEY) {
+    // Check if subscription price IDs are configured
+    const requiredPriceIds = [
+      'STRIPE_PRICE_ID_SUB_STARTER_EUR',
+      'STRIPE_PRICE_ID_SUB_PRO_EUR',
+    ];
+    const missingPriceIds = requiredPriceIds.filter(
+      key => !process.env[key],
+    );
+    if (missingPriceIds.length > 0 && env === 'production') {
+      logger.warn(
+        `Missing Stripe subscription price IDs: ${missingPriceIds.join(', ')}. Subscription checkout may fail.`,
+      );
+    }
+  }
 }
 
 /**

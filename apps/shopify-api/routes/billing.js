@@ -7,6 +7,8 @@ import {
   billingHistoryQuerySchema,
   topupCalculateQuerySchema,
   topupCreateSchema,
+  billingProfileSchema,
+  invoicesQuerySchema,
 } from '../schemas/billing.schema.js';
 import { billingRateLimit } from '../middlewares/rateLimits.js';
 import {
@@ -25,6 +27,12 @@ r.get('/balance', billingBalanceCache, ctrl.getBalance);
 
 // GET /billing/summary - Get billing summary (subscription + allowance + credits)
 r.get('/summary', ctrl.getSummary);
+
+// GET /billing/profile - Get billing profile
+r.get('/profile', ctrl.getProfile);
+
+// PUT /billing/profile - Update billing profile
+r.put('/profile', validateBody(billingProfileSchema), ctrl.updateProfile);
 
 // GET /billing/packages - Get available credit packages (only if subscription active)
 r.get('/packages', ctrl.getPackages);
@@ -58,6 +66,14 @@ r.get(
   validateQuery(billingHistoryQuerySchema),
   billingHistoryCache,
   ctrl.getBillingHistory,
+);
+
+// GET /billing/invoices - Get Stripe invoices
+r.get(
+  '/invoices',
+  validateQuery(invoicesQuerySchema),
+  billingHistoryCache,
+  ctrl.getInvoices,
 );
 
 // POST /billing/purchase - Create Stripe checkout session (credit packs - requires subscription)

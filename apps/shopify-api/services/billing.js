@@ -1,7 +1,10 @@
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
 import { ValidationError, NotFoundError } from '../utils/errors.js';
-import { createStripeCheckoutSession, getStripePriceId } from './stripe.js';
+import { createStripeCheckoutSession, getStripePriceId, ensureStripeCustomer } from './stripe.js';
+import { getBillingProfile, syncBillingProfileFromStripe } from './billing-profile.js';
+import { resolveTaxTreatment, resolveTaxRateForInvoice } from './tax-resolver.js';
+import { upsertTaxEvidence } from './tax-evidence.js';
 import {
   credit,
   debit,
@@ -13,6 +16,19 @@ import {
  * Billing Service
  * Handles credit management, Stripe integration, and transaction history
  */
+
+const extractTaxDetailsFromSession = (session) => {
+  const customerDetails = session?.customer_details || {};
+  const taxIds = Array.isArray(customerDetails.tax_ids) ? customerDetails.tax_ids : [];
+  const vat = taxIds.find((entry) => entry.type === 'eu_vat') || taxIds[0];
+  return {
+    billingCountry: customerDetails.address?.country || null,
+    vatId: vat?.value || vat?.id || null,
+    vatIdValidated: vat?.verification?.status === 'verified',
+    subtotal: session?.amount_subtotal ?? null,
+    taxAmount: session?.total_details?.amount_tax ?? null,
+  };
+};
 
 /**
  * Credit packages configuration (deprecated - now using Package model)
@@ -319,6 +335,17 @@ export async function createPurchaseSession(
     throw new Error('Failed to create or find purchase record');
   }
 
+  // Resolve Stripe customer (ensure reuse for tax and invoice continuity)
+  const billingProfile = await getBillingProfile(storeId);
+  const stripeCustomerId = await ensureStripeCustomer({
+    shopId: storeId,
+    shopDomain: shop.shopDomain,
+    shopName: shop.shopName,
+    currency,
+    stripeCustomerId: shop.stripeCustomerId,
+    billingProfile,
+  });
+
   // Create Stripe checkout session
   let session;
   try {
@@ -338,6 +365,7 @@ export async function createPurchaseSession(
       stripePriceId, // Use selected price ID based on currency
       shopId: storeId,
       shopDomain: shop.shopDomain,
+      stripeCustomerId,
       successUrl: returnUrls.successUrl,
       cancelUrl: returnUrls.cancelUrl,
       idempotencyKey: idempotencyKey || undefined, // Pass idempotency key to Stripe
@@ -607,6 +635,36 @@ export async function handleStripeWebhook(stripeEvent) {
       purchaseId: purchase.id,
       creditsAdded: credits,
     });
+
+    const taxDetails = extractTaxDetailsFromSession(session);
+    if (taxDetails.billingCountry || taxDetails.vatId) {
+      const treatment = resolveTaxTreatment({
+        billingCountry: taxDetails.billingCountry,
+        vatId: taxDetails.vatId,
+        vatIdValidated: taxDetails.vatIdValidated,
+      });
+      const taxRateApplied = resolveTaxRateForInvoice({
+        subtotal: taxDetails.subtotal,
+        tax: taxDetails.taxAmount,
+      });
+
+      await upsertTaxEvidence({
+        shopId: storeId,
+        billingCountry: taxDetails.billingCountry,
+        vatIdProvided: taxDetails.vatId,
+        vatIdValidated: taxDetails.vatIdValidated,
+        taxRateApplied,
+        taxJurisdiction: treatment.taxJurisdiction,
+        taxTreatment: treatment.mode,
+      });
+
+      await syncBillingProfileFromStripe({
+        shopId: storeId,
+        session,
+        taxTreatment: treatment.mode,
+        taxExempt: treatment.taxRate === 0,
+      });
+    }
 
     return {
       status: 'success',

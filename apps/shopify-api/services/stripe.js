@@ -9,6 +9,121 @@ const stripe = process.env.STRIPE_SECRET_KEY
   })
   : null;
 
+const isStripeTaxEnabled = () =>
+  String(process.env.STRIPE_TAX_ENABLED || '').toLowerCase() === 'true';
+
+const isValidStripeCustomerId = (value) =>
+  typeof value === 'string' && value.startsWith('cus_');
+
+const normalizeStripeAddress = (address) => {
+  if (!address) return null;
+  return {
+    line1: address.line1 || null,
+    line2: address.line2 || null,
+    city: address.city || null,
+    state: address.state || null,
+    postal_code: address.postalCode || address.postal_code || null,
+    country: address.country || null,
+  };
+};
+
+export async function ensureStripeCustomer({
+  shopId,
+  shopDomain,
+  shopName,
+  currency,
+  stripeCustomerId,
+  billingProfile,
+}) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+
+  if (isValidStripeCustomerId(stripeCustomerId)) {
+    return stripeCustomerId;
+  }
+
+  const address = normalizeStripeAddress(billingProfile?.billingAddress);
+  const email =
+    billingProfile?.billingEmail || (shopDomain ? `${shopDomain}@astronote.com` : null);
+  const name = billingProfile?.legalName || shopName || shopDomain || 'Astronote Shop';
+
+  const customer = await stripe.customers.create({
+    email: email || undefined,
+    name,
+    address: address || undefined,
+    metadata: {
+      shopId: String(shopId),
+      shopDomain: shopDomain || '',
+      billingCurrency: currency || 'EUR',
+    },
+  });
+
+  if (billingProfile?.vatNumber) {
+    try {
+      await stripe.customers.createTaxId(customer.id, {
+        type: 'eu_vat',
+        value: billingProfile.vatNumber,
+      });
+    } catch (error) {
+      logger.warn(
+        { shopId, customerId: customer.id, error: error.message },
+        'Failed to attach VAT ID to Stripe customer',
+      );
+    }
+  }
+
+  await prisma.shop.update({
+    where: { id: shopId },
+    data: { stripeCustomerId: customer.id },
+  });
+
+  return customer.id;
+}
+
+export async function syncStripeCustomerBillingProfile({
+  stripeCustomerId,
+  billingProfile,
+}) {
+  if (!stripe || !isValidStripeCustomerId(stripeCustomerId)) {
+    return null;
+  }
+
+  const address = normalizeStripeAddress(billingProfile?.billingAddress);
+  const email = billingProfile?.billingEmail || undefined;
+  const name = billingProfile?.legalName || undefined;
+
+  await stripe.customers.update(stripeCustomerId, {
+    email,
+    name,
+    address: address || undefined,
+  });
+
+  if (billingProfile?.vatNumber) {
+    try {
+      const existing = await stripe.customers.listTaxIds(stripeCustomerId, {
+        limit: 100,
+      });
+      const alreadyExists = existing.data.some(
+        (taxId) => taxId.value === billingProfile.vatNumber,
+      );
+      if (!alreadyExists) {
+        await stripe.customers.createTaxId(stripeCustomerId, {
+          type: 'eu_vat',
+          value: billingProfile.vatNumber,
+        });
+      }
+    } catch (error) {
+      logger.warn(
+        { stripeCustomerId, error: error.message },
+        'Failed to sync Stripe customer tax ID',
+      );
+    }
+  }
+
+  return stripeCustomerId;
+}
+
 /**
  * Create Stripe checkout session for credit purchase
  */
@@ -21,6 +136,7 @@ export async function createStripeCheckoutSession({
   stripePriceId,
   shopId,
   shopDomain,
+  stripeCustomerId = null,
   metadata = {},
   successUrl,
   cancelUrl,
@@ -95,7 +211,12 @@ export async function createStripeCheckoutSession({
           cancelUrl ||
           `${process.env.FRONTEND_URL || 'https://astronote-shopify-frontend.onrender.com'}/settings?canceled=true`,
         metadata: finalMetadata,
-        customer_email: `${shopDomain}@astronote.com`, // Use shop domain as email
+        ...(stripeCustomerId
+          ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+          : {
+            customer_email: `${shopDomain}@astronote.com`, // Use shop domain as email
+            customer_creation: 'always',
+          }),
         billing_address_collection: 'required',
         shipping_address_collection: {
           allowed_countries: [
@@ -120,6 +241,12 @@ export async function createStripeCheckoutSession({
         payment_intent_data: {
           statement_descriptor: 'ASTRONOTE MARKETING',
         },
+        ...(isStripeTaxEnabled()
+          ? {
+            automatic_tax: { enabled: true },
+            tax_id_collection: { enabled: true },
+          }
+          : {}),
       };
 
       // Add idempotency key if provided (aligned with Retail)
@@ -520,6 +647,7 @@ export async function createSubscriptionCheckoutSession({
   shopDomain,
   planType,
   currency = 'EUR',
+  stripeCustomerId = null,
   successUrl,
   cancelUrl,
 }) {
@@ -574,6 +702,33 @@ export async function createSubscriptionCheckoutSession({
     );
   }
 
+  // Validate URLs before sending to Stripe (fail fast with clear diagnostics)
+  const { isValidAbsoluteUrl } = await import('../utils/url-helpers.js');
+  if (!isValidAbsoluteUrl(successUrl)) {
+    logger.error('Invalid success URL for Stripe checkout', {
+      successUrl,
+      shopId,
+      planType,
+      currency,
+      frontendUrl: process.env.FRONTEND_URL || process.env.WEB_APP_URL || '(not set)',
+    });
+    throw new Error(
+      `Invalid success URL: "${successUrl}". Must be a valid absolute URL with https:// protocol. Please check FRONTEND_URL, FRONTEND_BASE_URL, or WEB_APP_URL environment variable.`,
+    );
+  }
+  if (!isValidAbsoluteUrl(cancelUrl)) {
+    logger.error('Invalid cancel URL for Stripe checkout', {
+      cancelUrl,
+      shopId,
+      planType,
+      currency,
+      frontendUrl: process.env.FRONTEND_URL || process.env.WEB_APP_URL || '(not set)',
+    });
+    throw new Error(
+      `Invalid cancel URL: "${cancelUrl}". Must be a valid absolute URL with https:// protocol. Please check FRONTEND_URL, FRONTEND_BASE_URL, or WEB_APP_URL environment variable.`,
+    );
+  }
+
   try {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -592,7 +747,9 @@ export async function createSubscriptionCheckoutSession({
         planType,
         type: 'subscription',
       },
-      customer_email: `${shopDomain}@astronote.com`,
+      ...(stripeCustomerId
+        ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+        : { customer_email: `${shopDomain}@astronote.com` }),
       client_reference_id: `shop_${shopId}`,
       subscription_data: {
         metadata: {
@@ -601,6 +758,12 @@ export async function createSubscriptionCheckoutSession({
           planType,
         },
       },
+      ...(isStripeTaxEnabled()
+        ? {
+          automatic_tax: { enabled: true },
+          tax_id_collection: { enabled: true },
+        }
+        : {}),
       expand: ['line_items', 'subscription'],
     });
 
@@ -613,13 +776,34 @@ export async function createSubscriptionCheckoutSession({
 
     return session;
   } catch (err) {
-    // Handle Stripe-specific errors
+    // Enhanced error handling with URL diagnostics
     if (err.type === 'StripeInvalidRequestError') {
+      // Log detailed Stripe error information
+      logger.error('Stripe API error', {
+        type: err.type,
+        code: err.code,
+        param: err.param,
+        message: err.message,
+        successUrl,
+        cancelUrl,
+        priceId,
+        shopId,
+        planType,
+      });
+
       if (err.message?.includes('recurring price')) {
         throw new Error(
           `The price ID ${priceId} is not configured as a recurring price in Stripe. Please create a recurring price for the ${planType} plan.`,
         );
       }
+
+      // Check if error is about URLs
+      if (err.message?.includes('Not a valid URL') || err.param?.includes('url')) {
+        throw new Error(
+          `Stripe error: Invalid URL in ${err.param || 'redirect URL'}. Success URL: ${successUrl}, Cancel URL: ${cancelUrl}. Please check FRONTEND_URL configuration.`,
+        );
+      }
+
       throw new Error(`Stripe error: ${err.message}`);
     }
     throw err;
@@ -644,6 +828,7 @@ export async function createCreditTopupCheckoutSession({
   credits,
   priceEur,
   currency = 'EUR',
+  stripeCustomerId = null,
   successUrl,
   cancelUrl,
 }) {
@@ -682,8 +867,19 @@ export async function createCreditTopupCheckoutSession({
         priceEur: String(priceEur),
         type: 'credit_topup',
       },
-      customer_email: `${shopDomain}@astronote.com`,
+      ...(stripeCustomerId
+        ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+        : {
+          customer_email: `${shopDomain}@astronote.com`,
+          customer_creation: 'always',
+        }),
       client_reference_id: `shop_${shopId}_topup_${credits}`,
+      ...(isStripeTaxEnabled()
+        ? {
+          automatic_tax: { enabled: true },
+          tax_id_collection: { enabled: true },
+        }
+        : {}),
       expand: ['line_items'],
     });
 
@@ -749,8 +945,19 @@ export async function createCreditTopupCheckoutSession({
         priceEur: String(priceEur),
         type: 'credit_topup',
       },
-      customer_email: `${shopDomain}@astronote.com`,
+      ...(stripeCustomerId
+        ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+        : {
+          customer_email: `${shopDomain}@astronote.com`,
+          customer_creation: 'always',
+        }),
       client_reference_id: `shop_${shopId}_topup_${credits}`,
+      ...(isStripeTaxEnabled()
+        ? {
+          automatic_tax: { enabled: true },
+          tax_id_collection: { enabled: true },
+        }
+        : {}),
       expand: ['line_items'],
     });
     return session;
@@ -777,8 +984,19 @@ export async function createCreditTopupCheckoutSession({
       priceEur: String(priceEur),
       type: 'credit_topup',
     },
-    customer_email: `${shopDomain}@astronote.com`,
+    ...(stripeCustomerId
+      ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+      : {
+        customer_email: `${shopDomain}@astronote.com`,
+        customer_creation: 'always',
+      }),
     client_reference_id: `shop_${shopId}_topup_${credits}`,
+    ...(isStripeTaxEnabled()
+      ? {
+        automatic_tax: { enabled: true },
+        tax_id_collection: { enabled: true },
+      }
+      : {}),
     expand: ['line_items'],
   });
 
@@ -884,6 +1102,9 @@ export default {
   handlePaymentFailure,
   getCustomerByEmail,
   createCustomer,
+  ensureStripeCustomer,
+  syncStripeCustomerBillingProfile,
+  isStripeTaxEnabled,
   getStripeSubscriptionPriceId,
   getStripeCreditTopupPriceId,
   getStripePriceId,
