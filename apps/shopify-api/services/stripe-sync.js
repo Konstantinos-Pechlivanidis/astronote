@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger.js';
-import { prisma } from '../utils/prisma.js';
+import prisma from './prisma.js';
 import { SubscriptionStatus } from '../utils/prismaEnums.js';
 
 let stripe = null;
