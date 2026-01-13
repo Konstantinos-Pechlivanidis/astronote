@@ -91,11 +91,11 @@ export function useCancelSubscription() {
       await subscriptionsApi.cancel();
     },
     onSuccess: () => {
-      // Invalidate subscription status and billing summary
+      // Invalidate queries to refresh UI with updated status
       queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
-      toast.success('Subscription cancelled successfully');
+      toast.success('Subscription will cancel at the end of the current billing period. You will retain access until then.');
     },
     onError: (error: any) => {
       const apiError = error as BillingApiError;
@@ -146,16 +146,75 @@ export function useSwitchInterval() {
       const response = await subscriptionsApi.switchInterval(data);
       return response;
     },
-    onSuccess: () => {
-      // Invalidate subscription status and billing summary
+    onSuccess: (data) => {
+      // Invalidate subscription status and billing summary to refresh UI
       queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
-      toast.success('Subscription interval updated successfully');
+
+      // Show appropriate message based on whether change is immediate or scheduled
+      if (data.scheduled && data.effectiveAt) {
+        const effectiveDate = new Date(data.effectiveAt).toLocaleDateString();
+        toast.success(`Subscription will switch to ${data.interval === 'year' ? 'yearly' : 'monthly'} billing on ${effectiveDate}`);
+      } else {
+        toast.success('Subscription interval updated successfully');
+      }
     },
     onError: (error: any) => {
       const apiError = error as BillingApiError;
       const message = apiError?.message || error.response?.data?.message || 'Failed to switch subscription interval';
+      toast.error(message);
+    },
+  });
+}
+
+/**
+ * React Query hook for reconciling subscription with Stripe
+ */
+export function useReconcileSubscription() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await subscriptionsApi.reconcile();
+      return response;
+    },
+    onSuccess: () => {
+      // Invalidate all subscription-related queries to refresh UI
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      toast.success('Subscription status refreshed from Stripe');
+    },
+    onError: (error: any) => {
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to reconcile subscription';
+      toast.error(message);
+    },
+  });
+}
+
+/**
+ * React Query hook for resuming subscription (undo cancellation)
+ */
+export function useResumeSubscription() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await subscriptionsApi.resume();
+      return response;
+    },
+    onSuccess: () => {
+      // Invalidate queries to refresh UI with updated status
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      toast.success('Subscription resumed successfully');
+    },
+    onError: (error: any) => {
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to resume subscription';
       toast.error(message);
     },
   });

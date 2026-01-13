@@ -821,23 +821,41 @@ export async function createSubscriptionCheckoutSession({
         planType,
         type: 'subscription',
       },
+      // Professional billing details collection
+      billing_address_collection: 'required', // Always collect billing address
       ...(stripeCustomerId
-        ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
-        : { customer_email: billingProfile?.billingEmail || null }),
+        ? {
+          customer: stripeCustomerId,
+          customer_update: {
+            address: 'auto',
+            name: 'auto',
+            // Allow customer to update email in checkout if needed
+          },
+        }
+        : {
+          customer_email: billingProfile?.billingEmail || undefined, // Pre-fill if available
+          customer_creation: 'always',
+        }),
       client_reference_id: `shop_${shopId}`,
       subscription_data: {
         metadata: {
           shopId: String(shopId),
           storeId: String(shopId), // Keep for backward compatibility
           planType,
+          interval: resolvedInterval,
+          currency: String(currency).toUpperCase(),
         },
       },
+      // Enable tax collection (VAT/AFM) - always collect tax IDs for professional billing
       ...(isStripeTaxEnabled()
         ? {
           automatic_tax: { enabled: true },
-          tax_id_collection: { enabled: true },
+          tax_id_collection: { enabled: true }, // Collect VAT/AFM during checkout
         }
-        : {}),
+        : {
+          // Even without Stripe Tax, collect tax IDs for manual processing
+          tax_id_collection: { enabled: true },
+        }),
       expand: ['line_items', 'subscription'],
     });
 
@@ -1166,12 +1184,44 @@ export async function updateSubscription(
  * @param {string} subscriptionId - Stripe subscription ID
  * @returns {Promise<Object>} Cancelled subscription
  */
-export async function cancelSubscription(subscriptionId) {
+/**
+ * Cancel subscription (at period end - professional behavior)
+ * Sets cancel_at_period_end=true so user keeps access until period ends
+ * @param {string} subscriptionId - Stripe subscription ID
+ * @param {boolean} immediate - If true, cancel immediately. If false (default), cancel at period end
+ * @returns {Promise<Object>} Updated subscription
+ */
+export async function cancelSubscription(subscriptionId, immediate = false) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
   }
 
-  return stripe.subscriptions.cancel(subscriptionId);
+  if (immediate) {
+    // Immediate cancellation (rare, usually for fraud/abuse)
+    return stripe.subscriptions.cancel(subscriptionId);
+  }
+
+  // Professional cancellation: cancel at period end (user keeps access until paid period ends)
+  return stripe.subscriptions.update(subscriptionId, {
+    cancel_at_period_end: true,
+  });
+}
+
+/**
+ * Resume subscription (undo cancellation)
+ * Sets cancel_at_period_end=false to continue subscription
+ * @param {string} subscriptionId - Stripe subscription ID
+ * @returns {Promise<Object>} Updated subscription
+ */
+export async function resumeSubscription(subscriptionId) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+
+  // Resume subscription: remove cancellation flag
+  return stripe.subscriptions.update(subscriptionId, {
+    cancel_at_period_end: false,
+  });
 }
 
 /**

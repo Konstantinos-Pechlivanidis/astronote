@@ -238,12 +238,18 @@ export async function getSubscriptionStatus(shopId) {
 
     // Mismatch detection: If we have Stripe subscription ID, verify against Stripe
     let stripeTruth = null;
+    let stripeSubscription = null;
+    let subscriptionCurrency = currency;
     if (shop.stripeSubscriptionId && stripe) {
       try {
-        const stripeSub = await stripe.subscriptions.retrieve(shop.stripeSubscriptionId, {
+        stripeSubscription = await stripe.subscriptions.retrieve(shop.stripeSubscriptionId, {
           expand: ['items.data.price'],
         });
-        const priceId = stripeSub.items?.data?.[0]?.price?.id;
+        const priceId = stripeSubscription.items?.data?.[0]?.price?.id;
+        // Derive subscription currency from Stripe if available
+        subscriptionCurrency = stripeSubscription.items?.data?.[0]?.price?.currency
+          ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
+          : currency;
         if (priceId) {
           const planCatalog = await import('./plan-catalog.js');
           const resolved = planCatalog.resolvePlanFromPriceId(priceId);
@@ -362,6 +368,34 @@ export async function getSubscriptionStatus(shopId) {
       sourceOfTruth: subscriptionRecord?.sourceOfTruth || null,
       derivedFrom,
       mismatchDetected: false,
+      // Truth table debugger (for diagnostics - dev only)
+      _debug: process.env.NODE_ENV === 'development' ? {
+        stripeDerived: stripeSubscription ? {
+          priceId: stripeSubscription.items?.data?.[0]?.price?.id || null,
+          interval: stripeTruth?.interval || null,
+          currency: subscriptionCurrency || null,
+          status: stripeSubscription.status || null,
+          currentPeriodEnd: stripeSubscription.current_period_end
+            ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
+            : null,
+          cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end || false,
+        } : null,
+        dbStored: {
+          planCode: subscriptionRecord?.planCode || shop.planType || null,
+          interval: subscriptionRecord?.interval || shop.subscriptionInterval || null,
+          currency: subscriptionRecord?.currency || shop.currency || null,
+          status: subscriptionRecord?.status || shop.subscriptionStatus || null,
+          stripeSubscriptionId: subscriptionRecord?.stripeSubscriptionId || shop.stripeSubscriptionId || null,
+          lastSyncedAt: subscriptionRecord?.lastSyncedAt || null,
+        },
+        dtoReturned: {
+          planCode: planCode || null,
+          interval: interval || null,
+          currency: currency || null,
+          status: status || null,
+          pendingChange: pendingChange || null,
+        },
+      } : undefined,
     };
   } catch (err) {
     logger.error(
@@ -1245,10 +1279,10 @@ export async function reconcileSubscriptionFromStripe(shopId) {
  * Switch subscription interval (monthly/yearly) - KEEPS SAME PLAN CODE
  * @param {string} shopId - Shop ID
  * @param {string} interval - 'month' or 'year'
- * @param {string} behavior - 'immediate' or 'period_end' (default: 'immediate')
+ * @param {string} behavior - 'immediate' or 'period_end' (default: 'period_end' for professional behavior)
  * @returns {Promise<Object>} Switch result
  */
-export async function switchSubscriptionInterval(shopId, interval, behavior = 'immediate') {
+export async function switchSubscriptionInterval(shopId, interval, behavior = 'period_end') {
   try {
     if (!['month', 'year'].includes(interval)) {
       throw new Error(`Invalid interval: ${interval}. Must be 'month' or 'year'`);
@@ -1292,7 +1326,7 @@ export async function switchSubscriptionInterval(shopId, interval, behavior = 'i
 
     // Update Stripe subscription with new interval's price ID (same planCode, different interval)
     const { updateSubscription } = await import('./stripe.js');
-    await updateSubscription(
+    const updatedStripeSubscription = await updateSubscription(
       subscription.stripeSubscriptionId,
       currentPlanCode,
       currency,
@@ -1300,24 +1334,72 @@ export async function switchSubscriptionInterval(shopId, interval, behavior = 'i
       behavior,
     );
 
-    // Update local DB immediately (webhook will also update, but this prevents race conditions)
-    // Note: activateSubscription may need to be updated to accept interval
-    await activateSubscription(
-      shopId,
-      subscription.stripeCustomerId,
-      subscription.stripeSubscriptionId,
-      currentPlanCode,
-      interval,
-    );
+    // Handle immediate vs scheduled changes
+    if (behavior === 'immediate') {
+      // Immediate change: update DB now
+      await activateSubscription(
+        shopId,
+        subscription.stripeCustomerId,
+        subscription.stripeSubscriptionId,
+        currentPlanCode,
+        interval,
+      );
+    } else {
+      // Scheduled at period end: store pending change in DB
+      const effectiveAt = updatedStripeSubscription.current_period_end
+        ? new Date(updatedStripeSubscription.current_period_end * 1000)
+        : null;
+
+      // Update Shop record with cancelAtPeriodEnd if needed (but keep status active)
+      await prisma.shop.update({
+        where: { id: shopId },
+        data: {
+          // Keep current interval until period end
+          // cancelAtPeriodEnd remains as is
+        },
+      });
+
+      // Update Subscription record with pending change
+      try {
+        await prisma.subscription.updateMany({
+          where: { shopId },
+          data: {
+            pendingChangePlanCode: currentPlanCode, // Same plan, different interval
+            pendingChangeInterval: interval,
+            pendingChangeCurrency: currency,
+            pendingChangeEffectiveAt: effectiveAt,
+            lastSyncedAt: new Date(),
+            sourceOfTruth: 'switch_interval',
+          },
+        });
+      } catch (updateErr) {
+        // If columns don't exist yet, log warning but continue
+        logger.warn('Could not store pending change in Subscription record', {
+          shopId,
+          error: updateErr.message,
+        });
+      }
+    }
 
     logger.info(
-      { shopId, interval, oldInterval: subscription.interval, planCode: currentPlanCode },
+      {
+        shopId,
+        interval,
+        oldInterval: subscription.interval,
+        planCode: currentPlanCode,
+        behavior,
+        scheduled: behavior === 'period_end',
+      },
       'Subscription interval switched',
     );
 
     return {
       interval,
       planCode: currentPlanCode,
+      scheduled: behavior === 'period_end',
+      effectiveAt: behavior === 'period_end' && updatedStripeSubscription.current_period_end
+        ? new Date(updatedStripeSubscription.current_period_end * 1000).toISOString()
+        : null,
     };
   } catch (err) {
     logger.error(

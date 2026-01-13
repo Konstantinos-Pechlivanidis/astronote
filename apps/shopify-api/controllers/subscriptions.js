@@ -4,7 +4,6 @@ import { getStoreId } from '../middlewares/store-resolution.js';
 import {
   getSubscriptionStatus,
   activateSubscription,
-  deactivateSubscription,
   allocateFreeCredits,
   getPlanConfig,
   reconcileSubscriptionFromStripe,
@@ -14,6 +13,7 @@ import {
   createSubscriptionCheckoutSession,
   updateSubscription,
   cancelSubscription,
+  resumeSubscription,
   getCheckoutSession,
   ensureStripeCustomer,
 } from '../services/stripe.js';
@@ -415,11 +415,13 @@ export async function switchInterval(req, res, next) {
       return; // update() already sends response
     }
 
-    // If only interval was provided, return success
+    // If only interval was provided, return updated subscription status
+    const updatedStatus = await getSubscriptionStatus(shopId);
     return sendSuccess(
       res,
       {
         interval,
+        subscription: updatedStatus,
       },
       `Subscription interval switched to ${interval} successfully`,
     );
@@ -625,11 +627,37 @@ export async function cancel(req, res, next) {
       );
     }
 
-    // Cancel subscription in Stripe using service function
-    await cancelSubscription(subscription.stripeSubscriptionId);
+    // Cancel subscription in Stripe (at period end - professional behavior)
+    // This sets cancel_at_period_end=true, so status remains 'active' until period ends
+    await cancelSubscription(subscription.stripeSubscriptionId, false);
 
-    // Update local DB immediately
-    await deactivateSubscription(shopId, 'cancelled');
+    // Update local DB: set cancelAtPeriodEnd=true, but keep status as 'active'
+    // Status will change to 'cancelled' when period ends (via webhook)
+    await prisma.shop.update({
+      where: { id: shopId },
+      data: {
+        cancelAtPeriodEnd: true,
+        // Keep status as 'active' - Stripe keeps it active until period end
+        // Do NOT call deactivateSubscription here
+      },
+    });
+
+    // Also update Subscription record if it exists
+    try {
+      await prisma.subscription.updateMany({
+        where: { shopId },
+        data: {
+          cancelAtPeriodEnd: true,
+          // Status remains 'active' until period end
+        },
+      });
+    } catch (updateErr) {
+      // Ignore if Subscription table doesn't have these columns yet
+      logger.debug('Could not update Subscription record for cancel', {
+        shopId,
+        error: updateErr.message,
+      });
+    }
 
     logger.info(
       {
@@ -639,15 +667,108 @@ export async function cancel(req, res, next) {
       'Subscription cancelled',
     );
 
+    // Return updated status
+    const updatedStatus = await getSubscriptionStatus(shopId);
     return sendSuccess(
       res,
       {
         cancelledAt: new Date().toISOString(),
+        subscription: updatedStatus,
       },
       'Subscription cancelled successfully',
     );
   } catch (error) {
     logger.error('Cancel subscription error', {
+      error: error.message,
+      shopId: getStoreId(req),
+    });
+    next(error);
+  }
+}
+
+/**
+ * POST /api/subscriptions/resume
+ * Resume subscription (undo cancellation)
+ */
+export async function resume(req, res, next) {
+  try {
+    const shopId = getStoreId(req);
+
+    const subscription = await getSubscriptionStatus(shopId);
+
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      return sendError(
+        res,
+        400,
+        'NO_ACTIVE_SUBSCRIPTION',
+        'No active subscription found.',
+      );
+    }
+
+    if (!subscription.cancelAtPeriodEnd) {
+      return sendError(
+        res,
+        400,
+        'NOT_CANCELLED',
+        'Subscription is not scheduled for cancellation.',
+      );
+    }
+
+    if (!stripe) {
+      return sendError(
+        res,
+        503,
+        'STRIPE_NOT_CONFIGURED',
+        'Payment processing unavailable',
+      );
+    }
+
+    // Resume subscription in Stripe
+    await resumeSubscription(subscription.stripeSubscriptionId);
+
+    // Update local DB: remove cancellation flag
+    await prisma.shop.update({
+      where: { id: shopId },
+      data: {
+        cancelAtPeriodEnd: false,
+      },
+    });
+
+    // Also update Subscription record if it exists
+    try {
+      await prisma.subscription.updateMany({
+        where: { shopId },
+        data: {
+          cancelAtPeriodEnd: false,
+        },
+      });
+    } catch (updateErr) {
+      // Ignore if Subscription table doesn't have these columns yet
+      logger.debug('Could not update Subscription record for resume', {
+        shopId,
+        error: updateErr.message,
+      });
+    }
+
+    logger.info(
+      {
+        shopId,
+        subscriptionId: subscription.stripeSubscriptionId,
+      },
+      'Subscription resumed',
+    );
+
+    // Return updated status
+    const updatedStatus = await getSubscriptionStatus(shopId);
+    return sendSuccess(
+      res,
+      {
+        subscription: updatedStatus,
+      },
+      'Subscription resumed successfully',
+    );
+  } catch (error) {
+    logger.error('Resume subscription error', {
       error: error.message,
       shopId: getStoreId(req),
     });

@@ -19,8 +19,10 @@ import { useCalculateTopup } from '@/src/features/shopify/billing/hooks/useCalcu
 import {
   useSubscribe,
   useCancelSubscription,
+  useResumeSubscription,
   useGetPortal,
   useSwitchInterval,
+  useReconcileSubscription,
 } from '@/src/features/shopify/billing/hooks/useSubscriptionMutations';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
@@ -39,6 +41,7 @@ import {
   Check,
   ExternalLink,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -68,8 +71,10 @@ function BillingPageContent() {
   const createTopup = useCreateTopup();
   const subscribe = useSubscribe();
   const cancelSubscription = useCancelSubscription();
+  const resumeSubscription = useResumeSubscription();
   const getPortal = useGetPortal();
   const switchInterval = useSwitchInterval();
+  const reconcileSubscription = useReconcileSubscription();
   const syncBillingProfile = useSyncBillingProfileFromStripe();
 
   // Handle URL params for success/cancel and portal return
@@ -314,12 +319,16 @@ function BillingPageContent() {
   };
 
   const handleSwitchInterval = async (interval: 'month' | 'year') => {
-    if (!window.confirm(`Are you sure you want to switch to ${interval === 'month' ? 'monthly' : 'yearly'} billing? This will update your subscription immediately.`)) {
+    const intervalLabel = interval === 'month' ? 'monthly' : 'yearly';
+    const confirmMessage = `Are you sure you want to switch to ${intervalLabel} billing? This change will take effect at the end of your current billing period.`;
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
     try {
       await switchInterval.mutateAsync({ interval });
+      // Status will be refreshed automatically via query invalidation in the mutation hook
     } catch (error) {
       // Error handled by mutation hook
     }
@@ -460,9 +469,37 @@ function BillingPageContent() {
                   )}
                   {currentPeriodEnd && (
                     <p className="text-sm text-text-secondary">
-                      {cancelAtPeriodEnd ? 'Cancels on' : 'Renews on'}{' '}
+                      {cancelAtPeriodEnd ? (
+                        <>
+                          <span className="text-yellow-500 font-semibold">Cancels on</span>{' '}
+                          <span className="font-semibold text-text-primary">
+                            {formatDateSafe(currentPeriodEnd) || '—'}
+                          </span>
+                          {' '}(access until then)
+                        </>
+                      ) : (
+                        <>
+                          Renews on{' '}
+                          <span className="font-semibold text-text-primary">
+                            {formatDateSafe(currentPeriodEnd) || '—'}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  )}
+                  {subscription.pendingChange && (
+                    <p className="text-sm text-text-secondary">
+                      <span className="text-blue-500 font-semibold">Scheduled:</span>{' '}
+                      Will switch to{' '}
                       <span className="font-semibold text-text-primary">
-                        {formatDateSafe(currentPeriodEnd) || '—'}
+                        {subscription.pendingChange.planCode
+                          ? subscription.pendingChange.planCode.charAt(0).toUpperCase() + subscription.pendingChange.planCode.slice(1)
+                          : 'Unknown'}{' '}
+                        — {subscription.pendingChange.interval === 'year' ? 'Yearly' : subscription.pendingChange.interval === 'month' ? 'Monthly' : 'Unknown'}
+                      </span>{' '}
+                      on{' '}
+                      <span className="font-semibold text-text-primary">
+                        {subscription.pendingChange.effectiveAt ? formatDateSafe(subscription.pendingChange.effectiveAt) : '—'}
                       </span>
                     </p>
                   )}
@@ -472,6 +509,23 @@ function BillingPageContent() {
                 <Button onClick={handleManageSubscription} disabled={getPortal.isPending}>
                   <ExternalLink className="mr-2 h-4 w-4" />
                   Manage Payment Method
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => reconcileSubscription.mutate()}
+                  disabled={reconcileSubscription.isPending}
+                >
+                  {reconcileSubscription.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Refreshing...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Refresh Status
+                    </>
+                  )}
                 </Button>
                 {subscriptionInterval && (
                   <>
@@ -494,14 +548,25 @@ function BillingPageContent() {
                     )}
                   </>
                 )}
-                <Button
-                  variant="outline"
-                  onClick={handleCancelSubscription}
-                  disabled={cancelSubscription.isPending}
-                  className="text-red-400 hover:text-red-500"
-                >
-                  Cancel Subscription
-                </Button>
+                {subscription?.cancelAtPeriodEnd ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => resumeSubscription.mutate()}
+                    disabled={resumeSubscription.isPending}
+                    className="text-green-400 hover:text-green-500"
+                  >
+                    Resume Subscription
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={handleCancelSubscription}
+                    disabled={cancelSubscription.isPending}
+                    className="text-red-400 hover:text-red-500"
+                  >
+                    Cancel Subscription
+                  </Button>
+                )}
               </div>
             </div>
           ) : (

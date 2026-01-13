@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useBillingProfile } from '@/src/features/shopify/billing/hooks/useBillingProfile';
 import { billingApi, UpdateBillingProfileRequest } from '@/src/lib/shopifyBillingApi';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
-import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailFormLayout } from '@/src/components/retail/RetailFormLayout';
 import { RetailSectionCard } from '@/src/components/retail/RetailSectionCard';
 import { Button } from '@/components/ui/button';

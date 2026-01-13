@@ -54,6 +54,7 @@ export type SubscriptionStatusCode =
 export interface SubscriptionStatus {
   active: boolean;
   planType: SubscriptionPlanType | null;
+  planCode?: string | null;
   status: SubscriptionStatusCode;
   interval?: 'month' | 'year' | null;
   currentPeriodStart?: string | null;
@@ -63,9 +64,20 @@ export interface SubscriptionStatus {
   usedSmsThisPeriod?: number;
   remainingSmsThisPeriod?: number;
   billingCurrency?: string;
+  currency?: string | null;
   lastBillingError?: string | null;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
+  pendingChange?: {
+    planCode?: string | null;
+    interval?: 'month' | 'year' | null;
+    currency?: string | null;
+    effectiveAt?: string | null;
+  } | null;
+  derivedFrom?: string | null;
+  mismatchDetected?: boolean;
+  lastSyncedAt?: string | null;
+  sourceOfTruth?: string | null;
 }
 
 export interface BillingSummary {
@@ -546,20 +558,32 @@ export const shopifyBillingApi = {
 
   switchSubscription: async (
     data: SwitchIntervalRequest,
-  ): Promise<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean }> =>
+  ): Promise<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string; subscription?: SubscriptionStatus }> =>
     safeRequest(async () => {
-      const response = await shopifyApi.post<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean }>(
+      const response = await shopifyApi.post<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string; subscription?: SubscriptionStatus }>(
         '/subscriptions/switch',
         data,
       );
-      return response as unknown as { interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean };
+      return response as unknown as { interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string; subscription?: SubscriptionStatus };
     }, 'Failed to switch subscription interval'),
 
-  cancelSubscription: async (): Promise<{ cancelledAt?: string }> =>
+  reconcileSubscription: async (): Promise<{ reconciled: boolean; reason?: string; subscription?: SubscriptionStatus }> =>
     safeRequest(async () => {
-      const response = await shopifyApi.post<{ cancelledAt?: string }>('/subscriptions/cancel');
-      return response as unknown as { cancelledAt?: string };
+      const response = await shopifyApi.post<{ reconciled: boolean; reason?: string; subscription?: SubscriptionStatus }>('/subscriptions/reconcile');
+      return response as unknown as { reconciled: boolean; reason?: string; subscription?: SubscriptionStatus };
+    }, 'Failed to reconcile subscription'),
+
+  cancelSubscription: async (): Promise<{ cancelledAt?: string; subscription?: SubscriptionStatus }> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<{ cancelledAt?: string; subscription?: SubscriptionStatus }>('/subscriptions/cancel');
+      return response as unknown as { cancelledAt?: string; subscription?: SubscriptionStatus };
     }, 'Failed to cancel subscription'),
+
+  resumeSubscription: async (): Promise<{ subscription?: SubscriptionStatus }> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<{ subscription?: SubscriptionStatus }>('/subscriptions/resume');
+      return response as unknown as { subscription?: SubscriptionStatus };
+    }, 'Failed to resume subscription'),
 
   getBillingPortalUrl: async (): Promise<PortalResponse> =>
     safeRequest(async () => {
@@ -636,7 +660,9 @@ export const subscriptionsApi = {
   subscribe: shopifyBillingApi.subscribe,
   update: shopifyBillingApi.updateSubscription,
   cancel: shopifyBillingApi.cancelSubscription,
+  resume: shopifyBillingApi.resumeSubscription,
   getPortal: shopifyBillingApi.getBillingPortalUrl,
   switchInterval: shopifyBillingApi.switchSubscription,
   finalize: shopifyBillingApi.finalize,
+  reconcile: shopifyBillingApi.reconcileSubscription,
 };

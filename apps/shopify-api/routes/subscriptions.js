@@ -27,6 +27,9 @@ r.post('/switch', validateBody(subscriptionSwitchSchema), ctrl.switchInterval);
 // POST /subscriptions/cancel - Cancel subscription
 r.post('/cancel', ctrl.cancel);
 
+// POST /subscriptions/resume - Resume subscription (undo cancellation)
+r.post('/resume', ctrl.resume);
+
 // POST /subscriptions/verify-session - Manual verification
 r.post('/verify-session', ctrl.verifySession);
 
