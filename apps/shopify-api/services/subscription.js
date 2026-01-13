@@ -226,6 +226,114 @@ export async function getSubscriptionStatus(shopId) {
       }
       : null;
 
+    // Determine source of truth for debugging
+    let derivedFrom = 'db_fallback';
+    if (subscriptionRecord?.sourceOfTruth) {
+      derivedFrom = subscriptionRecord.sourceOfTruth;
+    } else if (subscriptionRecord?.planCode || subscriptionRecord?.interval) {
+      derivedFrom = 'subscription_record';
+    } else if (shop.planType || shop.subscriptionInterval) {
+      derivedFrom = 'shop_record';
+    }
+
+    // Mismatch detection: If we have Stripe subscription ID, verify against Stripe
+    let stripeTruth = null;
+    if (shop.stripeSubscriptionId && stripe) {
+      try {
+        const stripeSub = await stripe.subscriptions.retrieve(shop.stripeSubscriptionId, {
+          expand: ['items.data.price'],
+        });
+        const priceId = stripeSub.items?.data?.[0]?.price?.id;
+        if (priceId) {
+          const planCatalog = await import('./plan-catalog.js');
+          const resolved = planCatalog.resolvePlanFromPriceId(priceId);
+          if (resolved) {
+            stripeTruth = {
+              planCode: resolved.planCode,
+              interval: resolved.interval,
+              currency: resolved.currency,
+            };
+            // Check for mismatches
+            if (
+              stripeTruth.planCode !== planCode ||
+              stripeTruth.interval !== interval ||
+              stripeTruth.currency !== currency
+            ) {
+              logger.warn('Subscription mismatch detected between DB and Stripe', {
+                shopId,
+                db: { planCode, interval, currency },
+                stripe: stripeTruth,
+              });
+              // Update DB to match Stripe (source of truth)
+              await prisma.shop.update({
+                where: { id: shopId },
+                data: {
+                  planType: stripeTruth.planCode,
+                  subscriptionInterval: stripeTruth.interval,
+                  currency: stripeTruth.currency,
+                },
+              });
+              // Update Subscription record if it exists
+              try {
+                await prisma.subscription.updateMany({
+                  where: { shopId },
+                  data: {
+                    planCode: stripeTruth.planCode,
+                    interval: stripeTruth.interval,
+                    currency: stripeTruth.currency,
+                    lastSyncedAt: new Date(),
+                    sourceOfTruth: 'mismatch_correction',
+                  },
+                });
+              } catch (updateErr) {
+                // Ignore if Subscription table doesn't have these columns yet
+                logger.debug('Could not update Subscription record for mismatch correction', {
+                  shopId,
+                  error: updateErr.message,
+                });
+              }
+              // Return Stripe truth
+              return {
+                active: status === SubscriptionStatus.active,
+                planType: stripeTruth.planCode,
+                planCode: stripeTruth.planCode,
+                status,
+                stripeCustomerId: shop.stripeCustomerId,
+                stripeSubscriptionId: shop.stripeSubscriptionId,
+                lastFreeCreditsAllocatedAt: shop.lastFreeCreditsAllocatedAt,
+                billingCurrency: stripeTruth.currency,
+                currency: stripeTruth.currency,
+                interval: stripeTruth.interval,
+                currentPeriodStart: shop.currentPeriodStart || null,
+                currentPeriodEnd: shop.currentPeriodEnd || null,
+                cancelAtPeriodEnd: shop.cancelAtPeriodEnd ?? false,
+                includedSmsPerPeriod: shop.includedSmsPerPeriod || 0,
+                usedSmsThisPeriod: shop.usedSmsThisPeriod || 0,
+                remainingSmsThisPeriod: Math.max(
+                  0,
+                  (status === SubscriptionStatus.active
+                    ? shop.includedSmsPerPeriod || 0
+                    : 0) - (shop.usedSmsThisPeriod || 0),
+                ),
+                lastBillingError: shop.lastBillingError || null,
+                pendingChange,
+                lastSyncedAt: new Date(),
+                sourceOfTruth: 'mismatch_correction',
+                derivedFrom: 'stripe_priceId',
+                mismatchDetected: true,
+              };
+            }
+          }
+        }
+      } catch (stripeErr) {
+        // If Stripe retrieval fails, continue with DB values
+        logger.debug('Could not verify subscription against Stripe', {
+          shopId,
+          error: stripeErr.message,
+        });
+      }
+    }
+
     return {
       active: status === SubscriptionStatus.active,
       planType: planCode,
@@ -252,6 +360,8 @@ export async function getSubscriptionStatus(shopId) {
       pendingChange,
       lastSyncedAt: subscriptionRecord?.lastSyncedAt || null,
       sourceOfTruth: subscriptionRecord?.sourceOfTruth || null,
+      derivedFrom,
+      mismatchDetected: false,
     };
   } catch (err) {
     logger.error(

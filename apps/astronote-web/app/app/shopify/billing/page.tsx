@@ -254,9 +254,40 @@ function BillingPageContent() {
     }
   };
 
+  // Plan ranking for upgrade/downgrade logic (must match backend plan codes)
+  const PLAN_RANK = {
+    starter: 1,
+    pro: 2,
+  } as const;
+
+  // Helper to compute action label for a plan option
+  const getPlanActionLabel = (targetPlanType: 'starter' | 'pro', targetInterval: 'month' | 'year') => {
+    if (!isSubscriptionActive || !subscriptionPlan) {
+      return 'Subscribe';
+    }
+
+    const currentRank = PLAN_RANK[subscriptionPlan as keyof typeof PLAN_RANK] || 0;
+    const targetRank = PLAN_RANK[targetPlanType] || 0;
+
+    // If different plan
+    if (currentRank !== targetRank) {
+      return currentRank < targetRank ? 'Upgrade' : 'Downgrade';
+    }
+
+    // Same plan, different interval
+    if (subscriptionInterval !== targetInterval) {
+      return targetInterval === 'year' ? 'Switch to Yearly' : 'Switch to Monthly';
+    }
+
+    // Same plan and interval
+    return 'Current Plan';
+  };
+
   const handleSubscribe = async (planType: 'starter' | 'pro') => {
     try {
-      await subscribe.mutateAsync({ planType, currency });
+      // Explicitly set interval: starter = monthly, pro = yearly
+      const interval = planType === 'starter' ? 'month' : 'year';
+      await subscribe.mutateAsync({ planType, interval, currency });
     } catch (error) {
       // Error handled by mutation hook
     }
@@ -392,9 +423,13 @@ function BillingPageContent() {
                 </div>
                 <div className="space-y-2">
                   <p className="text-base text-text-secondary">
-                    {subscriptionPlan === 'starter'
+                    {subscriptionPlan === 'starter' && subscriptionInterval === 'month'
                       ? `${showEurPricing ? `${currencySymbol}40/month` : `Billed in ${currency}`} - 100 free SMS per month`
-                      : `${showEurPricing ? `${currencySymbol}240/year` : `Billed in ${currency}`} - 500 free SMS per year`}
+                      : subscriptionPlan === 'pro' && subscriptionInterval === 'year'
+                        ? `${showEurPricing ? `${currencySymbol}240/year` : `Billed in ${currency}`} - 500 free SMS per year`
+                        : subscriptionPlan
+                          ? `Billed in ${currency} - ${subscriptionInterval === 'month' ? 'Monthly' : subscriptionInterval === 'year' ? 'Yearly' : 'Unknown'} billing`
+                          : 'No active subscription'}
                   </p>
                   {allowance && (
                     <div className="text-sm text-text-secondary space-y-1">
@@ -498,10 +533,11 @@ function BillingPageContent() {
                   </ul>
                   <Button
                     onClick={() => handleSubscribe('starter')}
-                    disabled={subscribe.isPending}
+                    disabled={subscribe.isPending || (isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'month')}
                     className="w-full"
+                    variant={isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'month' ? 'outline' : 'default'}
                   >
-                    Subscribe to Starter
+                    {getPlanActionLabel('starter', 'month')}
                   </Button>
                 </div>
               </RetailCard>
@@ -541,10 +577,11 @@ function BillingPageContent() {
                   </ul>
                   <Button
                     onClick={() => handleSubscribe('pro')}
-                    disabled={subscribe.isPending}
+                    disabled={subscribe.isPending || (isSubscriptionActive && subscriptionPlan === 'pro' && subscriptionInterval === 'year')}
                     className="w-full"
+                    variant={isSubscriptionActive && subscriptionPlan === 'pro' && subscriptionInterval === 'year' ? 'outline' : 'default'}
                   >
-                    Subscribe to Pro
+                    {getPlanActionLabel('pro', 'year')}
                   </Button>
                 </div>
               </RetailCard>
