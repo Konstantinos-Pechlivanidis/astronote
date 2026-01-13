@@ -455,6 +455,7 @@ export async function activateSubscription(
     }
 
     // Determine interval and period dates from Stripe subscription if provided
+    // Use mapping helper to ensure we never assign Stripe object to scalar fields
     let resolvedInterval = interval; // Use provided interval if available
     let currentPeriodStart = null;
     let currentPeriodEnd = null;
@@ -462,8 +463,10 @@ export async function activateSubscription(
     let includedSms = null;
 
     if (stripeSubscription) {
-      if (!resolvedInterval && stripeSubscription.items?.data?.[0]?.price?.recurring) {
-        resolvedInterval = stripeSubscription.items.data[0].price.recurring.interval;
+      // Use mapping helper to safely extract interval (never assign object to scalar)
+      const { extractIntervalFromStripeSubscription } = await import('./stripe-mapping.js');
+      if (!resolvedInterval) {
+        resolvedInterval = extractIntervalFromStripeSubscription(stripeSubscription);
       }
       if (stripeSubscription.current_period_start) {
         currentPeriodStart = new Date(stripeSubscription.current_period_start * 1000);

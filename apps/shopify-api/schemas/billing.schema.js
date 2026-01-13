@@ -155,6 +155,8 @@ export const billingProfileSchema = z.object({
     .optional()
     .nullable(),
   currency: currencySchema.optional(),
+  isBusiness: z.boolean().optional().nullable(),
+  taxTreatment: z.string().trim().max(32).optional().nullable(),
 });
 
 /**

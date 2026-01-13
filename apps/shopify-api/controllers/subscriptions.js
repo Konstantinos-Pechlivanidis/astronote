@@ -285,14 +285,20 @@ export async function subscribe(req, res, next) {
       logger.warn('Billing profile incomplete for checkout', {
         shopId,
         missingFields: profileValidation.missingFields,
+        vatRequired: profileValidation.vatRequired,
       });
+      const errorMessage = profileValidation.vatMessage
+        ? profileValidation.vatMessage
+        : 'Billing profile is incomplete. Please complete your billing details before subscribing.';
       return sendError(
         res,
         400,
         'BILLING_PROFILE_INCOMPLETE',
-        'Billing profile is incomplete. Please complete your billing details before subscribing.',
+        errorMessage,
         {
           missingFields: profileValidation.missingFields,
+          vatRequired: profileValidation.vatRequired || false,
+          vatMessage: profileValidation.vatMessage || null,
         },
       );
     }
@@ -745,7 +751,20 @@ export async function verifySession(req, res, next) {
       }
 
       // Activate subscription
-      await activateSubscription(shopId, customerId, subscriptionId, planType);
+      // Extract interval from Stripe subscription if available
+      const { extractIntervalFromStripeSubscription } = await import('../services/stripe-mapping.js');
+      const extractedInterval = stripeSubscription
+        ? extractIntervalFromStripeSubscription(stripeSubscription)
+        : null;
+
+      await activateSubscription(
+        shopId,
+        customerId,
+        subscriptionId,
+        planType,
+        extractedInterval, // Pass string, not object
+        stripeSubscription || null, // Pass as last parameter (optional)
+      );
 
       // Allocate free credits
       const result = await allocateFreeCredits(
@@ -1106,7 +1125,21 @@ export async function finalize(req, res, next) {
       sessionId,
     });
 
-    await activateSubscription(shopId, customerId, subscriptionId, planType, stripeSubscription);
+    // Extract interval from Stripe subscription before calling activateSubscription
+    // This prevents passing the entire Stripe object as the interval parameter
+    const { extractIntervalFromStripeSubscription } = await import('../services/stripe-mapping.js');
+    const extractedInterval = stripeSubscription
+      ? extractIntervalFromStripeSubscription(stripeSubscription)
+      : null;
+
+    await activateSubscription(
+      shopId,
+      customerId,
+      subscriptionId,
+      planType,
+      extractedInterval, // Pass string, not object
+      stripeSubscription, // Pass as last parameter (optional)
+    );
 
     // Allocate free credits (idempotent)
     const creditResult = await allocateFreeCredits(

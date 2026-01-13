@@ -667,6 +667,8 @@ export async function updateProfile(req, res, next) {
       billingEmail,
       billingAddress,
       currency,
+      isBusiness,
+      taxTreatment,
     } = req.body;
 
     const profile = await upsertBillingProfile(storeId, {
@@ -676,6 +678,8 @@ export async function updateProfile(req, res, next) {
       billingEmail: billingEmail || null,
       billingAddress: billingAddress || null,
       currency: currency || undefined,
+      isBusiness: isBusiness !== undefined ? Boolean(isBusiness) : undefined,
+      taxTreatment: taxTreatment || null,
     });
 
     if (currency) {

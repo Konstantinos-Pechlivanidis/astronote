@@ -644,12 +644,19 @@ model ShopBillingProfile {
   currency       String   @default("EUR")
   taxStatus      String?  @db.VarChar(32)
   taxExempt      Boolean  @default(false)
+  // Business and VAT validation fields
+  isBusiness     Boolean  @default(false)
+  vatValidated   Boolean? // null = not validated, true = valid, false = invalid
+  validatedAt    DateTime?
+  validationSource String? @db.VarChar(32) // 'stripe' | 'manual' | 'api'
+  taxTreatment   String?  @db.VarChar(32) // 'domestic_vat' | 'eu_reverse_charge' | 'eu_b2c' | 'non_eu'
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@index([vatNumber])
   @@index([vatCountry])
+  @@index([isBusiness])
 }
 
 model Subscription {

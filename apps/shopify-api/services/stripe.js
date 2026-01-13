@@ -102,26 +102,83 @@ export async function syncStripeCustomerBillingProfile({
     address: address || undefined,
   });
 
+  // Sync VAT/Tax ID to Stripe (idempotent)
   if (billingProfile?.vatNumber) {
     try {
-      const existing = await stripe.customers.listTaxIds(stripeCustomerId, {
+      const normalizedVatNumber = String(billingProfile.vatNumber).replace(/\s+/g, '').toUpperCase();
+      const vatCountry = billingProfile.vatCountry || billingProfile.billingAddress?.country || 'GR';
+
+      // List existing tax IDs
+      const existingTaxIds = await stripe.customers.listTaxIds(stripeCustomerId, {
         limit: 100,
       });
-      const alreadyExists = existing.data.some(
-        (taxId) => taxId.value === billingProfile.vatNumber,
+
+      // Check if VAT number already exists
+      const existingVatTaxId = existingTaxIds.data.find(
+        (taxId) => taxId.type === 'eu_vat' && String(taxId.value).replace(/\s+/g, '').toUpperCase() === normalizedVatNumber,
       );
-      if (!alreadyExists) {
-        await stripe.customers.createTaxId(stripeCustomerId, {
+
+      if (existingVatTaxId) {
+        // Update validation status if changed
+        const validationStatus = existingVatTaxId.verification?.status;
+        if (validationStatus === 'verified' && !billingProfile.vatValidated) {
+          // Tax ID is verified in Stripe, update our DB (caller should handle this)
+          logger.debug('Stripe tax ID already verified', {
+            stripeCustomerId,
+            taxId: existingVatTaxId.id,
+            status: validationStatus,
+          });
+        }
+      } else {
+        // Create new tax ID
+        const taxId = await stripe.customers.createTaxId(stripeCustomerId, {
           type: 'eu_vat',
-          value: billingProfile.vatNumber,
+          value: normalizedVatNumber,
+        });
+
+        logger.info('Stripe customer tax ID created', {
+          stripeCustomerId,
+          taxId: taxId.id,
+          vatNumber: `${normalizedVatNumber.substring(0, 4)}...`, // Log partial for security
+          country: vatCountry,
         });
       }
+
+      // Remove any other EU VAT tax IDs if we have a new one (keep only the current one)
+      const otherVatTaxIds = existingTaxIds.data.filter(
+        (taxId) => taxId.type === 'eu_vat' && taxId.id !== existingVatTaxId?.id,
+      );
+      for (const oldTaxId of otherVatTaxIds) {
+        try {
+          await stripe.customers.deleteTaxId(stripeCustomerId, oldTaxId.id);
+          logger.debug('Removed old Stripe tax ID', {
+            stripeCustomerId,
+            oldTaxId: oldTaxId.id,
+          });
+        } catch (deleteError) {
+          logger.warn('Failed to remove old Stripe tax ID', {
+            stripeCustomerId,
+            oldTaxId: oldTaxId.id,
+            error: deleteError.message,
+          });
+        }
+      }
     } catch (error) {
+      // Log error but don't fail the entire sync
       logger.warn(
-        { stripeCustomerId, error: error.message },
+        {
+          stripeCustomerId,
+          error: error.message,
+          errorCode: error.code,
+          errorType: error.type,
+        },
         'Failed to sync Stripe customer tax ID',
       );
     }
+  } else {
+    // If VAT number was removed, optionally clean up Stripe tax IDs
+    // (We keep them for historical purposes, but this could be configurable)
+    logger.debug('No VAT number to sync to Stripe', { stripeCustomerId });
   }
 
   return stripeCustomerId;

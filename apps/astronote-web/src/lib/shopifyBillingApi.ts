@@ -169,6 +169,11 @@ export interface BillingProfile {
   currency?: string;
   taxStatus?: string | null;
   taxExempt?: boolean;
+  isBusiness?: boolean;
+  vatValidated?: boolean | null;
+  validatedAt?: string | null;
+  validationSource?: string | null;
+  taxTreatment?: string | null;
 }
 
 export interface InvoiceRecord {
@@ -219,6 +224,8 @@ export interface UpdateBillingProfileRequest {
   billingEmail?: string | null;
   billingAddress?: BillingProfile['billingAddress'];
   currency?: string;
+  isBusiness?: boolean | null;
+  taxTreatment?: string | null;
 }
 
 export interface CheckoutSessionResponse {

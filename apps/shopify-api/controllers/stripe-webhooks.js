@@ -359,7 +359,19 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
       { shopId, planType, subscriptionId },
       'Activating subscription',
     );
-    await activateSubscription(shopId, customerId, subscriptionId, planType, stripeSubscription);
+    // Extract interval from Stripe subscription before calling activateSubscription
+    // This prevents passing the entire Stripe object as the interval parameter
+    const { extractIntervalFromStripeSubscription } = await import('../services/stripe-mapping.js');
+    const extractedInterval = extractIntervalFromStripeSubscription(stripeSubscription);
+
+    await activateSubscription(
+      shopId,
+      customerId,
+      subscriptionId,
+      planType,
+      extractedInterval, // Pass string, not object
+      stripeSubscription, // Pass as last parameter (optional)
+    );
     logger.info(
       { shopId, planType, subscriptionId },
       'Subscription activated successfully with allowance tracking',

@@ -46,14 +46,16 @@ export async function getBillingProfile(shopId) {
 /**
  * Validate billing profile completeness for checkout
  * Required fields: billingEmail, legalName, country, address line1
+ * VAT rules: If country=GR and isBusiness=true, VAT number is required
  * @param {Object} profile - Billing profile object
- * @returns {Object} { valid: boolean, missingFields: string[] }
+ * @returns {Object} { valid: boolean, missingFields: string[], vatRequired: boolean, vatMessage?: string }
  */
 export function validateBillingProfileForCheckout(profile) {
   if (!profile) {
     return {
       valid: false,
       missingFields: ['billingEmail', 'legalName', 'country', 'address.line1'],
+      vatRequired: false,
     };
   }
 
@@ -80,9 +82,25 @@ export function validateBillingProfileForCheckout(profile) {
     missingFields.push('address.line1');
   }
 
+  // VAT validation rules
+  const normalizedCountry = country ? String(country).toUpperCase().trim() : null;
+  const isBusiness = profile.isBusiness === true;
+  const hasVatNumber = profile.vatNumber && profile.vatNumber.trim();
+
+  // Rule: If country is GR (Greece) and isBusiness=true, VAT number is required
+  const vatRequired = normalizedCountry === 'GR' && isBusiness;
+  let vatMessage = null;
+
+  if (vatRequired && !hasVatNumber) {
+    missingFields.push('vatNumber');
+    vatMessage = 'VAT number (AFM) is required for Greek businesses. Please provide your VAT number.';
+  }
+
   return {
     valid: missingFields.length === 0,
     missingFields,
+    vatRequired,
+    vatMessage,
   };
 }
 
