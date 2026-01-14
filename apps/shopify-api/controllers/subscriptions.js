@@ -24,6 +24,7 @@ import {
   decideChangeMode,
   isValidScheduledChange,
 } from '../services/subscription-change-policy.js';
+import { getImpliedInterval } from '../services/plan-catalog.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
 import { getBillingProfile } from '../services/billing-profile.js';
@@ -33,6 +34,50 @@ const stripe = process.env.STRIPE_SECRET_KEY
     apiVersion: '2024-06-20',
   })
   : null;
+
+function normalizeInterval(value) {
+  if (value == null) {
+    return null;
+  }
+  const str = String(value).toLowerCase();
+  return ['month', 'year'].includes(str) ? str : null;
+}
+
+function enforceImpliedIntervalOrSendError(res, planType, requestedInterval) {
+  const implied = getImpliedInterval(planType);
+  if (!implied) {
+    sendError(res, 400, 'INVALID_PLAN_TYPE', `Invalid plan type: ${planType}`);
+    return { ok: false };
+  }
+
+  if (requestedInterval == null) {
+    return { ok: true, resolvedInterval: implied };
+  }
+
+  const normalized = normalizeInterval(requestedInterval);
+  if (!normalized) {
+    sendError(
+      res,
+      400,
+      'VALIDATION_ERROR',
+      `Invalid interval: ${requestedInterval}. Allowed: month, year`,
+    );
+    return { ok: false };
+  }
+
+  if (normalized !== implied) {
+    sendError(
+      res,
+      400,
+      'INVALID_INTERVAL_FOR_PLAN',
+      'Invalid interval for plan. starter=month, pro=year',
+      { planType, interval: normalized, impliedInterval: implied },
+    );
+    return { ok: false };
+  }
+
+  return { ok: true, resolvedInterval: normalized };
+}
 
 /**
  * GET /api/subscriptions/status
@@ -166,15 +211,12 @@ export async function subscribe(req, res, next) {
       );
     }
 
-    // Validate and resolve interval
-    const validIntervals = ['month', 'year'];
-    let resolvedInterval = interval;
-    if (!resolvedInterval || !validIntervals.includes(resolvedInterval.toLowerCase())) {
-      // Legacy: use defaults (starter=month, pro=year)
-      resolvedInterval = planType === 'starter' ? 'month' : 'year';
-    } else {
-      resolvedInterval = resolvedInterval.toLowerCase();
+    // Simplified policy: starter=month, pro=year (interval may be omitted; if provided must match).
+    const intervalCheck = enforceImpliedIntervalOrSendError(res, planType, interval);
+    if (!intervalCheck.ok) {
+      return;
     }
+    const resolvedInterval = intervalCheck.resolvedInterval;
 
     // Get currency from request or shop settings (aligned with Retail)
     const validCurrencies = ['EUR', 'USD'];
@@ -344,6 +386,7 @@ export async function switchInterval(req, res, next) {
     const shopId = getStoreId(req);
     const { interval: targetInterval, planType: targetPlanCode } = req.body;
     let changeMode = null;
+    let normalizedTarget = null;
 
     if (!targetInterval && !targetPlanCode) {
       return sendError(
@@ -374,6 +417,48 @@ export async function switchInterval(req, res, next) {
 
     // If only interval switch (same plan, different interval)
     if (targetInterval) {
+      // Simplified policy: interval is implied by plan (starter=month, pro=year).
+      // Do not allow switching to an unsupported interval.
+      const currentPlan = subscription.planCode || subscription.planType;
+      const implied = getImpliedInterval(currentPlan);
+      normalizedTarget = normalizeInterval(targetInterval);
+      if (!normalizedTarget) {
+        return sendError(
+          res,
+          400,
+          'VALIDATION_ERROR',
+          `Invalid interval: ${targetInterval}. Allowed: month, year`,
+        );
+      }
+      if (implied && normalizedTarget !== implied) {
+        return sendError(
+          res,
+          400,
+          'INVALID_INTERVAL_FOR_PLAN',
+          'Invalid interval for plan. starter=month, pro=year',
+          { planType: currentPlan, interval: normalizedTarget, impliedInterval: implied },
+        );
+      }
+
+      // If requested interval equals current interval, treat as no-op.
+      if (subscription.interval && normalizedTarget === String(subscription.interval).toLowerCase()) {
+        const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
+        const subscriptionDto = {
+          ...updatedStatus,
+          allowedActions: computeAllowedActions(updatedStatus),
+        };
+        return sendSuccess(
+          res,
+          {
+            interval: normalizedTarget,
+            changeMode: 'none',
+            scheduled: false,
+            subscription: subscriptionDto,
+          },
+          'Subscription already on requested interval',
+        );
+      }
+
       const { switchSubscriptionInterval } = await import('../services/subscription.js');
       changeMode = decideChangeMode(
         {
@@ -382,7 +467,7 @@ export async function switchInterval(req, res, next) {
         },
         {
           planCode: subscription.planCode || subscription.planType,
-          interval: targetInterval,
+          interval: normalizedTarget,
         },
       );
 
@@ -416,7 +501,7 @@ export async function switchInterval(req, res, next) {
       }
 
       const behavior = changeMode === 'scheduled' ? 'period_end' : 'immediate';
-      await switchSubscriptionInterval(shopId, targetInterval, behavior);
+      await switchSubscriptionInterval(shopId, normalizedTarget, behavior);
 
       // Sync DB to Stripe immediately
       const { fetchStripeSubscription, deriveCanonicalFields, syncDbToStripe } = await import('../services/stripe-sync.js');
@@ -438,13 +523,13 @@ export async function switchInterval(req, res, next) {
     return sendSuccess(
       res,
       {
-        interval: targetInterval,
+        interval: normalizedTarget,
         changeMode,
         scheduled: changeMode === 'scheduled',
         effectiveAt: changeMode === 'scheduled' ? updatedStatus.currentPeriodEnd || null : null,
         subscription: subscriptionDto,
       },
-      `Subscription interval switched to ${targetInterval} successfully`,
+      `Subscription interval switched to ${normalizedTarget} successfully`,
     );
   } catch (error) {
     logger.error('Switch subscription interval error', {
@@ -477,15 +562,13 @@ export async function update(req, res, next) {
       );
     }
 
-    // Validate and resolve interval (keep current if not provided)
-    const validIntervals = ['month', 'year'];
-    let resolvedInterval = targetInterval;
-    if (!resolvedInterval || !validIntervals.includes(resolvedInterval.toLowerCase())) {
-      // Keep current interval if not provided
-      resolvedInterval = subscription.interval || (targetPlanCode === 'starter' ? 'month' : 'year');
-    } else {
-      resolvedInterval = resolvedInterval.toLowerCase();
+    // Simplified policy: starter=month, pro=year (interval may be omitted; if provided must match).
+    // For plan updates we always resolve to the target plan implied interval.
+    const intervalCheck = enforceImpliedIntervalOrSendError(res, targetPlanCode, targetInterval);
+    if (!intervalCheck.ok) {
+      return;
     }
+    const resolvedInterval = intervalCheck.resolvedInterval;
 
     // Check if already on the requested plan and interval
     if (subscription.planCode === targetPlanCode && (!targetInterval || subscription.interval === resolvedInterval)) {
@@ -1305,6 +1388,12 @@ export async function verifySession(req, res, next) {
     next(error);
   }
 }
+
+// Test-only exports (no runtime behavior change)
+export const __test = {
+  normalizeInterval,
+  enforceImpliedIntervalOrSendError,
+};
 
 /**
  * GET /api/subscriptions/portal

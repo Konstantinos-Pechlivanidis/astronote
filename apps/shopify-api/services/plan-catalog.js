@@ -32,6 +32,19 @@ export const CURRENCIES = {
 };
 
 /**
+ * Implied intervals for Retail-parity simplified mode:
+ * - starter => month
+ * - pro => year
+ *
+ * Shopify still supports the legacy "matrix" mode (starter/pro × month/year × EUR/USD)
+ * if those env vars are present.
+ */
+export const IMPLIED_INTERVAL_BY_PLAN = {
+  starter: 'month',
+  pro: 'year',
+};
+
+/**
  * Plan ranking (for upgrade/downgrade logic)
  * Lower number = lower tier
  */
@@ -113,6 +126,33 @@ const LEGACY_ENV_VAR_MAP = {
   },
 };
 
+function flattenMatrixEnvVars() {
+  const vars = [];
+  for (const intervals of Object.values(PLAN_CATALOG_CONFIG)) {
+    for (const currencies of Object.values(intervals)) {
+      for (const envVarName of Object.values(currencies)) {
+        vars.push(envVarName);
+      }
+    }
+  }
+  return vars;
+}
+
+function flattenSimplifiedEnvVars() {
+  const vars = [];
+  for (const currencies of Object.values(LEGACY_ENV_VAR_MAP)) {
+    for (const envVarName of Object.values(currencies)) {
+      vars.push(envVarName);
+    }
+  }
+  return vars;
+}
+
+export function getImpliedInterval(planCode) {
+  const normalizedPlanCode = String(planCode || '').toLowerCase();
+  return IMPLIED_INTERVAL_BY_PLAN[normalizedPlanCode] || null;
+}
+
 /**
  * Get Stripe price ID for a plan
  * @param {string} planCode - 'starter' or 'pro'
@@ -148,17 +188,42 @@ export function getPriceId(planCode, interval, currency = 'EUR') {
     return null;
   }
 
-  // Try new format first
-  const envVarName = PLAN_CATALOG_CONFIG[normalizedPlanCode]?.[normalizedInterval]?.[normalizedCurrency];
+  const simplifiedEnvVars = flattenSimplifiedEnvVars();
+  const allSimplifiedPresent = simplifiedEnvVars.every((k) => !!process.env[k]);
+
+  // Prefer simplified (Retail-parity) if fully configured.
+  // In simplified mode, interval must match implied interval (starter=month, pro=year).
+  if (allSimplifiedPresent) {
+    const implied = getImpliedInterval(normalizedPlanCode);
+    if (!implied) {
+      return null;
+    }
+    if (normalizedInterval !== implied) {
+      logger.warn('Interval not supported for plan in simplified mode', {
+        planCode: normalizedPlanCode,
+        interval: normalizedInterval,
+        impliedInterval: implied,
+        currency: normalizedCurrency,
+      });
+      return null;
+    }
+    const legacyEnvVar = LEGACY_ENV_VAR_MAP[normalizedPlanCode]?.[normalizedCurrency];
+    const priceId = legacyEnvVar ? process.env[legacyEnvVar] : null;
+    return priceId || null;
+  }
+
+  // Otherwise try matrix (Billing v2) env vars
+  const envVarName =
+    PLAN_CATALOG_CONFIG[normalizedPlanCode]?.[normalizedInterval]?.[normalizedCurrency];
   if (envVarName) {
     const priceId = process.env[envVarName];
     if (priceId) {
-      logger.debug('Resolved priceId from catalog', {
+      logger.debug('Resolved priceId from matrix catalog', {
         planCode: normalizedPlanCode,
         interval: normalizedInterval,
         currency: normalizedCurrency,
         envVar: envVarName,
-        priceId: `${priceId.substring(0, 10)}...`, // Log partial for debugging
+        priceId: `${priceId.substring(0, 10)}...`,
       });
       return priceId;
     }
@@ -250,34 +315,34 @@ export function resolvePlanFromPriceId(priceId) {
  * @returns {Object} { valid: boolean, missing: string[] }
  */
 export function validateCatalog() {
-  const missing = [];
+  const simplifiedEnvVars = flattenSimplifiedEnvVars();
+  const matrixEnvVars = flattenMatrixEnvVars();
 
-  for (const [planCode, intervals] of Object.entries(PLAN_CATALOG_CONFIG)) {
-    for (const [interval, currencies] of Object.entries(intervals)) {
-      for (const [currency, envVarName] of Object.entries(currencies)) {
-        if (!process.env[envVarName]) {
-          missing.push(`${planCode}/${interval}/${currency} (${envVarName})`);
-        }
-      }
-    }
-  }
+  const anySimplified = simplifiedEnvVars.some((k) => !!process.env[k]);
+  const anyMatrix = matrixEnvVars.some((k) => !!process.env[k]);
 
-  // Also check legacy (for backward compatibility)
-  for (const [planCode, currencies] of Object.entries(LEGACY_ENV_VAR_MAP)) {
-    for (const [currency, envVarName] of Object.entries(currencies)) {
-      if (!process.env[envVarName] && missing.length === 0) {
-        // Only add legacy if no new format exists
-        const newFormatExists = PLAN_CATALOG_CONFIG[planCode]?.[planCode === 'starter' ? 'month' : 'year']?.[currency];
-        if (!newFormatExists) {
-          missing.push(`${planCode}/legacy/${currency} (${envVarName})`);
-        }
-      }
-    }
-  }
+  // Dual-mode validation:
+  // - If simplified is present at all (or nothing is configured), require the full 4-var simplified set.
+  // - Else if only matrix is present, require the full 8-var matrix set.
+  // This keeps BC for existing matrix-only installs while making simplified the default.
+  const mode =
+    anySimplified && anyMatrix
+      ? 'mixed'
+      : anySimplified
+        ? 'simplified'
+        : anyMatrix
+          ? 'matrix'
+          : 'simplified';
+
+  const requiredVars = mode === 'matrix' ? matrixEnvVars : simplifiedEnvVars;
+  const missingEnvVars = requiredVars.filter((k) => !process.env[k]);
 
   return {
-    valid: missing.length === 0,
-    missing,
+    valid: missingEnvVars.length === 0,
+    mode,
+    missingEnvVars,
+    // Backward-compatible alias used by older error messages/tests
+    missing: missingEnvVars,
   };
 }
 
@@ -288,22 +353,9 @@ export function validateCatalog() {
  * @returns {{ valid: boolean, missingEnvVars: string[] }}
  */
 export function validateCatalogStrict() {
-  const missingEnvVars = [];
-
-  for (const intervals of Object.values(PLAN_CATALOG_CONFIG)) {
-    for (const currencies of Object.values(intervals)) {
-      for (const envVarName of Object.values(currencies)) {
-        if (!process.env[envVarName]) {
-          missingEnvVars.push(envVarName);
-        }
-      }
-    }
-  }
-
-  return {
-    valid: missingEnvVars.length === 0,
-    missingEnvVars,
-  };
+  const matrixEnvVars = flattenMatrixEnvVars();
+  const missingEnvVars = matrixEnvVars.filter((k) => !process.env[k]);
+  return { valid: missingEnvVars.length === 0, missingEnvVars };
 }
 
 /**
@@ -336,6 +388,8 @@ export default {
   PLAN_CODES,
   INTERVALS,
   CURRENCIES,
+  IMPLIED_INTERVAL_BY_PLAN,
+  getImpliedInterval,
   getPriceId,
   resolvePlanFromPriceId,
   validateCatalog,

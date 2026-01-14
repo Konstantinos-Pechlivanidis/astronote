@@ -736,7 +736,7 @@ export async function createSubscriptionCheckoutSession({
     throw new Error(
       `Stripe price ID not found for subscription plan ${planType}/${resolvedInterval}/${currency}. ` +
       'Please configure the required environment variable. ' +
-      `Missing mappings: ${validation.missing.join(', ')}`,
+      `Missing env vars (mode=${validation.mode || 'unknown'}): ${(validation.missingEnvVars || validation.missing || []).join(', ')}`,
     );
   }
 
@@ -1138,7 +1138,7 @@ export async function updateSubscription(
     const validation = planCatalog.validateCatalog();
     throw new Error(
       `Stripe price ID not found for ${newPlanType}/${resolvedInterval}/${currency}. ` +
-      `Missing mappings: ${validation.missing.join(', ')}`,
+      `Missing env vars (mode=${validation.mode || 'unknown'}): ${(validation.missingEnvVars || validation.missing || []).join(', ')}`,
     );
   }
 
@@ -1209,7 +1209,7 @@ export async function scheduleSubscriptionChange(
     const validation = planCatalog.validateCatalog();
     throw new Error(
       `Stripe price ID not found for ${newPlanType}/${resolvedInterval}/${currency}. ` +
-      `Missing mappings: ${validation.missing.join(', ')}`,
+      `Missing env vars (mode=${validation.mode || 'unknown'}): ${(validation.missingEnvVars || validation.missing || []).join(', ')}`,
     );
   }
 

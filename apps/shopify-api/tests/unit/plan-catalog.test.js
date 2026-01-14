@@ -140,6 +140,30 @@ describe('Plan Catalog', () => {
   });
 
   describe('validateCatalog', () => {
+    it('returns valid in simplified mode when the 4 Retail-parity vars are configured', () => {
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR = 'price_starter_eur';
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_USD = 'price_starter_usd';
+      process.env.STRIPE_PRICE_ID_SUB_PRO_EUR = 'price_pro_eur';
+      process.env.STRIPE_PRICE_ID_SUB_PRO_USD = 'price_pro_usd';
+
+      const result = validateCatalog();
+      expect(result.valid).toBe(true);
+      expect(result.mode).toBe('simplified');
+      expect(result.missing).toHaveLength(0);
+    });
+
+    it('returns invalid in simplified mode if any one of the 4 vars is missing', () => {
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR = 'price_starter_eur';
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_USD = 'price_starter_usd';
+      process.env.STRIPE_PRICE_ID_SUB_PRO_EUR = 'price_pro_eur';
+      delete process.env.STRIPE_PRICE_ID_SUB_PRO_USD;
+
+      const result = validateCatalog();
+      expect(result.valid).toBe(false);
+      expect(result.mode).toBe('simplified');
+      expect(result.missingEnvVars).toContain('STRIPE_PRICE_ID_SUB_PRO_USD');
+    });
+
     it('returns valid when all priceIds are configured', () => {
       process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR = 'price_1';
       process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_USD = 'price_2';
@@ -153,6 +177,7 @@ describe('Plan Catalog', () => {
       const result = validateCatalog();
       expect(result.valid).toBe(true);
       expect(result.missing).toHaveLength(0);
+      expect(result.mode).toBe('matrix');
     });
 
     it('returns missing when some priceIds are not configured', () => {

@@ -165,14 +165,18 @@ async function validateUrlConfigurations(env) {
 
   // Validate Stripe configuration
   if (process.env.STRIPE_SECRET_KEY) {
-    // Billing v2: require full plan catalog mapping (starter/pro × month/year × EUR/USD).
-    // Fail fast in production with a CONFIG_ERROR-style message.
+    // Plan catalog validation:
+    // - Prefer simplified (Retail parity): STRIPE_PRICE_ID_SUB_{STARTER,PRO}_{EUR,USD}
+    //   with implied intervals (starter=month, pro=year)
+    // - Still support full matrix (Billing v2): starter/pro × month/year × EUR/USD
+    //   if those vars exist (matrix-only installs remain supported).
     const planCatalog = await import('../services/plan-catalog.js');
-    const strict = planCatalog.validateCatalogStrict();
-    if (!strict.valid) {
-      const missing = strict.missingEnvVars;
+    const validation = planCatalog.validateCatalog();
+    if (!validation.valid) {
+      const missing = validation.missingEnvVars || validation.missing || [];
+      const mode = validation.mode || 'unknown';
       const message =
-        `Missing required Stripe price env vars for Billing v2 plan catalog: ${missing.join(', ')}`;
+        `Missing required Stripe price env vars for plan catalog (mode=${mode}): ${missing.join(', ')}`;
 
       // Fail fast in production AND CI when Stripe is enabled.
       // This prevents deployments/tests with partial plan catalogs.

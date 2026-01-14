@@ -25,6 +25,7 @@ const mockPlanCatalog = {
   getPriceId: jest.fn(),
   resolvePlanFromPriceId: jest.fn(),
   getPlanChangeType: jest.fn(),
+  getImpliedInterval: (planCode) => (String(planCode).toLowerCase() === 'starter' ? 'month' : 'year'),
 };
 
 // Mock stripe-sync
@@ -44,6 +45,7 @@ const mockStripeService = {
   getCheckoutSession: jest.fn(),
   ensureStripeCustomer: jest.fn(),
   scheduleSubscriptionChange: jest.fn(),
+  getCustomerPortalUrl: jest.fn(),
 };
 
 // Mock subscription service
@@ -73,8 +75,8 @@ describe('Subscription Change - Immediate and Scheduled', () => {
     jest.unstable_mockModule('../../services/prisma.js', () => ({ default: mockPrisma }));
   });
 
-  it('immediate change updates priceId and returns updated DTO', async () => {
-    // Setup: Current subscription is starter/month, upgrading to pro/month
+  it('month → year change returns checkoutUrl (portal) and does NOT mutate subscription immediately', async () => {
+    // Setup: Current subscription is starter/month, upgrading to pro/year (month→year requires checkout)
     const currentSubscription = {
       active: true,
       planCode: 'starter',
@@ -87,59 +89,14 @@ describe('Subscription Change - Immediate and Scheduled', () => {
 
     mockStripeSync.getSubscriptionStatusWithStripeSync.mockResolvedValue(currentSubscription);
     mockPlanCatalog.getPlanChangeType.mockReturnValue('upgrade');
-    mockPlanCatalog.getPriceId.mockReturnValue('price_pro_month_eur');
-
-    // Mock Stripe subscription update (immediate)
-    const updatedStripeSubscription = {
-      id: 'sub_123',
-      status: 'active',
-      customer: 'cus_123',
-      items: {
-        data: [
-          {
-            price: {
-              id: 'price_pro_month_eur',
-              recurring: { interval: 'month' },
-              currency: 'eur',
-            },
-          },
-        ],
-      },
-      current_period_start: 1735689600,
-      current_period_end: 1738368000,
-      cancel_at_period_end: false,
-    };
-
-    mockStripeService.scheduleSubscriptionChange.mockResolvedValue({
-      subscription: updatedStripeSubscription,
-    });
-
-    const canonicalFields = {
-      planCode: 'pro',
-      interval: 'month',
-      currency: 'EUR',
-      status: 'active',
-      currentPeriodEnd: new Date('2025-02-01'),
-      cancelAtPeriodEnd: false,
-      stripeSubscriptionId: 'sub_123',
-      stripeCustomerId: 'cus_123',
-    };
-
-    mockStripeSync.deriveCanonicalFields.mockResolvedValue(canonicalFields);
-    mockStripeSync.syncDbToStripe.mockResolvedValue(undefined);
-
-    const updatedStatus = {
-      ...currentSubscription,
-      planCode: 'pro',
-      interval: 'month',
-    };
-    mockStripeSync.getSubscriptionStatusWithStripeSync.mockResolvedValueOnce(currentSubscription).mockResolvedValueOnce(updatedStatus);
+    mockPlanCatalog.getPriceId.mockReturnValue('price_pro_year_eur');
+    mockStripeService.getCustomerPortalUrl.mockResolvedValue('https://stripe.example/portal');
 
     // Import update function (mocked)
     const { update } = await import('../../controllers/subscriptions.js');
 
     const req = {
-      body: { planType: 'pro', interval: 'month', currency: 'EUR' },
+      body: { planType: 'pro', interval: 'year', currency: 'EUR' },
       ctx: { store: { id: 'shop_123' } },
     };
     const res = {
@@ -152,29 +109,18 @@ describe('Subscription Change - Immediate and Scheduled', () => {
 
     await update(req, res, next);
 
-    // Verify Stripe subscription was updated with correct priceId
-    expect(mockStripeService.updateSubscription).toHaveBeenCalledWith(
-      'sub_123',
-      'pro',
-      'EUR',
-      'month',
-      'immediate', // Behavior should be immediate for upgrade
-    );
-
-    // Verify DB was synced
-    expect(mockStripeSync.syncDbToStripe).toHaveBeenCalledWith(
-      'shop_123',
-      canonicalFields,
-      'subscription_change',
-    );
+    // Verify no mutation call is made (checkout flow)
+    expect(mockStripeService.updateSubscription).not.toHaveBeenCalled();
+    expect(mockStripeService.scheduleSubscriptionChange).not.toHaveBeenCalled();
+    expect(mockStripeService.getCustomerPortalUrl).toHaveBeenCalled();
 
     // Verify response includes updated subscription
     expect(res.json).toHaveBeenCalled();
     const responseData = res.json.mock.calls[0][0];
     expect(responseData.success).toBe(true);
     expect(responseData.data.planCode).toBe('pro');
-    expect(responseData.data.behavior).toBe('immediate');
-    expect(responseData.data.scheduled).toBe(false);
+    expect(responseData.data.changeMode).toBe('checkout');
+    expect(responseData.data.checkoutUrl).toBeTruthy();
   });
 
   it('Pro Yearly downgrade returns pendingChange and does NOT change current plan immediately', async () => {
@@ -214,7 +160,9 @@ describe('Subscription Change - Immediate and Scheduled', () => {
       cancel_at_period_end: false,
     };
 
-    mockStripeService.updateSubscription.mockResolvedValue(updatedStripeSubscription);
+    mockStripeService.scheduleSubscriptionChange.mockResolvedValue({
+      subscription: updatedStripeSubscription,
+    });
 
     const canonicalFields = {
       planCode: 'pro', // Still pro (not changed yet)

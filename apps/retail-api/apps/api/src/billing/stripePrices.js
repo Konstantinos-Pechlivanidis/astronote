@@ -42,7 +42,18 @@ function getSubscriptionPriceId(planType, currency) {
     throw err;
   }
   const envKey = `STRIPE_PRICE_ID_SUB_${planType.toUpperCase()}_${normalized}`;
-  const priceId = getEnvValue(envKey);
+  let priceId = getEnvValue(envKey);
+
+  // Backward-compatible alias support (Shopify Billing v2 matrix names):
+  // - starter is monthly
+  // - pro is yearly
+  // This allows environments that set only interval-specific keys to keep working.
+  if (!priceId) {
+    const impliedInterval = planType === 'starter' ? 'MONTH' : 'YEAR';
+    const matrixKey = `STRIPE_PRICE_ID_SUB_${planType.toUpperCase()}_${impliedInterval}_${normalized}`;
+    priceId = getEnvValue(matrixKey);
+  }
+
   if (!priceId) {
     throw makeConfigError(`Missing Stripe price ID for ${planType} plan (${normalized}).`, {
       envKey,
