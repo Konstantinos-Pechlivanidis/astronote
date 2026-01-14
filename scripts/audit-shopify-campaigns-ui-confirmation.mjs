@@ -96,9 +96,9 @@ function checkUIStructure() {
     error('List page missing RetailPageHeader');
   }
 
-  // Check PageHeader on create page (Retail uses custom, but RetailPageHeader is acceptable)
-  if (/RetailPageHeader|h1.*Create Campaign/.test(createPage)) {
-    pass('Create page has header (RetailPageHeader or h1)');
+  // Check PageHeader on create page (Retail uses custom, but RetailPageHeader or AppPageHeader is acceptable)
+  if (/RetailPageHeader|AppPageHeader|h1.*Create Campaign/.test(createPage)) {
+    pass('Create page has header (RetailPageHeader/AppPageHeader or h1)');
   } else {
     error('Create page missing header');
   }

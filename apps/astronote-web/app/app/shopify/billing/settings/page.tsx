@@ -397,7 +397,7 @@ export default function BillingSettingsPage() {
                   />
                   <p className="mt-1 text-xs text-text-tertiary">
                     {country === 'GR'
-                      ? 'Enter your Greek VAT number (AFM - Αριθμός Φορολογικού Μητρώου)'
+                      ? 'Enter your Greek VAT number (AFM - Greek Tax ID)'
                       : 'Enter your VAT number if applicable'}
                   </p>
                   {errors.vatNumber && (

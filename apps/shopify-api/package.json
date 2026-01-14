@@ -27,6 +27,7 @@
     "db:studio": "prisma studio",
     "db:status": "prisma migrate status",
     "test": "NODE_ENV=test node --experimental-vm-modules ../../node_modules/jest/bin/jest.js",
+    "test:integration": "NODE_ENV=test node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --config ./jest.integration.config.js",
     "test:watch": "NODE_ENV=test node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --watch",
     "test:coverage": "NODE_ENV=test node --experimental-vm-modules ../../node_modules/jest/bin/jest.js --coverage",
     "check:shopify:prisma": "node scripts/check-shopify-prisma.mjs"

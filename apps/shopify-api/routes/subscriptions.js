@@ -21,6 +21,12 @@ r.post('/subscribe', validateBody(subscriptionSubscribeSchema), ctrl.subscribe);
 // POST /subscriptions/update - Update subscription plan
 r.post('/update', validateBody(subscriptionUpdateSchema), ctrl.update);
 
+// POST /subscriptions/scheduled/change - Change a scheduled subscription downgrade
+r.post('/scheduled/change', validateBody(subscriptionUpdateSchema), ctrl.changeScheduled);
+
+// POST /subscriptions/scheduled/cancel - Cancel a scheduled subscription downgrade
+r.post('/scheduled/cancel', ctrl.cancelScheduled);
+
 // POST /subscriptions/switch - Switch subscription interval (monthly/yearly) or plan
 r.post('/switch', validateBody(subscriptionSwitchSchema), ctrl.switchInterval);
 

@@ -10,6 +10,11 @@ const mockPrisma = {
 // Mock invoices service
 const mockInvoicesService = {
   listInvoices: jest.fn(),
+  // Needed because billing service statically imports these named exports from invoices.js
+  // when controllers/billing.js is imported in this test.
+  upsertInvoiceRecord: jest.fn(),
+  recordSubscriptionInvoiceTransaction: jest.fn(),
+  recordFreeCreditsGrant: jest.fn(),
 };
 
 describe('Billing Invoices Endpoint', () => {

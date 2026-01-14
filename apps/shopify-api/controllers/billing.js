@@ -17,6 +17,36 @@ const stripe = process.env.STRIPE_SECRET_KEY
   })
   : null;
 
+const billingDiagnosticsEnabled =
+  process.env.BILLING_DIAGNOSTICS === 'true' ||
+  process.env.NODE_ENV === 'development';
+
+const logBillingDiagnostics = async ({ storeId, shopDomain, endpoint }) => {
+  if (!billingDiagnosticsEnabled) {
+    return;
+  }
+
+  try {
+    const shop = await prisma.shop.findUnique({
+      where: { id: storeId },
+      select: { stripeCustomerId: true },
+    });
+
+    logger.info('Billing diagnostics', {
+      endpoint,
+      shopId: storeId,
+      shopDomain: shopDomain || null,
+      stripeCustomerIdPresent: Boolean(shop?.stripeCustomerId),
+    });
+  } catch (error) {
+    logger.debug('Billing diagnostics lookup failed', {
+      endpoint,
+      shopId: storeId,
+      error: error.message,
+    });
+  }
+};
+
 /**
  * Billing Controller
  * Uses service layer for all billing and credit management logic
@@ -559,6 +589,11 @@ export async function getHistory(req, res, next) {
 export async function getBillingHistory(req, res, next) {
   try {
     const storeId = getStoreId(req);
+    await logBillingDiagnostics({
+      storeId,
+      shopDomain: req.ctx?.store?.shopDomain,
+      endpoint: 'billing-history',
+    });
 
     // Validate query params
     const allowedStatuses = ['pending', 'completed', 'failed', 'refunded'];
@@ -818,6 +853,11 @@ export async function syncProfileFromStripe(req, res, next) {
 export async function getInvoices(req, res, next) {
   try {
     const storeId = getStoreId(req);
+    await logBillingDiagnostics({
+      storeId,
+      shopDomain: req.ctx?.store?.shopDomain,
+      endpoint: 'invoices',
+    });
     const filters = {
       page: req.query.page,
       pageSize: req.query.pageSize,

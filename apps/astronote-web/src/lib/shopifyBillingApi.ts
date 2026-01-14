@@ -41,6 +41,7 @@ const safeRequest = async <T>(
 };
 
 export type SubscriptionPlanType = 'starter' | 'pro';
+export type SubscriptionChangeMode = 'immediate' | 'checkout' | 'scheduled';
 export type SubscriptionStatusCode =
   | 'active'
   | 'trialing'
@@ -268,6 +269,7 @@ export interface UpdateSubscriptionRequest {
 
 export interface SwitchIntervalRequest {
   interval: 'month' | 'year';
+  planType?: SubscriptionPlanType;
   currency?: string;
 }
 
@@ -557,22 +559,58 @@ export const shopifyBillingApi = {
       return response as unknown as SubscriptionCheckoutResponse;
     }, 'Failed to initiate subscription'),
 
-  updateSubscription: async (data: UpdateSubscriptionRequest): Promise<SubscriptionStatus> =>
+  updateSubscription: async (data: UpdateSubscriptionRequest): Promise<{
+    checkoutUrl?: string | null;
+    changeMode?: SubscriptionChangeMode;
+    scheduled?: boolean;
+    effectiveAt?: string | null;
+    subscription?: SubscriptionStatus;
+  }> =>
     safeRequest(async () => {
-      const response = await shopifyApi.post<SubscriptionStatus>('/subscriptions/update', data);
-      return response as unknown as SubscriptionStatus;
+      // Backend returns a wrapper with `subscription` (canonical) plus metadata.
+      const response = await shopifyApi.post<{
+        checkoutUrl?: string | null;
+        changeMode?: SubscriptionChangeMode;
+        scheduled?: boolean;
+        effectiveAt?: string | null;
+        subscription?: SubscriptionStatus;
+      }>('/subscriptions/update', data);
+      return response as unknown as {
+        checkoutUrl?: string | null;
+        changeMode?: SubscriptionChangeMode;
+        scheduled?: boolean;
+        effectiveAt?: string | null;
+        subscription?: SubscriptionStatus;
+      };
     }, 'Failed to update subscription'),
 
   switchSubscription: async (
     data: SwitchIntervalRequest,
-  ): Promise<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string; subscription?: SubscriptionStatus }> =>
+  ): Promise<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string | null; changeMode?: SubscriptionChangeMode; checkoutUrl?: string | null; subscription?: SubscriptionStatus }> =>
     safeRequest(async () => {
-      const response = await shopifyApi.post<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string; subscription?: SubscriptionStatus }>(
+      const response = await shopifyApi.post<{ interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string | null; changeMode?: SubscriptionChangeMode; checkoutUrl?: string | null; subscription?: SubscriptionStatus }>(
         '/subscriptions/switch',
         data,
       );
-      return response as unknown as { interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string; subscription?: SubscriptionStatus };
+      return response as unknown as { interval?: 'month' | 'year'; planType?: SubscriptionPlanType; alreadyUpdated?: boolean; scheduled?: boolean; effectiveAt?: string | null; changeMode?: SubscriptionChangeMode; checkoutUrl?: string | null; subscription?: SubscriptionStatus };
     }, 'Failed to switch subscription interval'),
+
+  changeScheduledSubscription: async (data: UpdateSubscriptionRequest): Promise<{ scheduled?: boolean; changeMode?: SubscriptionChangeMode; effectiveAt?: string | null; subscription?: SubscriptionStatus }> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<{ scheduled?: boolean; changeMode?: SubscriptionChangeMode; effectiveAt?: string | null; subscription?: SubscriptionStatus }>(
+        '/subscriptions/scheduled/change',
+        data,
+      );
+      return response as unknown as { scheduled?: boolean; changeMode?: SubscriptionChangeMode; effectiveAt?: string | null; subscription?: SubscriptionStatus };
+    }, 'Failed to update scheduled change'),
+
+  cancelScheduledSubscription: async (): Promise<{ scheduled?: boolean; subscription?: SubscriptionStatus }> =>
+    safeRequest(async () => {
+      const response = await shopifyApi.post<{ scheduled?: boolean; subscription?: SubscriptionStatus }>(
+        '/subscriptions/scheduled/cancel',
+      );
+      return response as unknown as { scheduled?: boolean; subscription?: SubscriptionStatus };
+    }, 'Failed to cancel scheduled change'),
 
   reconcileSubscription: async (): Promise<{ reconciled: boolean; reason?: string; subscription?: SubscriptionStatus }> =>
     safeRequest(async () => {
@@ -670,6 +708,8 @@ export const subscriptionsApi = {
   resume: shopifyBillingApi.resumeSubscription,
   getPortal: shopifyBillingApi.getBillingPortalUrl,
   switchInterval: shopifyBillingApi.switchSubscription,
+  changeScheduledSubscription: shopifyBillingApi.changeScheduledSubscription,
+  cancelScheduledSubscription: shopifyBillingApi.cancelScheduledSubscription,
   finalize: shopifyBillingApi.finalize,
   reconcile: shopifyBillingApi.reconcileSubscription,
 };

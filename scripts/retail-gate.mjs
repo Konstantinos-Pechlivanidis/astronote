@@ -34,26 +34,10 @@ function runCommand(name, command, workspace) {
       stdio: 'pipe',
       env: { ...process.env, NODE_ENV: 'test' },
     });
-    
-    // Check for success/failure indicators
-    const hasFailure = (output.includes('FAIL') && !output.includes('PASS')) || 
-                       (output.includes('❌') && !output.includes('✅')) ||
-                       output.includes('error TS') ||
-                       output.includes('Error:') ||
-                       output.includes('FAILED') ||
-                       (output.includes('✖') && !output.includes('✓')) ||
-                       output.includes('SyntaxError') ||
-                       output.includes('ReferenceError');
-    
-    const hasSuccess = output.includes('PASS') || 
-                       output.includes('✅') ||
-                       output.includes('Compiled successfully') ||
-                       output.includes('Generated Prisma Client') ||
-                       output.includes('✓') ||
-                       (output.includes('Tests:') && !output.includes('failed')) ||
-                       (output.includes('The schema') && output.includes('is valid'));
-    
-    const passed = hasSuccess && !hasFailure;
+
+    // If the process exits successfully, treat as PASS.
+    // Output heuristics are unreliable for tools like `node --test`.
+    const passed = true;
     
     results[workspace].push({
       name,

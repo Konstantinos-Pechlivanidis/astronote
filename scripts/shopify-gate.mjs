@@ -36,23 +36,9 @@ function runCommand(name, command, workspace) {
       stdio: 'pipe',
       env: { ...process.env, NODE_ENV: 'test' },
     });
-    
-    // Check for success/failure indicators
-    const hasFailure = (output.includes('FAIL') && !output.includes('PASS')) || 
-                       (output.includes('❌') && !output.includes('✅')) ||
-                       output.includes('error TS') ||
-                       output.includes('Error:') ||
-                       output.includes('FAILED') ||
-                       (output.includes('✖') && !output.includes('✓'));
-    
-    const hasSuccess = output.includes('PASS') || 
-                       output.includes('✅') ||
-                       output.includes('Compiled successfully') ||
-                       output.includes('Generated Prisma Client') ||
-                       output.includes('✓') ||
-                       (output.includes('Tests:') && !output.includes('failed'));
-    
-    const passed = hasSuccess && !hasFailure;
+    // If the process exits successfully, treat as PASS.
+    // (Some tools print neither PASS nor FAIL markers, so output heuristics are unreliable.)
+    const passed = true;
     
     results[workspace].push({
       name,
@@ -96,6 +82,9 @@ console.log('='.repeat(60));
 
 // Frontend checks (skip typecheck if script doesn't exist)
 const frontendChecks = [
+  // Contract checks (fast, deterministic)
+  { name: 'generate:shopify:campaign-statuses', command: 'node scripts/generate-shopify-campaign-statuses.mjs' },
+  { name: 'verify:shopify:campaign-status-parity', command: 'node scripts/verify-shopify-campaign-status-parity.mjs' },
   { name: 'lint', command: 'npm -w @astronote/web-next run lint' },
   { name: 'typecheck', command: 'npm -w @astronote/web-next run typecheck', optional: true },
   { name: 'tests', command: 'npm -w @astronote/web-next run test --if-present', optional: true },

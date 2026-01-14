@@ -2,6 +2,7 @@ import { getStoreId } from '../middlewares/store-resolution.js';
 import { logger } from '../utils/logger.js';
 import campaignsService from '../services/campaigns.js';
 import { sendSuccess, sendCreated, sendPaginated } from '../utils/response.js';
+import { CAMPAIGN_STATUS_VALUES } from '../constants/campaign-status.js';
 
 /**
  * Campaigns Controller
@@ -17,8 +18,8 @@ export async function list(req, res, next) {
     const storeId = getStoreId(req);
 
     // Validate query params
-    const allowedStatuses = ['draft', 'scheduled', 'sending', 'sent', 'failed', 'cancelled'];
-    if (req.query.status && !allowedStatuses.includes(req.query.status)) {
+    const allowedStatuses = CAMPAIGN_STATUS_VALUES;
+    if (req.query.status && !allowedStatuses.includes(String(req.query.status))) {
       return res.status(400).json({
         success: false,
         error: 'INVALID_FILTER',
@@ -575,6 +576,7 @@ export async function getCampaignProgress(req, res, next) {
     const { id } = req.params;
 
     const prisma = (await import('../services/prisma.js')).default;
+    const { getCanonicalMetricsForCampaignIds } = await import('../services/campaign-metrics-batch.js');
 
     // Verify campaign belongs to store
     const campaign = await prisma.campaign.findFirst({
@@ -590,32 +592,37 @@ export async function getCampaignProgress(req, res, next) {
       });
     }
 
-    // Get recipient counts by status
-    const [total, sent, failed, pending] = await Promise.all([
-      prisma.campaignRecipient.count({
-        where: { campaignId: id },
-      }),
-      prisma.campaignRecipient.count({
-        where: { campaignId: id, status: 'sent' },
-      }),
-      prisma.campaignRecipient.count({
-        where: { campaignId: id, status: 'failed' },
-      }),
-      prisma.campaignRecipient.count({
-        where: { campaignId: id, status: 'pending' },
-      }),
-    ]);
+    // Canonical delivery metrics (provider truth mirrored in DB)
+    const canonicalById = await getCanonicalMetricsForCampaignIds([id]);
+    const canonical = canonicalById.get(id);
 
-    const processed = sent + failed;
-    const progress = total > 0 ? Math.round((processed / total) * 100) : 0;
+    const totals = canonical?.totals || { recipients: 0, accepted: 0, sent: 0, delivered: 0, failed: 0 };
+    const delivery = canonical?.delivery || { pendingDelivery: 0, delivered: 0, failedDelivery: 0 };
+
+    // Queue-level pending (not yet accepted by provider)
+    const queued = await prisma.campaignRecipient.count({
+      where: { campaignId: id, status: 'pending', mittoMessageId: null },
+    });
+
+    // Progress is based on terminal delivery (delivered + failedDelivery) / recipients.
+    const processed = (delivery.delivered || 0) + (delivery.failedDelivery || 0);
+    const percentage = totals.recipients > 0 ? Math.round((processed / totals.recipients) * 100) : 0;
 
     return sendSuccess(res, {
-      total,
-      sent,
-      failed,
-      pending,
+      // Backward compatibility (older UI fields)
+      total: totals.recipients,
+      sent: totals.accepted,
+      failed: totals.failed,
+      pending: queued,
       processed,
-      progress,
+      progress: percentage,
+      // Canonical fields
+      accepted: totals.accepted,
+      delivered: delivery.delivered,
+      failedDelivery: delivery.failedDelivery,
+      pendingDelivery: delivery.pendingDelivery,
+      percentage,
+      sourceOfTruth: 'mitto',
     });
   } catch (error) {
     logger.error('Get campaign progress error', {
@@ -723,39 +730,88 @@ export async function status(req, res, next) {
     const campaign = await campaignsService.getCampaignById(storeId, id);
     const metrics = await campaignsService.getCampaignMetrics(storeId, id);
 
-    // Count queued recipients (status='pending')
+    // Count queued recipients (not accepted by provider yet)
     const prisma = (await import('../services/prisma.js')).default;
     const queuedCount = await prisma.campaignRecipient.count({
       where: {
         campaignId: id,
         status: 'pending',
+        mittoMessageId: null,
       },
     });
 
-    // Phase 2.2 metrics format
+    const canonical = {
+      status: campaign.status,
+      statusRaw: campaign.statusRaw ?? null,
+      startedAt: campaign.startedAt ?? null,
+      finishedAt: campaign.finishedAt ?? null,
+      totals: metrics.totals || null,
+      delivery: metrics.delivery || null,
+      queued: queuedCount,
+      sourceOfTruth: 'mitto',
+    };
+
+    // Backward-compatible format (legacy)
     const statusSummary = {
       campaign: {
         id: campaign.id,
         name: campaign.name,
         status: campaign.status,
         total: campaign.recipientCount || 0,
-        sent: metrics.totalSent || 0,
-        failed: metrics.totalFailed || 0,
-        processed: metrics.totalProcessed || 0,
+        sent: metrics?.totals?.accepted || metrics.totalSent || 0,
+        failed: metrics?.totals?.failed || metrics.totalFailed || 0,
+        processed:
+          (metrics?.delivery?.delivered || 0) + (metrics?.delivery?.failedDelivery || 0),
         createdAt: campaign.createdAt,
         updatedAt: campaign.updatedAt,
       },
       metrics: {
         queued: queuedCount,
-        success: metrics.totalSent || 0, // Successfully sent (Phase 2.2)
-        processed: metrics.totalProcessed || 0, // Processed (success + failed) (Phase 2.2)
-        failed: metrics.totalFailed || 0, // Failed (Phase 2.2)
+        // Legacy fields; prefer `canonical.*` in the frontend
+        success: metrics?.totals?.accepted || metrics.totalSent || 0,
+        processed:
+          (metrics?.delivery?.delivered || 0) + (metrics?.delivery?.failedDelivery || 0),
+        failed: metrics?.totals?.failed || metrics.totalFailed || 0,
       },
+      canonical,
     };
 
     return sendSuccess(res, statusSummary);
   } catch (error) {
     logger.error('Get campaign status error', {
+      error: error.message,
+      stack: error.stack,
+      storeId: getStoreId(req),
+      campaignId: req.params.id,
+      requestId: req.id,
+      path: req.path,
+      method: req.method,
+    });
+    next(error);
+  }
+}
+
+/**
+ * Manual reconciliation for a single campaign (dev/admin tool).
+ * @route POST /campaigns/:id/reconcile
+ */
+export async function reconcile(req, res, next) {
+  try {
+    const storeId = getStoreId(req);
+    const { id } = req.params;
+
+    const svc = await import('../services/campaign-reconciliation.js');
+    const result = await svc.reconcileCampaign(storeId, id, {
+      staleMinutes: req.body?.staleMinutes || req.query?.staleMinutes || 15,
+    });
+
+    if (!result.ok && result.reason === 'not_found') {
+      return res.status(404).json({ ok: false, code: 'NOT_FOUND', message: 'Campaign not found' });
+    }
+
+    return sendSuccess(res, result);
+  } catch (error) {
+    logger.error('Reconcile campaign error', {
       error: error.message,
       stack: error.stack,
       storeId: getStoreId(req),

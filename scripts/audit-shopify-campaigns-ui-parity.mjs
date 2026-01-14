@@ -110,10 +110,11 @@ function checkUIComponents() {
     error('Create page missing RetailPageLayout');
   }
 
-  if (/RetailPageHeader/.test(createPage)) {
-    pass('Create page uses RetailPageHeader');
+  // Accept either RetailPageHeader directly or the shared AppPageHeader wrapper.
+  if (/RetailPageHeader|AppPageHeader/.test(createPage)) {
+    pass('Create page uses RetailPageHeader (direct or via AppPageHeader)');
   } else {
-    error('Create page missing RetailPageHeader');
+    error('Create page missing RetailPageHeader (direct or via AppPageHeader)');
   }
 
   if (/RetailCard/.test(createPage)) {

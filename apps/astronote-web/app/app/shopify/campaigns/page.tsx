@@ -11,7 +11,7 @@ import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailDataTable } from '@/src/components/retail/RetailDataTable';
-import { StatusBadge } from '@/src/components/retail/StatusBadge';
+import { CampaignStatusBadge } from '@/src/components/shopify/CampaignStatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -50,7 +50,7 @@ function StatsCards({ stats }: { stats: any }) {
     { label: 'Draft', value: byStatus.draft || 0, color: 'text-text-secondary' },
     { label: 'Scheduled', value: byStatus.scheduled || 0, color: 'text-blue-400' },
     { label: 'Sending', value: byStatus.sending || 0, color: 'text-yellow-400' },
-    { label: 'Sent', value: byStatus.sent || 0, color: 'text-green-400' },
+    { label: 'Completed', value: (byStatus.completed ?? byStatus.sent) || 0, color: 'text-green-400' },
     { label: 'Failed', value: byStatus.failed || 0, color: 'text-red-400' },
   ];
 
@@ -206,19 +206,22 @@ export default function CampaignsPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (campaign: Campaign) => <StatusBadge status={campaign.status} />,
+      render: (campaign: Campaign) => <CampaignStatusBadge status={campaign.status} />,
     },
     {
       key: 'recipients',
       header: 'Messages',
       render: (campaign: Campaign) => (
         <div className="text-sm text-text-primary flex items-center gap-2 tabular-nums">
-          <span className="font-medium text-green-500">
-            {(campaign.sentCount ?? 0).toLocaleString()}
+          <span
+            className="font-medium text-blue-400"
+            title="Accepted by provider (Mitto messageId created)"
+          >
+            {(campaign.totals?.accepted ?? campaign.sentCount ?? 0).toLocaleString()}
           </span>
           <span className="text-text-secondary">/</span>
-          <span className="text-text-primary">
-            {(campaign.recipientCount ?? campaign.totalRecipients ?? 0).toLocaleString()}
+          <span className="text-text-primary" title="Total recipients">
+            {(campaign.totals?.recipients ?? campaign.recipientCount ?? campaign.totalRecipients ?? 0).toLocaleString()}
           </span>
         </div>
       ),
@@ -295,24 +298,24 @@ export default function CampaignsPage() {
         <div className="space-y-3">
           <div className="flex items-start justify-between">
             <h3 className="text-base font-semibold text-text-primary">{campaign.name}</h3>
-            <StatusBadge status={campaign.status} />
+            <CampaignStatusBadge status={campaign.status} />
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
             <span className="text-text-secondary">
               Recipients: <span className="text-text-primary font-medium">
-                {(campaign.recipientCount ?? campaign.totalRecipients ?? 0).toLocaleString()}
+                {(campaign.totals?.recipients ?? campaign.recipientCount ?? campaign.totalRecipients ?? 0).toLocaleString()}
               </span>
             </span>
-            {(campaign.sentCount ?? 0) > 0 && (
+            {(campaign.totals?.accepted ?? campaign.sentCount ?? 0) > 0 && (
               <span className="text-text-secondary">
-                Sent: <span className="text-green-400 font-medium">
-                  {(campaign.sentCount ?? 0).toLocaleString()}
+                Accepted: <span className="text-blue-400 font-medium">
+                  {(campaign.totals?.accepted ?? campaign.sentCount ?? 0).toLocaleString()}
                 </span>
               </span>
             )}
-            {(campaign.failedCount ?? 0) > 0 && (
+            {(campaign.totals?.failed ?? campaign.failedCount ?? 0) > 0 && (
               <span className="text-red-400">
-                Failed: {(campaign.failedCount ?? 0).toLocaleString()}
+                Failed: {(campaign.totals?.failed ?? campaign.failedCount ?? 0).toLocaleString()}
               </span>
             )}
           </div>

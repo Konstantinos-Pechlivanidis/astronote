@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCampaigns } from '@/src/features/retail/campaigns/hooks/useCampaigns';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { EmptyState } from '@/src/components/retail/EmptyState';
 import { RetailCard } from '@/src/components/retail/RetailCard';
+import { RetailDataTable } from '@/src/components/retail/RetailDataTable';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { Button } from '@/components/ui/button';
@@ -71,147 +73,6 @@ function CampaignsToolbar({
   );
 }
 
-function CampaignsTable({ campaigns }: { campaigns: any[] }) {
-  if (!campaigns || campaigns.length === 0) {
-    return null;
-  }
-
-  return (
-    <>
-      {/* Desktop Table */}
-      <div className="hidden md:block">
-        <RetailCard>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-border">
-              <thead className="bg-surface-light">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
-                    Messages
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
-                    Scheduled
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
-                    Created
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-background divide-y divide-border">
-                {campaigns.map((campaign) => (
-                  <tr
-                    key={campaign.id}
-                    onClick={() => (window.location.href = `/app/retail/campaigns/${campaign.id}`)}
-                    className="hover:bg-surface cursor-pointer transition-colors"
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-text-primary">{campaign.name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <StatusBadge status={campaign.status} />
-                      {campaign.status === 'failed' && (
-                        <div className="mt-1 text-xs text-red-400">
-                          Campaign failed. Create a new campaign or contact support.
-                        </div>
-                      )}
-                      {campaign.status === 'failed' && campaign.lastEnqueueError && (
-                        <div className="mt-1 text-xs text-red-400/80">
-                          Last error: {campaign.lastEnqueueError}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-text-primary flex items-center gap-2 tabular-nums">
-                        <span className="font-medium text-green-500">{(campaign.sent ?? campaign.stats?.sent ?? 0).toLocaleString()}</span>
-                        <span className="text-text-secondary">/</span>
-                        <span className="text-text-primary">{(campaign.total ?? campaign.stats?.total ?? 0).toLocaleString()}</span>
-                      </div>
-                      {((campaign.failed ?? campaign.stats?.failed) ?? 0) > 0 && (
-                        <div className="text-xs text-red-400 mt-1">
-                          Failed: {(campaign.failed ?? campaign.stats?.failed ?? 0).toLocaleString()}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-text-primary">
-                        {campaign.scheduledAt
-                          ? format(new Date(campaign.scheduledAt), 'MMM d, yyyy HH:mm')
-                          : '—'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-text-secondary">
-                        {campaign.createdAt ? format(new Date(campaign.createdAt), 'MMM d, yyyy') : '—'}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </RetailCard>
-      </div>
-
-      {/* Mobile Cards */}
-      <div className="space-y-4 md:hidden">
-        {campaigns.map((campaign) => (
-          <Link key={campaign.id} href={`/app/retail/campaigns/${campaign.id}`}>
-            <RetailCard hover className="p-4">
-              <div className="space-y-3">
-                <div className="flex items-start justify-between">
-                  <h3 className="text-base font-semibold text-text-primary">{campaign.name}</h3>
-                  <StatusBadge status={campaign.status} />
-                </div>
-                {(campaign.total || campaign.stats) && (
-                  <div className="flex flex-wrap gap-2 text-sm">
-                    <span className="text-text-secondary">
-                      Recipients: <span className="text-text-primary font-medium">{(campaign.total ?? campaign.stats?.total ?? 0)}</span>
-                    </span>
-                    <span className="text-text-secondary">
-                      Delivered: <span className="text-green-400 font-medium">{(campaign.sent ?? campaign.stats?.sent ?? 0)}</span>
-                    </span>
-                    {((campaign.failed ?? campaign.stats?.failed) ?? 0) > 0 && (
-                      <span className="text-red-400">Failed: {(campaign.failed ?? campaign.stats?.failed ?? 0)}</span>
-                    )}
-                    {((campaign.total ?? campaign.stats?.total ?? 0) - ((campaign.sent ?? campaign.stats?.sent ?? 0) + (campaign.failed ?? campaign.stats?.failed ?? 0))) > 0 && (
-                      <span className="text-amber-500">
-                        Pending: {(campaign.total ?? campaign.stats?.total ?? 0) - ((campaign.sent ?? campaign.stats?.sent ?? 0) + (campaign.failed ?? campaign.stats?.failed ?? 0))}
-                      </span>
-                    )}
-                  </div>
-                )}
-                <div className="flex flex-col gap-1 text-xs text-text-secondary">
-                  {campaign.scheduledAt && (
-                    <div>Scheduled: {format(new Date(campaign.scheduledAt), 'MMM d, yyyy HH:mm')}</div>
-                  )}
-                  {campaign.createdAt && (
-                    <div>Created: {format(new Date(campaign.createdAt), 'MMM d, yyyy')}</div>
-                  )}
-                </div>
-                {campaign.status === 'failed' && (
-                  <div className="text-xs text-red-400">
-                    Campaign failed. Create a new campaign or contact support.
-                    {campaign.lastEnqueueError && (
-                      <div className="mt-1 text-red-400/80">
-                        Last error: {campaign.lastEnqueueError}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </RetailCard>
-          </Link>
-        ))}
-      </div>
-    </>
-  );
-}
-
 function CampaignSkeleton() {
   return (
     <RetailCard>
@@ -225,6 +86,7 @@ function CampaignSkeleton() {
 }
 
 export default function CampaignsPage() {
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -236,6 +98,70 @@ export default function CampaignsPage() {
     q: search,
     status: statusFilter === 'all' ? null : statusFilter,
   });
+
+  const campaigns = data?.items || [];
+
+  const columns = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: (campaign: any) => (
+        <div className="text-sm font-medium text-text-primary">{campaign.name}</div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (campaign: any) => (
+        <div className="space-y-1">
+          <StatusBadge status={campaign.status} />
+          {campaign.status === 'failed' && (
+            <div className="text-xs text-red-400">
+              Campaign failed. Create a new campaign or contact support.
+            </div>
+          )}
+          {campaign.status === 'failed' && campaign.lastEnqueueError && (
+            <div className="text-xs text-red-400/80">
+              Last error: {campaign.lastEnqueueError}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'messages',
+      header: 'Messages',
+      render: (campaign: any) => (
+        <div className="text-sm text-text-primary flex items-center gap-2 tabular-nums">
+          <span className="font-medium text-green-500" title="Delivered (provider confirmed)">
+            {(campaign.stats?.delivered ?? campaign.sent ?? campaign.stats?.sent ?? 0).toLocaleString()}
+          </span>
+          <span className="text-text-secondary">/</span>
+          <span className="text-text-primary" title="Total recipients">
+            {(campaign.total ?? campaign.stats?.total ?? 0).toLocaleString()}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'scheduledAt',
+      header: 'Scheduled',
+      render: (campaign: any) => (
+        <div className="text-sm text-text-primary">
+          {campaign.scheduledAt ? format(new Date(campaign.scheduledAt), 'MMM d, yyyy HH:mm') : '—'}
+        </div>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      render: (campaign: any) => (
+        <div className="text-sm text-text-secondary">
+          {campaign.createdAt ? format(new Date(campaign.createdAt), 'MMM d, yyyy') : '—'}
+        </div>
+      ),
+    },
+  ];
 
   return (
     <RetailPageLayout>
@@ -275,9 +201,65 @@ export default function CampaignsPage() {
 
         {!isLoading && !error && data && (
           <>
-            {data.items && data.items.length > 0 ? (
+            {campaigns.length > 0 ? (
               <>
-                <CampaignsTable campaigns={data.items} />
+                <RetailDataTable
+                  data={campaigns}
+                  keyExtractor={(c) => c.id}
+                  columns={columns}
+                  onRowClick={(c) => router.push(`/app/retail/campaigns/${c.id}`)}
+                  mobileCardRender={(campaign: any) => (
+                    <Link href={`/app/retail/campaigns/${campaign.id}`}>
+                      <RetailCard hover className="p-4">
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <h3 className="text-base font-semibold text-text-primary">{campaign.name}</h3>
+                            <StatusBadge status={campaign.status} />
+                          </div>
+                          {(campaign.total || campaign.stats) && (
+                            <div className="flex flex-wrap gap-2 text-sm">
+                              <span className="text-text-secondary">
+                                Recipients:{' '}
+                                <span className="text-text-primary font-medium">
+                                  {(campaign.total ?? campaign.stats?.total ?? 0)}
+                                </span>
+                              </span>
+                              <span className="text-text-secondary">
+                                Delivered:{' '}
+                                <span className="text-green-400 font-medium">
+                                  {(campaign.stats?.delivered ?? campaign.sent ?? campaign.stats?.sent ?? 0)}
+                                </span>
+                              </span>
+                              {(campaign.stats?.pendingDelivery ?? 0) > 0 && (
+                                <span className="text-amber-500">
+                                  Pending delivery: {campaign.stats?.pendingDelivery ?? 0}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <div className="flex flex-col gap-1 text-xs text-text-secondary">
+                            {campaign.scheduledAt && (
+                              <div>Scheduled: {format(new Date(campaign.scheduledAt), 'MMM d, yyyy HH:mm')}</div>
+                            )}
+                            {campaign.createdAt && (
+                              <div>Created: {format(new Date(campaign.createdAt), 'MMM d, yyyy')}</div>
+                            )}
+                          </div>
+                          {campaign.status === 'failed' && (
+                            <div className="text-xs text-red-400">
+                              Campaign failed. Create a new campaign or contact support.
+                              {campaign.lastEnqueueError && (
+                                <div className="mt-1 text-red-400/80">
+                                  Last error: {campaign.lastEnqueueError}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </RetailCard>
+                    </Link>
+                  )}
+                />
                 {/* Pagination */}
                 <div className="mt-4 flex items-center justify-between">
                   <div className="text-sm text-text-secondary">

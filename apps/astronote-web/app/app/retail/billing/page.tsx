@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { billingApi, type Package } from '@/src/lib/retail/api/billing';
 import { subscriptionsApi } from '@/src/lib/retail/api/subscriptions';
+import api from '@/src/lib/retail/api/axios';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
@@ -21,6 +22,49 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+
+type RetailInvoice = {
+  id: number;
+  stripeInvoiceId: string;
+  invoiceNumber?: string | null;
+  total?: number | null;
+  currency?: string | null;
+  hostedInvoiceUrl?: string | null;
+  pdfUrl?: string | null;
+  status?: string | null;
+  issuedAt?: string | null;
+};
+
+type Pagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+};
+
+type RetailInvoicesResponse = {
+  invoices: RetailInvoice[];
+  pagination: Pagination;
+};
+
+type RetailBillingLedgerTxn = {
+  id: number;
+  type: string;
+  amount: number;
+  currency: string;
+  creditsAdded: number;
+  status: string;
+  createdAt: string;
+  stripeSessionId?: string | null;
+  stripePaymentId?: string | null;
+};
+
+type RetailBillingHistoryResponse = {
+  transactions: RetailBillingLedgerTxn[];
+  pagination: Pagination;
+};
 
 const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const;
 type BillingCurrency = (typeof SUPPORTED_CURRENCIES)[number];
@@ -709,11 +753,181 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
   );
 }
 
+function InvoicesTable({ invoices, isLoading }: { invoices: RetailInvoice[]; isLoading: boolean }) {
+  return (
+    <RetailCard>
+      <div className="p-6 border-b border-border">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold text-text-primary">Invoices</h3>
+          <div className="text-xs text-text-tertiary">DB-first • Stripe fallback</div>
+        </div>
+      </div>
+
+      <div className="p-6">
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-16 bg-surface-light rounded animate-pulse" />
+            ))}
+          </div>
+        ) : invoices.length === 0 ? (
+          <p className="text-sm text-text-secondary">No invoices yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-surface-light">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Total
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Links
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-background divide-y divide-border">
+                {invoices.map((inv) => (
+                  <tr key={inv.stripeInvoiceId}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                      {inv.issuedAt ? format(new Date(inv.issuedAt), 'MMM d, yyyy') : '—'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">
+                      {inv.status || '—'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                      {typeof inv.total === 'number' && inv.currency
+                        ? formatAmount(inv.total, inv.currency)
+                        : '—'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <div className="flex gap-3">
+                        {inv.hostedInvoiceUrl ? (
+                          <a
+                            className="text-accent hover:underline"
+                            href={inv.hostedInvoiceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Hosted
+                          </a>
+                        ) : (
+                          <span className="text-text-tertiary">Hosted</span>
+                        )}
+                        {inv.pdfUrl ? (
+                          <a
+                            className="text-accent hover:underline"
+                            href={inv.pdfUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            PDF
+                          </a>
+                        ) : (
+                          <span className="text-text-tertiary">PDF</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </RetailCard>
+  );
+}
+
+function BillingHistoryTable({
+  transactions,
+  isLoading,
+}: {
+  transactions: RetailBillingLedgerTxn[];
+  isLoading: boolean;
+}) {
+  return (
+    <RetailCard>
+      <div className="p-6 border-b border-border">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold text-text-primary">Purchase History</h3>
+          <div className="text-xs text-text-tertiary">Subscription • Included credits • Topups</div>
+        </div>
+      </div>
+
+      <div className="p-6">
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-16 bg-surface-light rounded animate-pulse" />
+            ))}
+          </div>
+        ) : transactions.length === 0 ? (
+          <p className="text-sm text-text-secondary">No billing history yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-surface-light">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Type
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Amount
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Credits
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-background divide-y divide-border">
+                {transactions.map((t) => (
+                  <tr key={t.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                      {t.createdAt ? format(new Date(t.createdAt), 'MMM d, yyyy') : '—'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">
+                      {t.type || 'billing'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                      {formatAmount(t.amount || 0, t.currency || 'EUR')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">
+                      {t.creditsAdded ? `+${t.creditsAdded.toLocaleString()}` : '—'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">
+                      {t.status || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </RetailCard>
+  );
+}
+
 export default function RetailBillingPage() {
   const [transactionsPage, setTransactionsPage] = useState(1);
+  const [invoicePage] = useState(1);
+  const [billingHistoryPage] = useState(1);
   const [selectedCurrency, setSelectedCurrency] = useState<BillingCurrency>('EUR');
   const [currencyStorageKey, setCurrencyStorageKey] = useState<string | null>(null);
   const hasStoredSelection = useRef(false);
+  const queryClient = useQueryClient();
 
   const { data: summaryData, isLoading: balanceLoading, error: balanceError } = useQuery({
     queryKey: ['retail-billing-summary'],
@@ -767,6 +981,47 @@ export default function RetailBillingPage() {
     staleTime: 30 * 1000, // 30 seconds
   });
 
+  const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
+    queryKey: ['retail-invoices', invoicePage],
+    queryFn: async () => {
+      const res = await api.get<RetailInvoicesResponse>('/billing/invoices', {
+        params: { page: invoicePage, pageSize: 20 },
+      });
+      return res.data;
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 60 * 1000,
+  });
+
+  const { data: billingHistoryData, isLoading: billingHistoryLoading } = useQuery({
+    queryKey: ['retail-billing-history', billingHistoryPage],
+    queryFn: async () => {
+      const res = await api.get<RetailBillingHistoryResponse>('/billing/billing-history', {
+        params: { page: billingHistoryPage, pageSize: 20 },
+      });
+      return res.data;
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 60 * 1000,
+  });
+
+  const reconcileMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/subscriptions/reconcile');
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-history'] });
+      toast.success('Refreshed from Stripe');
+    },
+    onError: (error: any) => {
+      const msg = error?.response?.data?.message || 'Failed to refresh from Stripe';
+      toast.error(msg);
+    },
+  });
   const handleCurrencyChange = (value: string) => {
     const normalized = normalizeCurrency(value) || 'EUR';
     setSelectedCurrency(normalized);
@@ -777,15 +1032,24 @@ export default function RetailBillingPage() {
   };
 
   const currencySelector = (
-    <Select value={selectedCurrency} onValueChange={handleCurrencyChange}>
-      <SelectTrigger className="w-[140px]">
-        <SelectValue placeholder="Currency" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="EUR">EUR (€)</SelectItem>
-        <SelectItem value="USD">USD ($)</SelectItem>
-      </SelectContent>
-    </Select>
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        onClick={() => reconcileMutation.mutate()}
+        disabled={reconcileMutation.isPending}
+      >
+        {reconcileMutation.isPending ? 'Refreshing…' : 'Refresh from Stripe'}
+      </Button>
+      <Select value={selectedCurrency} onValueChange={handleCurrencyChange}>
+        <SelectTrigger className="w-[140px]">
+          <SelectValue placeholder="Currency" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="EUR">EUR (€)</SelectItem>
+          <SelectItem value="USD">USD ($)</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   );
 
   if (balanceLoading) {
@@ -916,6 +1180,14 @@ export default function RetailBillingPage() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <InvoicesTable invoices={invoicesData?.invoices || []} isLoading={invoicesLoading} />
+          <BillingHistoryTable
+            transactions={billingHistoryData?.transactions || []}
+            isLoading={billingHistoryLoading}
+          />
         </div>
       </div>
     </RetailPageLayout>

@@ -1,19 +1,17 @@
 import shopifyApi from './axios';
+import {
+  SHOPIFY_CAMPAIGN_STATUS_VALUES,
+  type ShopifyCampaignStatus,
+} from '../constants/campaign-status';
 
 /**
  * Shopify Campaigns API
  * Campaign management endpoints
  */
 
-export type CampaignStatus =
-  | 'draft'
-  | 'scheduled'
-  | 'sending'
-  | 'paused'
-  | 'completed'
-  | 'sent'
-  | 'failed'
-  | 'cancelled';
+export type CampaignStatus = ShopifyCampaignStatus;
+
+export const CAMPAIGN_STATUS_VALUES = SHOPIFY_CAMPAIGN_STATUS_VALUES;
 
 export type ScheduleType = 'immediate' | 'scheduled' | 'recurring';
 
@@ -24,6 +22,7 @@ export interface Campaign {
   name: string;
   message: string;
   status: CampaignStatus;
+  statusRaw?: string | null;
   scheduleType: ScheduleType;
   scheduleAt?: string | null;
   createdAt: string;
@@ -39,6 +38,19 @@ export interface Campaign {
   deliveredCount?: number;
   priority?: CampaignPriority;
   recurringDays?: number | null;
+  totals?: {
+    recipients: number;
+    accepted: number;
+    sent: number;
+    delivered: number;
+    failed: number;
+  } | null;
+  delivery?: {
+    pendingDelivery: number;
+    delivered: number;
+    failedDelivery: number;
+  } | null;
+  sourceOfTruth?: 'mitto' | string;
 }
 
 export interface CampaignListParams {
@@ -81,23 +93,63 @@ export interface CampaignMetrics {
   sent: number;
   failed: number;
   delivered?: number;
+  accepted?: number;
+  pendingDelivery?: number;
+  totals?: Campaign['totals'] | null;
+  delivery?: Campaign['delivery'] | null;
+  sourceOfTruth?: 'mitto' | string;
   conversions?: number;
   unsubscribes?: number;
   conversionRate?: number;
 }
 
 export interface CampaignStatusResponse {
-  queued: number;
-  processed: number;
-  sent: number;
-  failed: number;
+  // Backward-compatible envelope
+  campaign?: {
+    id: string;
+    name: string;
+    status: CampaignStatus;
+    total: number;
+    sent: number;
+    failed: number;
+    processed: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+  metrics?: {
+    queued: number;
+    success: number;
+    processed: number;
+    failed: number;
+  };
+  // Canonical contract (preferred)
+  canonical?: {
+    status: CampaignStatus;
+    statusRaw?: string | null;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+    queued: number;
+    totals: Campaign['totals'] | null;
+    delivery: Campaign['delivery'] | null;
+    sourceOfTruth: 'mitto' | string;
+  };
 }
 
 export interface CampaignProgress {
-  sent: number;
+  // Backward compatible fields
+  sent: number; // accepted
   failed: number;
-  pending: number;
+  pending: number; // queued (not accepted)
+  processed: number;
+  progress: number;
+  // Canonical fields
+  accepted: number;
+  delivered: number;
+  failedDelivery: number;
+  pendingDelivery: number;
   percentage: number;
+  total: number;
+  sourceOfTruth?: 'mitto' | string;
 }
 
 export interface CampaignPreview {

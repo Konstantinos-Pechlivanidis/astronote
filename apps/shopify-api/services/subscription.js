@@ -438,6 +438,7 @@ export async function allocateFreeCredits(
   planType,
   invoiceId,
   stripeSubscription = null,
+  options = {},
 ) {
   try {
     const shop = await prisma.shop.findUnique({
@@ -453,8 +454,11 @@ export async function allocateFreeCredits(
       throw new Error('Shop not found');
     }
 
-    // Verify subscription is active (required for credit allocation)
-    if (shop.subscriptionStatus !== SubscriptionStatus.active) {
+    const allowInactive = options?.allowInactive === true;
+
+    // Verify subscription is active (unless caller explicitly allows allocation for
+    // Stripe-paid invoice backfills where DB status may be stale).
+    if (!allowInactive && shop.subscriptionStatus !== SubscriptionStatus.active) {
       logger.warn(
         { shopId, subscriptionStatus: shop.subscriptionStatus },
         'Subscription not active',
@@ -484,7 +488,7 @@ export async function allocateFreeCredits(
 
     if (stripeSubscription) {
       billingPeriodStart = getBillingPeriodStart(stripeSubscription, now);
-    } else if (shop.lastFreeCreditsAllocatedAt) {
+    } else if (!invoiceId && shop.lastFreeCreditsAllocatedAt) {
       // If no subscription data, assume monthly billing
       // Check if last allocation was in current month
       const lastAllocated = new Date(shop.lastFreeCreditsAllocatedAt);
@@ -531,6 +535,15 @@ export async function allocateFreeCredits(
     }
 
     // Allocate credits
+    const idempotencyKey = invoiceId
+      ? String(invoiceId).startsWith('sub_')
+        ? String(invoiceId)
+        : `stripe:invoice:${invoiceId}`
+      : null;
+    const periodEnd = stripeSubscription?.current_period_end
+      ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
+      : null;
+
     await prisma.$transaction(async tx => {
       // Credit wallet
       await credit(
@@ -538,6 +551,7 @@ export async function allocateFreeCredits(
         freeCredits,
         {
           reason: `subscription:${planType}:cycle`,
+          idempotencyKey,
           meta: {
             invoiceId: invoiceId || null,
             planType,
@@ -545,6 +559,10 @@ export async function allocateFreeCredits(
             billingPeriodStart: billingPeriodStart
               ? billingPeriodStart.toISOString()
               : null,
+            periodStart: billingPeriodStart
+              ? billingPeriodStart.toISOString()
+              : null,
+            periodEnd,
           },
         },
         tx,
@@ -855,7 +873,8 @@ export async function getBillingSummary(shopId) {
   try {
     const { getBalance } = await import('./wallet.js');
     const balance = await getBalance(shopId);
-    const subscription = await getSubscriptionStatus(shopId);
+    const { getSubscriptionStatusWithStripeSync } = await import('./stripe-sync.js');
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
 
     const remainingAllowance = subscription?.remainingSmsThisPeriod || 0;
 
@@ -1282,7 +1301,7 @@ export async function reconcileSubscriptionFromStripe(shopId) {
  * @param {string} behavior - 'immediate' or 'period_end' (default: 'period_end' for professional behavior)
  * @returns {Promise<Object>} Switch result
  */
-export async function switchSubscriptionInterval(shopId, interval, behavior = 'period_end') {
+export async function switchSubscriptionInterval(shopId, interval, behavior = 'immediate') {
   try {
     if (!['month', 'year'].includes(interval)) {
       throw new Error(`Invalid interval: ${interval}. Must be 'month' or 'year'`);

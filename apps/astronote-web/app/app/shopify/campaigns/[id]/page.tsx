@@ -22,7 +22,7 @@ import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useS
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
-import { StatusBadge } from '@/src/components/retail/StatusBadge';
+import { CampaignStatusBadge } from '@/src/components/shopify/CampaignStatusBadge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import {
@@ -86,7 +86,8 @@ export default function CampaignDetailPage() {
   // Fetch failed recipients (only when section is visible)
   const showFailedSection =
     showFailedRecipients &&
-    (campaign?.status === 'sent' ||
+    (campaign?.status === 'completed' ||
+      campaign?.status === 'sent' ||
       campaign?.status === 'failed' ||
       campaign?.status === 'sending');
   useCampaignFailedRecipients(id, showFailedSection);
@@ -277,7 +278,7 @@ export default function CampaignDetailPage() {
             <div className="space-y-4">
               <div>
                 <div className="text-sm font-medium text-text-secondary mb-1">Status</div>
-                <StatusBadge status={campaign.status} />
+                <CampaignStatusBadge status={campaign.status} />
               </div>
               <div>
                 <div className="text-sm font-medium text-text-secondary mb-1">Recipients</div>
@@ -339,15 +340,27 @@ export default function CampaignDetailPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1">Total</div>
-                  <div className="text-2xl font-bold text-text-primary">{metrics.total || 0}</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {metrics.totals?.recipients ?? (metrics as any).totalRecipients ?? metrics.total ?? 0}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                  <div className="text-2xl font-bold text-green-400">{metrics.sent || 0}</div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Accepted</div>
+                  <div className="text-2xl font-bold text-blue-400">
+                    {metrics.accepted ?? metrics.sent ?? 0}
+                  </div>
                 </div>
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                  <div className="text-2xl font-bold text-red-400">{metrics.failed || 0}</div>
+                  <div className="text-2xl font-bold text-red-400">
+                    {metrics.delivery?.failedDelivery ?? metrics.failed ?? 0}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Delivered</div>
+                  <div className="text-2xl font-bold text-green-400">
+                    {metrics.delivery?.delivered ?? metrics.delivered ?? 0}
+                  </div>
                 </div>
                 {metrics.conversionRate !== undefined && (
                   <div>
@@ -371,19 +384,27 @@ export default function CampaignDetailPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1">Queued</div>
-                  <div className="text-2xl font-bold text-text-primary">{statusData.queued || 0}</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {statusData.canonical?.queued ?? statusData.metrics?.queued ?? 0}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-text-secondary mb-1">Processed</div>
-                  <div className="text-2xl font-bold text-yellow-400">{statusData.processed || 0}</div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Accepted</div>
+                  <div className="text-2xl font-bold text-blue-400">
+                    {statusData.canonical?.totals?.accepted ?? statusData.metrics?.success ?? 0}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                  <div className="text-2xl font-bold text-green-400">{statusData.sent || 0}</div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Delivered</div>
+                  <div className="text-2xl font-bold text-green-400">
+                    {statusData.canonical?.delivery?.delivered ?? 0}
+                  </div>
                 </div>
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                  <div className="text-2xl font-bold text-red-400">{statusData.failed || 0}</div>
+                  <div className="text-2xl font-bold text-red-400">
+                    {statusData.canonical?.delivery?.failedDelivery ?? statusData.metrics?.failed ?? 0}
+                  </div>
                 </div>
               </div>
             </RetailCard>
@@ -401,28 +422,28 @@ export default function CampaignDetailPage() {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-text-secondary">Progress</span>
                     <span className="text-sm font-medium text-text-primary">
-                      {progressData.percentage}%
+                      {progressData.percentage ?? progressData.progress ?? 0}%
                     </span>
                   </div>
                   <div className="w-full h-2 bg-surface-light rounded-full overflow-hidden">
                     <div
                       className="h-full bg-accent transition-all duration-300"
-                      style={{ width: `${progressData.percentage}%` }}
+                      style={{ width: `${progressData.percentage ?? progressData.progress ?? 0}%` }}
                     />
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
-                    <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                    <div className="text-lg font-bold text-green-400">{progressData.sent || 0}</div>
+                    <div className="text-sm font-medium text-text-secondary mb-1">Accepted</div>
+                    <div className="text-lg font-bold text-blue-400">{progressData.accepted ?? progressData.sent ?? 0}</div>
                   </div>
                   <div>
                     <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                    <div className="text-lg font-bold text-red-400">{progressData.failed || 0}</div>
+                    <div className="text-lg font-bold text-red-400">{progressData.failedDelivery ?? progressData.failed ?? 0}</div>
                   </div>
                   <div>
-                    <div className="text-sm font-medium text-text-secondary mb-1">Pending</div>
-                    <div className="text-lg font-bold text-yellow-400">{progressData.pending || 0}</div>
+                    <div className="text-sm font-medium text-text-secondary mb-1">Pending delivery</div>
+                    <div className="text-lg font-bold text-yellow-400">{progressData.pendingDelivery ?? 0}</div>
                   </div>
                 </div>
               </div>
@@ -430,7 +451,7 @@ export default function CampaignDetailPage() {
           )}
 
           {/* Delivery Breakdown Card */}
-          {metrics && (campaign.status === 'sent' || campaign.status === 'sending' || campaign.status === 'failed') && (
+          {metrics && (campaign.status === 'completed' || campaign.status === 'sent' || campaign.status === 'sending' || campaign.status === 'failed') && (
             <RetailCard className="p-6">
               <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
@@ -439,22 +460,26 @@ export default function CampaignDetailPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1">Total Recipients</div>
-                  <div className="text-2xl font-bold text-text-primary">{metrics.total || 0}</div>
+                  <div className="text-2xl font-bold text-text-primary">
+                    {metrics.totals?.recipients ?? (metrics as any).totalRecipients ?? metrics.total ?? 0}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                  <div className="text-2xl font-bold text-green-400">{metrics.sent || 0}</div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Accepted</div>
+                  <div className="text-2xl font-bold text-blue-400">{metrics.accepted ?? metrics.sent ?? 0}</div>
                 </div>
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                  <div className="text-2xl font-bold text-red-400">{metrics.failed || 0}</div>
+                  <div className="text-2xl font-bold text-red-400">{metrics.delivery?.failedDelivery ?? metrics.failed ?? 0}</div>
                 </div>
-                {metrics.delivered !== undefined && (
-                  <div>
-                    <div className="text-sm font-medium text-text-secondary mb-1">Delivered</div>
-                    <div className="text-2xl font-bold text-blue-400">{metrics.delivered || 0}</div>
-                  </div>
-                )}
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Delivered</div>
+                  <div className="text-2xl font-bold text-green-400">{metrics.delivery?.delivered ?? metrics.delivered ?? 0}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-text-secondary mb-1">Pending Delivery</div>
+                  <div className="text-2xl font-bold text-yellow-400">{metrics.pendingDelivery ?? metrics.delivery?.pendingDelivery ?? 0}</div>
+                </div>
               </div>
             </RetailCard>
           )}

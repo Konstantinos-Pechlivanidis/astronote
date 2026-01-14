@@ -11,6 +11,11 @@ import {
   SmsConsent,
 } from '../utils/prismaEnums.js';
 import { mapCampaignToDTO } from '../utils/dto-mappers.js';
+import {
+  CAMPAIGN_STATUS_SET,
+  normalizeCampaignStatus,
+} from '../constants/campaign-status.js';
+import { getCanonicalMetricsForCampaignIds } from './campaign-metrics-batch.js';
 
 /**
  * Campaigns Service
@@ -256,18 +261,13 @@ export async function listCampaigns(storeId, filters = {}) {
 
   const where = { shopId: storeId };
 
-  if (
-    status &&
-    [
-      CampaignStatus.draft,
-      CampaignStatus.scheduled,
-      CampaignStatus.sending,
-      CampaignStatus.sent,
-      CampaignStatus.failed,
-      CampaignStatus.cancelled,
-    ].includes(status)
-  ) {
-    where.status = status;
+  if (status && CAMPAIGN_STATUS_SET.has(status)) {
+    // Treat legacy 'sent' as alias for canonical completion in filters.
+    if (status === CampaignStatus.sent || status === CampaignStatus.completed) {
+      where.status = { in: [CampaignStatus.completed, CampaignStatus.sent] };
+    } else {
+      where.status = status;
+    }
   }
 
   const validSortFields = ['createdAt', 'updatedAt', 'name', 'scheduleAt'];
@@ -287,50 +287,22 @@ export async function listCampaigns(storeId, filters = {}) {
     prisma.campaign.count({ where }),
   ]);
 
-  // Get recipient counts and delivery stats for all campaigns in parallel
-  // For sent campaigns, count actual CampaignRecipient records
-  // For scheduled/draft campaigns, calculate based on audience
-  const campaignsWithStats = await Promise.all(
-    campaigns.map(async campaign => {
-      let recipientCount = 0;
-      let sentCount = 0;
-      let deliveredCount = 0;
-      let failedCount = 0;
+  // Compute canonical metrics in batch (actual recipients table), then overlay estimates for draft/scheduled.
+  const campaignIds = campaigns.map(c => c.id);
+  const canonicalById = await getCanonicalMetricsForCampaignIds(campaignIds);
 
-      // If campaign has been sent (status is 'sending' or 'sent'), count actual recipients
-      if (
-        campaign.status === CampaignStatus.sending ||
-        campaign.status === CampaignStatus.sent ||
-        campaign.status === CampaignStatus.failed ||
-        campaign.status === CampaignStatus.completed
-      ) {
-        // Count recipients and delivery status
-        const [total, delivered, failed] = await Promise.all([
-          prisma.campaignRecipient.count({
-            where: { campaignId: campaign.id },
-          }),
-          prisma.campaignRecipient.count({
-            where: {
-              campaignId: campaign.id,
-              deliveryStatus: 'Delivered',
-            },
-          }),
-          prisma.campaignRecipient.count({
-            where: {
-              campaignId: campaign.id,
-              deliveryStatus: 'Failed',
-            },
-          }),
-        ]);
-        recipientCount = total;
-        sentCount = total;
-        deliveredCount = delivered;
-        failedCount = failed;
-      } else {
-        // For draft/scheduled campaigns, calculate recipient count based on audience
+  // Estimate recipients for campaigns that haven't been enqueued yet (draft/scheduled).
+  const estimateById = new Map();
+  await Promise.all(
+    campaigns.map(async campaign => {
+      const rawStatus = String(campaign.status || '');
+      const normalized = normalizeCampaignStatus(rawStatus);
+      // For draft/scheduled, recipient rows might not exist yet: compute an audience estimate.
+      if (normalized.status === CampaignStatus.draft || normalized.status === CampaignStatus.scheduled) {
+        let estimate = 0;
         const base = normalizeAudienceQuery(campaign.audience);
         if (base) {
-          recipientCount = await prisma.contact.count({
+          estimate = await prisma.contact.count({
             where: { shopId: storeId, ...base },
           });
         } else {
@@ -343,53 +315,66 @@ export async function listCampaigns(storeId, filters = {}) {
           }
 
           if (segmentId) {
-            // Validate segment belongs to shop
             const segment = await prisma.segment.findFirst({
-              where: {
-                id: segmentId,
-                shopId: storeId,
-              },
+              where: { id: segmentId, shopId: storeId },
             });
-
             if (segment) {
               if (segment.type === 'system') {
-                // For system segments, use segments service
                 const segmentsService = (await import('./segments.js')).default;
-                recipientCount = await segmentsService.getSegmentEstimatedCount(storeId, segment);
+                estimate = await segmentsService.getSegmentEstimatedCount(storeId, segment);
               } else {
-                // For custom segments, use memberships
-                recipientCount = await prisma.segmentMembership.count({
+                estimate = await prisma.segmentMembership.count({
                   where: {
                     segmentId,
-                    contact: {
-                      shopId: storeId,
-                      smsConsent: 'opted_in',
-                    },
+                    contact: { shopId: storeId, smsConsent: 'opted_in' },
                   },
                 });
               }
             }
           } else {
-            // Fallback to all opted-in contacts
-            recipientCount = await prisma.contact.count({
+            estimate = await prisma.contact.count({
               where: { shopId: storeId, smsConsent: SmsConsent.opted_in },
             });
           }
         }
+        estimateById.set(campaign.id, estimate);
       }
-
-      // Map to DTO with metrics
-      const campaignDTO = mapCampaignToDTO({
-        ...campaign,
-        recipientCount,
-        sentCount,
-        deliveredCount,
-        failedCount,
-        totalRecipients: recipientCount, // Alias for backward compatibility
-      });
-      return campaignDTO;
     }),
   );
+
+  const campaignsWithStats = campaigns.map(campaign => {
+    const canonical = canonicalById.get(campaign.id);
+    const estimate = estimateById.get(campaign.id) || 0;
+    const recipients = canonical?.totals?.recipients > 0 ? canonical.totals.recipients : estimate;
+    const accepted = canonical?.totals?.accepted || 0;
+    const delivered = canonical?.totals?.delivered || 0;
+    const failed = canonical?.totals?.failed || 0;
+
+    const dto = mapCampaignToDTO({
+      ...campaign,
+      // Backward-compatible counters
+      recipientCount: recipients,
+      totalRecipients: recipients,
+      sentCount: accepted,
+      deliveredCount: delivered,
+      failedCount: failed,
+      // New canonical sections
+      totals: {
+        recipients,
+        accepted,
+        sent: accepted,
+        delivered,
+        failed,
+      },
+      delivery: canonical?.delivery || {
+        pendingDelivery: Math.max(accepted - delivered - failed, 0),
+        delivered,
+        failedDelivery: failed,
+      },
+      sourceOfTruth: 'mitto',
+    });
+    return dto;
+  });
 
   const totalPages = Math.ceil(total / parseInt(pageSize));
 
@@ -446,7 +431,8 @@ export async function getCampaignById(storeId, campaignId) {
   if (
     campaign.status === CampaignStatus.sending ||
     campaign.status === CampaignStatus.sent ||
-    campaign.status === CampaignStatus.failed
+    campaign.status === CampaignStatus.failed ||
+    campaign.status === CampaignStatus.completed
   ) {
     // Count actual recipients for campaigns that have been sent
     recipientCount = await prisma.campaignRecipient.count({
@@ -459,27 +445,39 @@ export async function getCampaignById(storeId, campaignId) {
       recipientCount = await prisma.contact.count({
         where: { shopId: storeId, ...base },
       });
-    } else if (campaign.audience.startsWith('segment:')) {
-      const segmentId = campaign.audience.split(':')[1];
-      // Validate segment belongs to shop
-      const segment = await prisma.segment.findFirst({
-        where: {
-          id: segmentId,
-          shopId: storeId,
-        },
-        select: { id: true },
-      });
+    } else {
+      // Segment-based audience (supports both "segment:ID" and direct segment ID)
+      let segmentId = null;
+      if (typeof campaign.audience === 'string' && campaign.audience.startsWith('segment:')) {
+        segmentId = campaign.audience.split(':')[1];
+      } else if (typeof campaign.audience === 'string' && campaign.audience !== 'all') {
+        segmentId = campaign.audience;
+      }
 
-      if (segment) {
-        recipientCount = await prisma.segmentMembership.count({
-          where: {
-            segmentId,
-            contact: {
-              shopId: storeId,
-              smsConsent: 'opted_in',
-            },
-          },
+      if (!segmentId) {
+        recipientCount = 0;
+      } else {
+        // Validate segment belongs to shop
+        const segment = await prisma.segment.findFirst({
+          where: { id: segmentId, shopId: storeId },
         });
+
+        if (!segment) {
+          recipientCount = 0;
+        } else if (segment.type === 'system') {
+          const segmentsService = (await import('./segments.js')).default;
+          recipientCount = await segmentsService.getSegmentEstimatedCount(storeId, segment);
+        } else {
+          recipientCount = await prisma.segmentMembership.count({
+            where: {
+              segmentId,
+              contact: {
+                shopId: storeId,
+                smsConsent: 'opted_in',
+              },
+            },
+          });
+        }
       }
     }
   }
@@ -491,11 +489,34 @@ export async function getCampaignById(storeId, campaignId) {
     status: campaign.status,
   });
 
-  return {
+  const canonicalById = await getCanonicalMetricsForCampaignIds([campaignId]);
+  const canonical = canonicalById.get(campaignId);
+  const recipients = canonical?.totals?.recipients > 0 ? canonical.totals.recipients : recipientCount;
+  const accepted = canonical?.totals?.accepted || 0;
+  const delivered = canonical?.totals?.delivered || 0;
+  const failed = canonical?.totals?.failed || 0;
+
+  return mapCampaignToDTO({
     ...campaign,
-    recipientCount,
-    totalRecipients: recipientCount, // Alias for backward compatibility
-  };
+    recipientCount: recipients,
+    totalRecipients: recipients, // Alias for backward compatibility
+    sentCount: accepted,
+    deliveredCount: delivered,
+    failedCount: failed,
+    totals: {
+      recipients,
+      accepted,
+      sent: accepted,
+      delivered,
+      failed,
+    },
+    delivery: canonical?.delivery || {
+      pendingDelivery: Math.max(accepted - delivered - failed, 0),
+      delivered,
+      failedDelivery: failed,
+    },
+    sourceOfTruth: 'mitto',
+  });
 }
 
 /**
@@ -666,6 +687,7 @@ export async function updateCampaign(storeId, campaignId, campaignData) {
   // Can't update sent or sending campaigns
   if (
     existing.status === CampaignStatus.sent ||
+    existing.status === CampaignStatus.completed ||
     existing.status === CampaignStatus.sending
   ) {
     throw new ValidationError(
@@ -770,6 +792,7 @@ export async function deleteCampaign(storeId, campaignId) {
   // Can't delete sent campaigns
   if (
     existing.status === CampaignStatus.sent ||
+    existing.status === CampaignStatus.completed ||
     existing.status === CampaignStatus.sending
   ) {
     throw new ValidationError(
@@ -2247,31 +2270,50 @@ export async function getCampaignMetrics(storeId, campaignId) {
     totalProcessed: 0,
   };
 
-  // Get total recipients count
-  const totalRecipients = await prisma.campaignRecipient.count({
-    where: { campaignId },
-  });
+  // Canonical delivery metrics (provider truth mirrored in DB)
+  const canonicalById = await getCanonicalMetricsForCampaignIds([campaignId]);
+  const canonical = canonicalById.get(campaignId);
+  const canonicalTotals = canonical?.totals || {
+    recipients: 0,
+    accepted: 0,
+    sent: 0,
+    delivered: 0,
+    failed: 0,
+  };
+  const canonicalDelivery = canonical?.delivery || {
+    pendingDelivery: 0,
+    delivered: 0,
+    failedDelivery: 0,
+  };
+
+  const totalRecipients = canonicalTotals.recipients || 0;
 
   // Calculate percentages
   const sentPercentage =
     totalRecipients > 0
-      ? Math.round((metrics.totalSent / totalRecipients) * 100 * 100) / 100
+      ? Math.round((canonicalTotals.accepted / totalRecipients) * 100 * 100) / 100
       : 0;
   const failedPercentage =
     totalRecipients > 0
-      ? Math.round((metrics.totalFailed / totalRecipients) * 100 * 100) / 100
+      ? Math.round((canonicalTotals.failed / totalRecipients) * 100 * 100) / 100
       : 0;
   const deliveredPercentage =
     totalRecipients > 0
-      ? Math.round((metrics.totalDelivered / totalRecipients) * 100 * 100) / 100
+      ? Math.round((canonicalTotals.delivered / totalRecipients) * 100 * 100) / 100
       : 0;
 
   // Return with both old and new field names for API compatibility
   return {
     ...metrics,
-    sent: metrics.totalSent, // ✅ Add sent alias for test compatibility
-    delivered: metrics.totalDelivered, // ✅ Add delivered alias
-    failed: metrics.totalFailed, // ✅ Add failed alias
+    // Canonical fields (preferred by FE)
+    totals: canonicalTotals,
+    delivery: canonicalDelivery,
+    accepted: canonicalTotals.accepted,
+    pendingDelivery: canonicalDelivery.pendingDelivery,
+    // Backward-compatible aliases (now explicitly defined)
+    sent: canonicalTotals.accepted,
+    delivered: canonicalTotals.delivered,
+    failed: canonicalTotals.failed,
     totalRecipients,
     sentPercentage,
     failedPercentage,
@@ -2302,6 +2344,10 @@ export async function getCampaignStats(storeId) {
     }),
   ]);
 
+  const completedCount =
+    (statusStats.find(s => s.status === CampaignStatus.completed)?._count?.status || 0) +
+    (statusStats.find(s => s.status === CampaignStatus.sent)?._count?.status || 0);
+
   const stats = {
     total,
     totalCampaigns: total, // Alias for consistency with expected response structure
@@ -2315,9 +2361,12 @@ export async function getCampaignStats(storeId) {
       sending:
         statusStats.find(s => s.status === CampaignStatus.sending)?._count
           ?.status || 0,
-      sent:
-        statusStats.find(s => s.status === CampaignStatus.sent)?._count
+      paused:
+        statusStats.find(s => s.status === CampaignStatus.paused)?._count
           ?.status || 0,
+      completed: completedCount,
+      // Backward compatibility: older UI expects `sent` bucket
+      sent: completedCount,
       failed:
         statusStats.find(s => s.status === CampaignStatus.failed)?._count
           ?.status || 0,

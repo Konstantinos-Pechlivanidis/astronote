@@ -33,13 +33,13 @@ export type BillingActionId =
   | 'subscribe'
   | 'changePlan'
   | 'switchInterval'
+  | 'cancelScheduledChange'
   | 'cancelAtPeriodEnd'
   | 'resumeSubscription'
   | 'updatePaymentMethod'
   | 'refreshFromStripe'
   | 'viewInvoices'
-  | 'viewPlans'
-  | 'completeBillingDetails';
+  | 'viewPlans';
 
 export interface BillingAction {
   id: BillingActionId;
@@ -159,13 +159,6 @@ function getAllActionsForState(uiState: BillingUIState): BillingAction[] {
         variant: 'outline',
         requiresConfirmation: false,
       },
-      {
-        id: 'completeBillingDetails',
-        label: 'Complete Billing Details',
-        intent: 'secondary',
-        variant: 'outline',
-        requiresConfirmation: false,
-      },
     );
     return actions;
   }
@@ -275,6 +268,14 @@ function getAllActionsForState(uiState: BillingUIState): BillingAction[] {
           intent: 'secondary',
           variant: 'outline',
           confirmationCopy: `You have a scheduled change to ${uiState.pendingChange.planCode} (${uiState.pendingChange.interval}ly) on ${effectiveDate}. You can modify this change.`,
+          requiresConfirmation: true,
+        },
+        {
+          id: 'cancelScheduledChange',
+          label: 'Cancel Scheduled Change',
+          intent: 'danger',
+          variant: 'outline',
+          confirmationCopy: `This will cancel your scheduled change and keep your current plan. (Effective date was ${effectiveDate}.)`,
           requiresConfirmation: true,
         },
         {
@@ -444,6 +445,13 @@ export function isActionDisabled(
         reason: 'This change is already scheduled.',
       };
     }
+  }
+
+  if (!uiState.pendingChange && actionId === 'cancelScheduledChange') {
+    return {
+      disabled: true,
+      reason: 'No scheduled change to cancel.',
+    };
   }
 
   // If cancelAtPeriodEnd, disable cancel action

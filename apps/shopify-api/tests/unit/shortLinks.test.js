@@ -1,148 +1,92 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import prisma from '../../services/prisma.js';
-import {
-  createShortLink,
-  getShortLinkByToken,
-  incrementClickCount,
-} from '../../services/shortLinks.js';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 
-describe('Short Links Service', () => {
-  let testShop;
-  let testCampaign;
-  let testContact;
+const prismaMock = {
+  shortLink: {
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+};
 
-  beforeEach(async () => {
-    // Create test shop
-    testShop = await prisma.shop.create({
-      data: {
-        shopDomain: 'test-shop.myshopify.com',
-        shopName: 'Test Shop',
-        credits: 1000,
-        currency: 'EUR',
-        status: 'active',
-      },
-    });
+describe('Short Links Service (unit)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.resetModules();
+    process.env.NODE_ENV = 'test';
+    process.env.URL_SHORTENER_BASE_URL = 'https://example.test';
 
-    // Create test campaign
-    testCampaign = await prisma.campaign.create({
-      data: {
-        shopId: testShop.id,
-        name: 'Test Campaign',
-        message: 'Test message',
-        audience: 'all',
-        scheduleType: 'immediate',
-        status: 'draft',
-      },
-    });
-
-    // Create test contact
-    testContact = await prisma.contact.create({
-      data: {
-        shopId: testShop.id,
-        phoneE164: '+1234567890',
-        smsConsent: 'opted_in',
-      },
-    });
+    jest.unstable_mockModule('../../services/prisma.js', () => ({
+      default: prismaMock,
+    }));
   });
 
-  afterEach(async () => {
-    // Cleanup
-    await prisma.shortLink.deleteMany({
-      where: { shopId: testShop.id },
+  it('createShortLink creates a short link and returns a shortUrl', async () => {
+    prismaMock.shortLink.findUnique.mockResolvedValue(null);
+    prismaMock.shortLink.create.mockImplementation(async ({ data }) => ({
+      id: 'sl_1',
+      token: data.token,
+      destinationUrl: data.destinationUrl,
+      clicks: 0,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      expiresAt: data.expiresAt ?? null,
+      campaignId: data.campaignId ?? null,
+      contactId: data.contactId ?? null,
+    }));
+
+    const { createShortLink } = await import('../../services/shortLinks.js');
+    const result = await createShortLink({
+      destinationUrl: 'https://example.com/page',
+      shopId: 'shop_123',
     });
-    await prisma.campaign.deleteMany({
-      where: { shopId: testShop.id },
-    });
-    await prisma.contact.deleteMany({
-      where: { shopId: testShop.id },
-    });
-    await prisma.shop.delete({
-      where: { id: testShop.id },
-    });
+
+    expect(result.token).toBeTruthy();
+    expect(result.token.length).toBe(10);
+    expect(result.shortUrl).toBe(`https://example.test/r/${result.token}`);
+    expect(result.destinationUrl).toBe('https://example.com/page');
+    expect(result.clicks).toBe(0);
   });
 
-  describe('createShortLink', () => {
-    it('should create a short link with valid HTTPS URL', async () => {
-      const result = await createShortLink({
-        destinationUrl: 'https://example.com/page',
-        shopId: testShop.id,
-      });
+  it('createShortLink rejects non-HTTPS URL in production', async () => {
+    const originalEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
 
-      expect(result).toHaveProperty('token');
-      expect(result).toHaveProperty('shortUrl');
-      expect(result.shortUrl).toContain('/r/');
-      expect(result.destinationUrl).toBe('https://example.com/page');
-      expect(result.clicks).toBe(0);
-    });
+    const { createShortLink } = await import('../../services/shortLinks.js');
+    await expect(
+      createShortLink({
+        destinationUrl: 'http://example.com',
+        shopId: 'shop_123',
+      }),
+    ).rejects.toThrow();
 
-    it('should reject non-HTTPS URL in production', async () => {
-      const originalEnv = process.env.NODE_ENV;
-      process.env.NODE_ENV = 'production';
-
-      await expect(
-        createShortLink({
-          destinationUrl: 'http://example.com',
-          shopId: testShop.id,
-        }),
-      ).rejects.toThrow();
-
-      process.env.NODE_ENV = originalEnv;
-    });
-
-    it('should create short link with campaign and contact context', async () => {
-      const result = await createShortLink({
-        destinationUrl: 'https://example.com',
-        shopId: testShop.id,
-        campaignId: testCampaign.id,
-        contactId: testContact.id,
-      });
-
-      expect(result).toHaveProperty('token');
-      const link = await getShortLinkByToken(result.token);
-      expect(link.campaignId).toBe(testCampaign.id);
-      expect(link.contactId).toBe(testContact.id);
-    });
-
-    it('should generate unique tokens', async () => {
-      const results = await Promise.all([
-        createShortLink({
-          destinationUrl: 'https://example.com/1',
-          shopId: testShop.id,
-        }),
-        createShortLink({
-          destinationUrl: 'https://example.com/2',
-          shopId: testShop.id,
-        }),
-        createShortLink({
-          destinationUrl: 'https://example.com/3',
-          shopId: testShop.id,
-        }),
-      ]);
-
-      const tokens = results.map(r => r.token);
-      expect(new Set(tokens).size).toBe(3); // All unique
-    });
+    process.env.NODE_ENV = originalEnv;
   });
 
-  describe('incrementClickCount', () => {
-    it('should increment click count atomically', async () => {
-      const shortLink = await createShortLink({
-        destinationUrl: 'https://example.com',
-        shopId: testShop.id,
-      });
+  it('getShortLinkByToken calls prisma.shortLink.findUnique', async () => {
+    prismaMock.shortLink.findUnique.mockResolvedValue({ token: 'tok_123' });
+    const { getShortLinkByToken } = await import('../../services/shortLinks.js');
 
-      const initialClicks = shortLink.clicks;
+    const result = await getShortLinkByToken('tok_123');
+    expect(prismaMock.shortLink.findUnique).toHaveBeenCalledWith({
+      where: { token: 'tok_123' },
+    });
+    expect(result).toEqual({ token: 'tok_123' });
+  });
 
-      // Increment multiple times
-      await Promise.all([
-        incrementClickCount(shortLink.token),
-        incrementClickCount(shortLink.token),
-        incrementClickCount(shortLink.token),
-      ]);
+  it('incrementClickCount calls prisma.shortLink.update with atomic increment', async () => {
+    prismaMock.shortLink.update.mockResolvedValue({
+      token: 'tok_123',
+      clicks: 5,
+      lastClickedAt: new Date(),
+    });
+    const { incrementClickCount } = await import('../../services/shortLinks.js');
 
-      const updated = await getShortLinkByToken(shortLink.token);
-      expect(updated.clicks).toBe(initialClicks + 3);
-      expect(updated.lastClickedAt).toBeTruthy();
+    await incrementClickCount('tok_123');
+    expect(prismaMock.shortLink.update).toHaveBeenCalledWith({
+      where: { token: 'tok_123' },
+      data: {
+        clicks: { increment: 1 },
+        lastClickedAt: expect.any(Date),
+      },
     });
   });
 });

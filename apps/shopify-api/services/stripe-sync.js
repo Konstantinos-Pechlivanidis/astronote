@@ -1,17 +1,13 @@
 import { logger } from '../utils/logger.js';
 import prisma from './prisma.js';
 import { SubscriptionStatus } from '../utils/prismaEnums.js';
+import { isValidScheduledChange } from './subscription-change-policy.js';
+import Stripe from 'stripe';
 
-let stripe = null;
-try {
-  const stripeModule = await import('stripe');
-  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-  if (stripeSecretKey) {
-    stripe = stripeModule.default(stripeSecretKey);
-  }
-} catch (err) {
-  logger.warn('Stripe module not available', { error: err.message });
-}
+// Stripe client (optional). Keep initialization consistent across the codebase.
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' })
+  : null;
 
 /**
  * StripeSyncService - Absolute Stripe↔DB Transparency
@@ -32,7 +28,7 @@ export async function fetchStripeSubscription(stripeSubscriptionId) {
 
   try {
     const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
-      expand: ['items.data.price', 'customer'],
+      expand: ['items.data.price', 'customer', 'schedule'],
     });
     return subscription;
   } catch (err) {
@@ -44,6 +40,61 @@ export async function fetchStripeSubscription(stripeSubscriptionId) {
   }
 }
 
+const derivePendingChangeFromStripeSchedule = async (stripeSubscription) => {
+  const schedule = stripeSubscription?.schedule;
+  if (!schedule || !Array.isArray(schedule.phases) || schedule.phases.length < 2) {
+    return null;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const nextPhase = schedule.phases.find(
+    (phase) => phase?.start_date && phase.start_date > now,
+  );
+
+  if (!nextPhase || !Array.isArray(nextPhase.items) || nextPhase.items.length === 0) {
+    return null;
+  }
+
+  const nextPrice = nextPhase.items[0]?.price || null;
+  const nextPriceId = typeof nextPrice === 'string' ? nextPrice : nextPrice?.id;
+  if (!nextPriceId) {
+    return null;
+  }
+
+  const planCatalog = await import('./plan-catalog.js');
+  const resolved = planCatalog.resolvePlanFromPriceId(nextPriceId);
+  if (!resolved) {
+    return null;
+  }
+
+  return {
+    planCode: resolved.planCode,
+    interval: resolved.interval,
+    currency: resolved.currency,
+    effectiveAt: new Date(nextPhase.start_date * 1000),
+  };
+};
+
+const clearPendingChange = async (shopId, reason) => {
+  try {
+    await prisma.subscription.updateMany({
+      where: { shopId },
+      data: {
+        pendingChangePlanCode: null,
+        pendingChangeInterval: null,
+        pendingChangeCurrency: null,
+        pendingChangeEffectiveAt: null,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: reason || 'pending_change_cleared',
+      },
+    });
+  } catch (err) {
+    logger.debug('Failed to clear pending change', {
+      shopId,
+      error: err.message,
+    });
+  }
+};
 /**
  * Derive canonical subscription fields from Stripe subscription
  * @param {Object} stripeSubscription - Stripe subscription object
@@ -229,7 +280,7 @@ export async function getSubscriptionStatusWithStripeSync(shopId) {
   }
 
   // Build pendingChange object if exists
-  const pendingChange = subscriptionRecord?.pendingChangePlanCode
+  let pendingChange = subscriptionRecord?.pendingChangePlanCode
     ? {
       planCode: subscriptionRecord.pendingChangePlanCode,
       interval: subscriptionRecord.pendingChangeInterval || null,
@@ -237,10 +288,29 @@ export async function getSubscriptionStatusWithStripeSync(shopId) {
       effectiveAt: subscriptionRecord.pendingChangeEffectiveAt || null,
     }
     : null;
+  const dbPendingChange = pendingChange;
 
   // If no Stripe subscription ID, return DB state
   if (!shop.stripeSubscriptionId || !stripe) {
     const status = subscriptionRecord?.status || shop.subscriptionStatus || SubscriptionStatus.inactive;
+    const currentPlanCode = subscriptionRecord?.planCode || shop.planType || null;
+    const currentInterval = subscriptionRecord?.interval || shop.subscriptionInterval || null;
+
+    if (pendingChange) {
+      const isScheduled = isValidScheduledChange(
+        { planCode: currentPlanCode, interval: currentInterval },
+        pendingChange,
+      );
+      const isEffective =
+        pendingChange.planCode === currentPlanCode &&
+        (!pendingChange.interval || pendingChange.interval === currentInterval);
+
+      if (!isScheduled || isEffective) {
+        await clearPendingChange(shopId, isEffective ? 'pending_change_applied' : 'pending_change_invalid');
+        pendingChange = null;
+      }
+    }
+
     return {
       active: status === SubscriptionStatus.active,
       planType: subscriptionRecord?.planCode || shop.planType,
@@ -272,6 +342,24 @@ export async function getSubscriptionStatusWithStripeSync(shopId) {
   if (!stripeSubscription) {
     // Stripe fetch failed, return DB state
     const status = subscriptionRecord?.status || shop.subscriptionStatus || SubscriptionStatus.inactive;
+    const currentPlanCode = subscriptionRecord?.planCode || shop.planType || null;
+    const currentInterval = subscriptionRecord?.interval || shop.subscriptionInterval || null;
+
+    if (pendingChange) {
+      const isScheduled = isValidScheduledChange(
+        { planCode: currentPlanCode, interval: currentInterval },
+        pendingChange,
+      );
+      const isEffective =
+        pendingChange.planCode === currentPlanCode &&
+        (!pendingChange.interval || pendingChange.interval === currentInterval);
+
+      if (!isScheduled || isEffective) {
+        await clearPendingChange(shopId, isEffective ? 'pending_change_applied' : 'pending_change_invalid');
+        pendingChange = null;
+      }
+    }
+
     return {
       active: status === SubscriptionStatus.active,
       planType: subscriptionRecord?.planCode || shop.planType,
@@ -303,6 +391,24 @@ export async function getSubscriptionStatusWithStripeSync(shopId) {
   if (!canonicalFields) {
     // Could not derive, return DB state
     const status = subscriptionRecord?.status || shop.subscriptionStatus || SubscriptionStatus.inactive;
+    const currentPlanCode = subscriptionRecord?.planCode || shop.planType || null;
+    const currentInterval = subscriptionRecord?.interval || shop.subscriptionInterval || null;
+
+    if (pendingChange) {
+      const isScheduled = isValidScheduledChange(
+        { planCode: currentPlanCode, interval: currentInterval },
+        pendingChange,
+      );
+      const isEffective =
+        pendingChange.planCode === currentPlanCode &&
+        (!pendingChange.interval || pendingChange.interval === currentInterval);
+
+      if (!isScheduled || isEffective) {
+        await clearPendingChange(shopId, isEffective ? 'pending_change_applied' : 'pending_change_invalid');
+        pendingChange = null;
+      }
+    }
+
     return {
       active: status === SubscriptionStatus.active,
       planType: subscriptionRecord?.planCode || shop.planType,
@@ -367,6 +473,76 @@ export async function getSubscriptionStatusWithStripeSync(shopId) {
     }
   }
 
+  const currentPlanCode = canonicalFields.planCode;
+  const currentInterval = canonicalFields.interval;
+  const pendingFromStripe = await derivePendingChangeFromStripeSchedule(stripeSubscription);
+
+  if (pendingFromStripe) {
+    const validScheduled = isValidScheduledChange(
+      { planCode: currentPlanCode, interval: currentInterval },
+      pendingFromStripe,
+    );
+
+    if (!validScheduled) {
+      logger.warn('Invalid scheduled change detected from Stripe schedule', {
+        shopId,
+        currentPlanCode,
+        currentInterval,
+        pendingFromStripe,
+      });
+      await clearPendingChange(shopId, 'pending_change_invalid');
+      pendingChange = null;
+    } else {
+      pendingChange = pendingFromStripe;
+      const pendingEffectiveAt = pendingFromStripe.effectiveAt
+        ? new Date(pendingFromStripe.effectiveAt).toISOString()
+        : null;
+      const dbEffectiveAt = dbPendingChange?.effectiveAt
+        ? new Date(dbPendingChange.effectiveAt).toISOString()
+        : null;
+      const pendingDiffers =
+        !dbPendingChange ||
+        dbPendingChange.planCode !== pendingFromStripe.planCode ||
+        dbPendingChange.interval !== pendingFromStripe.interval ||
+        dbPendingChange.currency !== pendingFromStripe.currency ||
+        dbEffectiveAt !== pendingEffectiveAt;
+
+      if (pendingDiffers) {
+        try {
+          await prisma.subscription.updateMany({
+            where: { shopId },
+            data: {
+              pendingChangePlanCode: pendingFromStripe.planCode,
+              pendingChangeInterval: pendingFromStripe.interval,
+              pendingChangeCurrency: pendingFromStripe.currency,
+              pendingChangeEffectiveAt: pendingFromStripe.effectiveAt,
+              lastSyncedAt: new Date(),
+              sourceOfTruth: 'stripe_schedule',
+            },
+          });
+        } catch (err) {
+          logger.debug('Failed to sync pending change from Stripe schedule', {
+            shopId,
+            error: err.message,
+          });
+        }
+      }
+    }
+  } else if (pendingChange) {
+    const isScheduled = isValidScheduledChange(
+      { planCode: currentPlanCode, interval: currentInterval },
+      pendingChange,
+    );
+    const isEffective =
+      pendingChange.planCode === currentPlanCode &&
+      (!pendingChange.interval || pendingChange.interval === currentInterval);
+
+    if (!isScheduled || isEffective) {
+      await clearPendingChange(shopId, isEffective ? 'pending_change_applied' : 'pending_change_invalid');
+      pendingChange = null;
+    }
+  }
+
   // Return canonical DTO (always from Stripe truth)
   const status = canonicalFields.status;
   const isActive = status === SubscriptionStatus.active;
@@ -424,4 +600,3 @@ export async function getSubscriptionStatusWithStripeSync(shopId) {
     } : undefined,
   };
 }
-

@@ -20,6 +20,10 @@ import {
 import { syncBillingProfileFromStripe } from '../services/billing-profile.js';
 import { resolveTaxTreatment, resolveTaxRateForInvoice } from '../services/tax-resolver.js';
 import { upsertTaxEvidence } from '../services/tax-evidence.js';
+import {
+  decideChangeMode,
+  isValidScheduledChange,
+} from '../services/subscription-change-policy.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
 import { getBillingProfile } from '../services/billing-profile.js';
@@ -38,12 +42,11 @@ export async function getStatus(req, res, next) {
   try {
     const shopId = getStoreId(req);
 
-    const subscription = await getSubscriptionStatus(shopId);
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
 
     // Add plan config to response (aligned with Retail)
-    const plan = subscription.planType
-      ? getPlanConfig(subscription.planType)
-      : null;
+    const planType = subscription.planCode || subscription.planType;
+    const plan = planType ? getPlanConfig(planType) : null;
 
     // Compute allowed actions (backend-driven action matrix)
     const allowedActions = computeAllowedActions(subscription);
@@ -340,6 +343,7 @@ export async function switchInterval(req, res, next) {
   try {
     const shopId = getStoreId(req);
     const { interval: targetInterval, planType: targetPlanCode } = req.body;
+    let changeMode = null;
 
     if (!targetInterval && !targetPlanCode) {
       return sendError(
@@ -371,7 +375,48 @@ export async function switchInterval(req, res, next) {
     // If only interval switch (same plan, different interval)
     if (targetInterval) {
       const { switchSubscriptionInterval } = await import('../services/subscription.js');
-      await switchSubscriptionInterval(shopId, targetInterval);
+      changeMode = decideChangeMode(
+        {
+          planCode: subscription.planCode || subscription.planType,
+          interval: subscription.interval,
+        },
+        {
+          planCode: subscription.planCode || subscription.planType,
+          interval: targetInterval,
+        },
+      );
+
+      // If policy says checkout is required, do not mutate subscription here.
+      // Return a Stripe portal URL to complete the change (acts as the "checkout" flow).
+      if (changeMode === 'checkout') {
+        const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
+        const { getCustomerPortalUrl } = await import('../services/stripe.js');
+        const { getFrontendBaseUrlSync } = await import('../utils/frontendUrl.js');
+        const { normalizeBaseUrl } = await import('../utils/url-helpers.js');
+
+        const baseUrl = normalizeBaseUrl(getFrontendBaseUrlSync());
+        const returnUrl = `${baseUrl}/app/shopify/billing?fromPortal=true`;
+        const stripeCustomerId = updatedStatus.stripeCustomerId || subscription.stripeCustomerId;
+        const portalUrl = stripeCustomerId ? await getCustomerPortalUrl(stripeCustomerId, returnUrl) : null;
+
+        const subscriptionDto = {
+          ...updatedStatus,
+          allowedActions: computeAllowedActions(updatedStatus),
+        };
+
+        return sendSuccess(
+          res,
+          {
+            changeMode,
+            checkoutUrl: portalUrl,
+            subscription: subscriptionDto,
+          },
+          'Action requires payment. Please complete the change in Stripe.',
+        );
+      }
+
+      const behavior = changeMode === 'scheduled' ? 'period_end' : 'immediate';
+      await switchSubscriptionInterval(shopId, targetInterval, behavior);
 
       // Sync DB to Stripe immediately
       const { fetchStripeSubscription, deriveCanonicalFields, syncDbToStripe } = await import('../services/stripe-sync.js');
@@ -386,11 +431,18 @@ export async function switchInterval(req, res, next) {
 
     // Return updated subscription status (with Stripe sync)
     const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
+    const subscriptionDto = {
+      ...updatedStatus,
+      allowedActions: computeAllowedActions(updatedStatus),
+    };
     return sendSuccess(
       res,
       {
         interval: targetInterval,
-        subscription: updatedStatus,
+        changeMode,
+        scheduled: changeMode === 'scheduled',
+        effectiveAt: changeMode === 'scheduled' ? updatedStatus.currentPeriodEnd || null : null,
+        subscription: subscriptionDto,
       },
       `Subscription interval switched to ${targetInterval} successfully`,
     );
@@ -523,23 +575,74 @@ export async function update(req, res, next) {
       }
     }
 
-    // Determine change type and behavior
-    const planCatalog = await import('../services/plan-catalog.js');
-    const changeType = planCatalog.getPlanChangeType(subscription.planCode, targetPlanCode);
-    const isProYearlyDowngrade = subscription.planCode === 'pro' && subscription.interval === 'year' && changeType === 'downgrade';
-
-    // Determine behavior: immediate for all except Pro Yearly downgrades
-    const behavior = isProYearlyDowngrade ? 'period_end' : 'immediate';
-
-    // Update Stripe subscription
-    const { updateSubscription } = await import('../services/stripe.js');
-    const updatedStripeSubscription = await updateSubscription(
-      subscription.stripeSubscriptionId,
-      targetPlanCode,
-      currency,
-      resolvedInterval,
-      behavior,
+    // Determine change behavior
+    const changeMode = decideChangeMode(
+      {
+        planCode: subscription.planCode || subscription.planType,
+        interval: subscription.interval,
+      },
+      {
+        planCode: targetPlanCode,
+        interval: resolvedInterval,
+      },
     );
+
+    // If policy says checkout is required, do not mutate subscription here.
+    // Return a Stripe portal URL to complete the change (acts as the "checkout" flow).
+    if (changeMode === 'checkout') {
+      const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
+      const subscriptionDto = {
+        ...updatedStatus,
+        allowedActions: computeAllowedActions(updatedStatus),
+      };
+      const { getCustomerPortalUrl } = await import('../services/stripe.js');
+      const { getFrontendBaseUrlSync } = await import('../utils/frontendUrl.js');
+      const { normalizeBaseUrl } = await import('../utils/url-helpers.js');
+
+      const baseUrl = normalizeBaseUrl(getFrontendBaseUrlSync());
+      const returnUrl = `${baseUrl}/app/shopify/billing?fromPortal=true`;
+      const stripeCustomerId = updatedStatus.stripeCustomerId || subscription.stripeCustomerId;
+      const portalUrl = stripeCustomerId ? await getCustomerPortalUrl(stripeCustomerId, returnUrl) : null;
+
+      return sendSuccess(
+        res,
+        {
+          planType: targetPlanCode,
+          planCode: targetPlanCode,
+          interval: resolvedInterval,
+          currency,
+          changeMode,
+          checkoutUrl: portalUrl,
+          subscription: subscriptionDto,
+        },
+        'Action requires payment. Please complete the change in Stripe.',
+      );
+    }
+
+    // Determine behavior: scheduled only for allowed downgrade
+    const behavior = changeMode === 'scheduled' ? 'period_end' : 'immediate';
+
+    // Update or schedule Stripe subscription change
+    let updatedStripeSubscription = null;
+    if (behavior === 'period_end') {
+      const { scheduleSubscriptionChange } = await import('../services/stripe.js');
+      const scheduleResult = await scheduleSubscriptionChange(
+        subscription.stripeSubscriptionId,
+        targetPlanCode,
+        currency,
+        resolvedInterval,
+      );
+      updatedStripeSubscription = scheduleResult?.subscription || null;
+    } else {
+      const { updateSubscription } = await import('../services/stripe.js');
+      updatedStripeSubscription = await updateSubscription(
+        subscription.stripeSubscriptionId,
+        targetPlanCode,
+        currency,
+        resolvedInterval,
+        behavior,
+      );
+    }
 
     // If scheduled (Pro Yearly downgrade), store pendingChange in DB
     if (behavior === 'period_end') {
@@ -581,6 +684,10 @@ export async function update(req, res, next) {
 
     // Get updated status (with Stripe sync)
     const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
+    const subscriptionDto = {
+      ...updatedStatus,
+      allowedActions: computeAllowedActions(updatedStatus),
+    };
 
     logger.info(
       {
@@ -597,7 +704,9 @@ export async function update(req, res, next) {
 
     const message = behavior === 'period_end'
       ? `Downgrade scheduled for end of term (${updatedStatus.currentPeriodEnd ? new Date(updatedStatus.currentPeriodEnd).toLocaleDateString() : 'period end'})`
-      : `Subscription updated to ${targetPlanCode} plan (${resolvedInterval}ly) successfully`;
+      : changeMode === 'checkout'
+        ? `Subscription updated to ${targetPlanCode} plan (${resolvedInterval}ly). Payment will be processed immediately.`
+        : `Subscription updated to ${targetPlanCode} plan (${resolvedInterval}ly) successfully`;
 
     return sendSuccess(
       res,
@@ -607,14 +716,249 @@ export async function update(req, res, next) {
         interval: resolvedInterval,
         currency,
         behavior,
+        changeMode,
         scheduled: behavior === 'period_end',
         effectiveAt: behavior === 'period_end' ? updatedStatus.currentPeriodEnd : null,
-        subscription: updatedStatus,
+        subscription: subscriptionDto,
       },
       message,
     );
   } catch (error) {
     logger.error('Update subscription error', {
+      error: error.message,
+      shopId: getStoreId(req),
+    });
+    next(error);
+  }
+}
+
+/**
+ * POST /subscriptions/scheduled/change
+ * Change a scheduled subscription downgrade (Pro Yearly only)
+ */
+export async function changeScheduled(req, res, next) {
+  try {
+    const shopId = getStoreId(req);
+    const { planType: targetPlanCode, interval: targetInterval, currency: requestedCurrencyParam } = req.body;
+
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
+
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      return sendError(
+        res,
+        400,
+        'NO_ACTIVE_SUBSCRIPTION',
+        'No active subscription found.',
+      );
+    }
+
+    if (!subscription.pendingChange) {
+      return sendError(
+        res,
+        400,
+        'NO_SCHEDULED_CHANGE',
+        'No scheduled subscription change found.',
+      );
+    }
+
+    const isScheduled = isValidScheduledChange(
+      {
+        planCode: subscription.planCode || subscription.planType,
+        interval: subscription.interval,
+      },
+      subscription.pendingChange,
+    );
+
+    if (!isScheduled) {
+      return sendError(
+        res,
+        400,
+        'INVALID_SCHEDULED_CHANGE',
+        'Scheduled changes are only allowed for Pro Yearly downgrades.',
+      );
+    }
+
+    const validIntervals = ['month', 'year'];
+    let resolvedInterval = targetInterval;
+    if (!resolvedInterval || !validIntervals.includes(String(resolvedInterval).toLowerCase())) {
+      resolvedInterval = subscription.interval || (targetPlanCode === 'starter' ? 'month' : 'year');
+    } else {
+      resolvedInterval = String(resolvedInterval).toLowerCase();
+    }
+
+    const validCurrencies = ['EUR', 'USD'];
+    let currency = 'EUR';
+    if (
+      requestedCurrencyParam &&
+      validCurrencies.includes(String(requestedCurrencyParam).toUpperCase())
+    ) {
+      currency = String(requestedCurrencyParam).toUpperCase();
+    } else {
+      const shop = await prisma.shop.findUnique({
+        where: { id: shopId },
+        select: { currency: true },
+      });
+      if (shop?.currency && validCurrencies.includes(shop.currency.toUpperCase())) {
+        currency = shop.currency.toUpperCase();
+      }
+    }
+
+    const changeMode = decideChangeMode(
+      {
+        planCode: subscription.planCode || subscription.planType,
+        interval: subscription.interval,
+      },
+      {
+        planCode: targetPlanCode,
+        interval: resolvedInterval,
+      },
+    );
+
+    if (changeMode !== 'scheduled') {
+      return sendError(
+        res,
+        400,
+        'INVALID_SCHEDULED_CHANGE',
+        'This change cannot be scheduled. Only Pro Yearly downgrades are scheduled.',
+      );
+    }
+
+    const { scheduleSubscriptionChange } = await import('../services/stripe.js');
+    await scheduleSubscriptionChange(
+      subscription.stripeSubscriptionId,
+      targetPlanCode,
+      currency,
+      resolvedInterval,
+    );
+
+    const effectiveAt = subscription.currentPeriodEnd
+      ? new Date(subscription.currentPeriodEnd)
+      : null;
+
+    try {
+      await prisma.subscription.updateMany({
+        where: { shopId },
+        data: {
+          pendingChangePlanCode: targetPlanCode,
+          pendingChangeInterval: resolvedInterval,
+          pendingChangeCurrency: currency,
+          pendingChangeEffectiveAt: effectiveAt,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'scheduled_change',
+        },
+      });
+    } catch (err) {
+      logger.warn('Could not update scheduled change in Subscription record', {
+        shopId,
+        error: err.message,
+      });
+    }
+
+    const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
+    const subscriptionDto = {
+      ...updatedStatus,
+      allowedActions: computeAllowedActions(updatedStatus),
+    };
+    return sendSuccess(
+      res,
+      {
+        scheduled: true,
+        changeMode,
+        effectiveAt: updatedStatus.currentPeriodEnd || null,
+        subscription: subscriptionDto,
+      },
+      'Scheduled change updated successfully',
+    );
+  } catch (error) {
+    logger.error('Change scheduled subscription error', {
+      error: error.message,
+      shopId: getStoreId(req),
+    });
+    next(error);
+  }
+}
+
+/**
+ * POST /subscriptions/scheduled/cancel
+ * Cancel a scheduled subscription downgrade
+ */
+export async function cancelScheduled(req, res, next) {
+  try {
+    const shopId = getStoreId(req);
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
+
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      return sendError(
+        res,
+        400,
+        'NO_ACTIVE_SUBSCRIPTION',
+        'No active subscription found.',
+      );
+    }
+
+    if (!subscription.pendingChange) {
+      return sendError(
+        res,
+        400,
+        'NO_SCHEDULED_CHANGE',
+        'No scheduled subscription change found.',
+      );
+    }
+
+    const isScheduled = isValidScheduledChange(
+      {
+        planCode: subscription.planCode || subscription.planType,
+        interval: subscription.interval,
+      },
+      subscription.pendingChange,
+    );
+
+    if (!isScheduled) {
+      return sendError(
+        res,
+        400,
+        'INVALID_SCHEDULED_CHANGE',
+        'Scheduled changes are only allowed for Pro Yearly downgrades.',
+      );
+    }
+
+    const { cancelScheduledSubscriptionChange } = await import('../services/stripe.js');
+    await cancelScheduledSubscriptionChange(subscription.stripeSubscriptionId);
+
+    try {
+      await prisma.subscription.updateMany({
+        where: { shopId },
+        data: {
+          pendingChangePlanCode: null,
+          pendingChangeInterval: null,
+          pendingChangeCurrency: null,
+          pendingChangeEffectiveAt: null,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'scheduled_cancel',
+        },
+      });
+    } catch (err) {
+      logger.warn('Could not clear scheduled change in Subscription record', {
+        shopId,
+        error: err.message,
+      });
+    }
+
+    const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
+    const subscriptionDto = {
+      ...updatedStatus,
+      allowedActions: computeAllowedActions(updatedStatus),
+    };
+    return sendSuccess(
+      res,
+      {
+        scheduled: false,
+        subscription: subscriptionDto,
+      },
+      'Scheduled change cancelled successfully',
+    );
+  } catch (error) {
+    logger.error('Cancel scheduled subscription error', {
       error: error.message,
       shopId: getStoreId(req),
     });
@@ -630,7 +974,7 @@ export async function cancel(req, res, next) {
   try {
     const shopId = getStoreId(req);
 
-    const subscription = await getSubscriptionStatus(shopId);
+    const subscription = await getSubscriptionStatusWithStripeSync(shopId);
 
     if (!subscription.active || !subscription.stripeSubscriptionId) {
       return sendError(
@@ -1311,6 +1655,40 @@ export async function finalize(req, res, next) {
       `sub_${subscriptionId}`,
       stripeSubscription,
     );
+
+    if (creditResult?.allocated) {
+      try {
+        const { recordFreeCreditsGrant } = await import('../services/invoices.js');
+        const periodInfo = stripeSubscription
+          ? {
+            periodStart: stripeSubscription.current_period_start
+              ? new Date(stripeSubscription.current_period_start * 1000).toISOString()
+              : null,
+            periodEnd: stripeSubscription.current_period_end
+              ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
+              : null,
+          }
+          : {};
+        const grantCurrency = stripeSubscription?.items?.data?.[0]?.price?.currency
+          ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
+          : 'EUR';
+
+        await recordFreeCreditsGrant(
+          shopId,
+          planType,
+          creditResult.credits || 0,
+          `sub_${subscriptionId}`,
+          periodInfo,
+          grantCurrency,
+        );
+      } catch (recordErr) {
+        logger.warn('Failed to record free credits grant during finalize', {
+          shopId,
+          subscriptionId,
+          error: recordErr.message,
+        });
+      }
+    }
 
     // PHASE 3.5: Always sync billing profile from checkout session (authoritative source)
     // Stripe Checkout collected all required billing details, sync them to DB

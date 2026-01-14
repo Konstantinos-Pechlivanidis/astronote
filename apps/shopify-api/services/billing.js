@@ -1,10 +1,16 @@
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
 import { ValidationError, NotFoundError } from '../utils/errors.js';
+import Stripe from 'stripe';
 import { createStripeCheckoutSession, getStripePriceId, ensureStripeCustomer } from './stripe.js';
 import { getBillingProfile, syncBillingProfileFromStripe } from './billing-profile.js';
 import { resolveTaxTreatment, resolveTaxRateForInvoice } from './tax-resolver.js';
 import { upsertTaxEvidence } from './tax-evidence.js';
+import {
+  upsertInvoiceRecord,
+  recordSubscriptionInvoiceTransaction,
+  recordFreeCreditsGrant,
+} from './invoices.js';
 import {
   credit,
   debit,
@@ -16,6 +22,11 @@ import {
  * Billing Service
  * Handles credit management, Stripe integration, and transaction history
  */
+
+// Stripe client (optional). Keep initialization consistent across the codebase.
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' })
+  : null;
 
 const extractTaxDetailsFromSession = (session) => {
   const customerDetails = session?.customer_details || {};
@@ -108,8 +119,8 @@ export async function getBalance(storeId) {
   const balance = await getWalletBalance(storeId);
 
   // Get subscription status (aligned with Retail)
-  const { getSubscriptionStatus } = await import('./subscription.js');
-  const subscription = await getSubscriptionStatus(storeId);
+  const { getSubscriptionStatusWithStripeSync } = await import('./stripe-sync.js');
+  const subscription = await getSubscriptionStatusWithStripeSync(storeId);
 
   logger.info('Balance retrieved', { storeId, credits: balance });
 
@@ -1048,18 +1059,145 @@ export async function getBillingHistory(storeId, filters = {}) {
     prisma.billingTransaction.count({ where }),
   ]);
 
-  const totalPages = Math.ceil(total / parseInt(pageSize));
+  let workingTransactions = transactions;
+  let workingTotal = total;
+
+  if (total === 0) {
+    try {
+      const shop = await prisma.shop.findUnique({
+        where: { id: storeId },
+        select: { stripeCustomerId: true, stripeSubscriptionId: true, planType: true },
+      });
+
+      let stripeCustomerId = shop?.stripeCustomerId || null;
+      if (!stripeCustomerId && shop?.stripeSubscriptionId && stripe) {
+        try {
+          const stripeSubscription = await stripe.subscriptions.retrieve(
+            shop.stripeSubscriptionId,
+          );
+          const resolvedCustomerId =
+            typeof stripeSubscription.customer === 'string'
+              ? stripeSubscription.customer
+              : stripeSubscription.customer?.id;
+          if (resolvedCustomerId) {
+            stripeCustomerId = resolvedCustomerId;
+            await prisma.shop.update({
+              where: { id: storeId },
+              data: { stripeCustomerId: resolvedCustomerId },
+            });
+          }
+        } catch (err) {
+          logger.warn(
+            { storeId, err: err.message },
+            'Failed to resolve Stripe customer for billing history fallback',
+          );
+        }
+      }
+
+      if (stripeCustomerId && stripe) {
+        logger.info(
+          { storeId, stripeCustomerId },
+          'Billing history empty, backfilling from Stripe invoices',
+        );
+
+        const stripeInvoices = await stripe.invoices.list({
+          customer: stripeCustomerId,
+          status: 'paid',
+          limit: 100,
+          expand: ['data.lines'],
+        });
+
+        const planCatalog = await import('./plan-catalog.js');
+        const { allocateFreeCredits } = await import('./subscription.js');
+
+        for (const invoice of stripeInvoices.data) {
+          await upsertInvoiceRecord(storeId, invoice);
+
+          const isSubscriptionInvoice =
+            invoice.billing_reason === 'subscription_create' ||
+            invoice.billing_reason === 'subscription_cycle';
+
+          if (isSubscriptionInvoice) {
+            await recordSubscriptionInvoiceTransaction(storeId, invoice, {
+              creditsAdded: 0,
+            });
+          }
+
+          if (invoice.billing_reason === 'subscription_cycle') {
+            const priceId = invoice.lines?.data?.[0]?.price?.id || null;
+            const resolvedPlan = priceId
+              ? planCatalog.resolvePlanFromPriceId(priceId)
+              : null;
+            const planCode = resolvedPlan?.planCode || shop?.planType || null;
+
+            if (planCode) {
+              const result = await allocateFreeCredits(
+                storeId,
+                planCode,
+                invoice.id,
+                null,
+                // Backfill from Stripe paid invoices: DB subscription status may be stale.
+                { allowInactive: true },
+              );
+
+              if (result?.allocated) {
+                const periodInfo = invoice.lines?.data?.[0]?.period
+                  ? {
+                    periodStart: invoice.lines.data[0].period.start
+                      ? new Date(invoice.lines.data[0].period.start * 1000).toISOString()
+                      : null,
+                    periodEnd: invoice.lines.data[0].period.end
+                      ? new Date(invoice.lines.data[0].period.end * 1000).toISOString()
+                      : null,
+                  }
+                  : {};
+
+                await recordFreeCreditsGrant(
+                  storeId,
+                  planCode,
+                  result.credits,
+                  invoice.id,
+                  periodInfo,
+                  invoice.currency?.toUpperCase() || 'EUR',
+                );
+              }
+            }
+          }
+        }
+
+        const [refreshedTransactions, refreshedTotal] = await Promise.all([
+          prisma.billingTransaction.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: parseInt(pageSize),
+            skip: (parseInt(page) - 1) * parseInt(pageSize),
+          }),
+          prisma.billingTransaction.count({ where }),
+        ]);
+
+        workingTransactions = refreshedTransactions;
+        workingTotal = refreshedTotal;
+      }
+    } catch (err) {
+      logger.warn(
+        { storeId, err: err.message },
+        'Billing history fallback failed',
+      );
+    }
+  }
+
+  const totalPages = Math.ceil(workingTotal / parseInt(pageSize));
 
   logger.info('Billing history retrieved', {
     storeId,
-    total,
-    returned: transactions.length,
+    total: workingTotal,
+    returned: workingTransactions.length,
   });
 
   // Transform transactions to include frontend-friendly fields
   // Use Promise.all to handle async package lookups
   const transformedTransactions = await Promise.all(
-    transactions.map(async transaction => {
+    workingTransactions.map(async transaction => {
       // Determine transaction type and title
       let type = 'purchase';
       let title = 'Purchase';
@@ -1160,7 +1298,7 @@ export async function getBillingHistory(storeId, filters = {}) {
     pagination: {
       page: parseInt(page),
       pageSize: parseInt(pageSize),
-      total,
+      total: workingTotal,
       totalPages,
       hasNextPage: parseInt(page) < totalPages,
       hasPrevPage: parseInt(page) > 1,

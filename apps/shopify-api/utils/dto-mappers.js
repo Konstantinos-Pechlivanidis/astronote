@@ -10,6 +10,8 @@
  * - No undefined values in arrays/objects
  */
 
+import { normalizeCampaignStatus } from '../constants/campaign-status.js';
+
 /**
  * Map Campaign Prisma model to DTO
  * @param {Object} campaign - Prisma Campaign model
@@ -24,11 +26,14 @@ export function mapCampaignToDTO(campaign) {
     throw new Error('Campaign ID must be non-empty');
   }
 
+  const normalized = normalizeCampaignStatus(campaign.status);
+
   return {
     id,
     name: campaign.name || '',
     message: campaign.message || '',
-    status: campaign.status || 'draft',
+    status: normalized.status || 'draft',
+    statusRaw: normalized.statusRaw ?? null,
     audience: campaign.audience || 'all',
     discountId: campaign.discountId || null,
     scheduleType: campaign.scheduleType || 'immediate',
@@ -53,6 +58,10 @@ export function mapCampaignToDTO(campaign) {
     totalClicked: campaign.metrics?.totalClicked ?? 0,
     // Meta (JSON field)
     meta: campaign.meta || null,
+    // Canonical status/metrics contract (new; backward compatible)
+    totals: campaign.totals || null,
+    delivery: campaign.delivery || null,
+    sourceOfTruth: campaign.sourceOfTruth || 'mitto',
   };
 }
 

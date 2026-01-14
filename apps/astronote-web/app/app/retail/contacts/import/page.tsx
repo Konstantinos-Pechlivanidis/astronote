@@ -2,12 +2,12 @@
 
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, Download, CheckCircle, XCircle, Loader, ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+import { Upload, Download, CheckCircle, XCircle, Loader } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { RetailCard } from '@/src/components/retail/RetailCard';
-import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
+import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { useImportContacts } from '@/src/features/retail/contacts/hooks/useImportContacts';
 import { useImportJob } from '@/src/features/retail/contacts/hooks/useImportJob';
 import { contactsApi } from '@/src/lib/retail/api/contacts';
@@ -18,6 +18,7 @@ export default function ContactsImportPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   const importMutation = useImportContacts();
   const { data: jobStatus } = useImportJob(jobId, !!jobId);
@@ -26,14 +27,19 @@ export default function ContactsImportPage() {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.name.endsWith('.xlsx')) {
-        alert('Only .xlsx files are allowed');
+        const msg = 'Only .xlsx files are allowed';
+        setLocalError(msg);
+        toast.error(msg);
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
+        const msg = 'File size must be less than 10MB';
+        setLocalError(msg);
+        toast.error(msg);
         return;
       }
       setSelectedFile(file);
+      setLocalError(null);
     }
   };
 
@@ -49,8 +55,11 @@ export default function ContactsImportPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      toast.success('Template downloaded');
     } catch (error) {
-      alert('Failed to download template');
+      const msg = 'Failed to download template';
+      setLocalError(msg);
+      toast.error(msg);
     } finally {
       setIsDownloadingTemplate(false);
     }
@@ -58,10 +67,13 @@ export default function ContactsImportPage() {
 
   const handleUpload = () => {
     if (!selectedFile) {
-      alert('Please select a file');
+      const msg = 'Please select a file';
+      setLocalError(msg);
+      toast.error(msg);
       return;
     }
 
+    setLocalError(null);
     importMutation.mutate(selectedFile, {
       onSuccess: (newJobId) => {
         setJobId(newJobId);
@@ -69,10 +81,12 @@ export default function ContactsImportPage() {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+        toast.success('Upload started');
       },
       onError: (error: any) => {
         const message = error?.response?.data?.message || 'Failed to upload file';
-        alert(message);
+        setLocalError(message);
+        toast.error(message);
       },
     });
   };
@@ -84,23 +98,21 @@ export default function ContactsImportPage() {
   return (
     <RetailPageLayout>
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Link href="/app/retail/contacts">
-            <Button variant="ghost" size="sm" className="flex items-center gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Back to Contacts
-            </Button>
-          </Link>
-        </div>
-        <RetailPageHeader
+        <AppPageHeader
           title="Import Contacts"
           description="Upload an Excel file to import contacts in bulk"
+          backHref="/app/retail/contacts"
+          backLabel="Back to Contacts"
         />
 
-        <div className="mb-6 flex items-center gap-3">
-          <Upload className="h-8 w-8 text-accent" />
-          <h1 className="text-3xl font-bold text-text-primary">Import Contacts</h1>
-        </div>
+        {localError && (
+          <RetailCard variant="danger" className="p-6">
+            <div className="text-sm text-text-primary">
+              <span className="font-semibold">Error:</span>{' '}
+              <span className="text-text-secondary">{localError}</span>
+            </div>
+          </RetailCard>
+        )}
 
         <RetailCard className="space-y-6 p-6">
           {/* Download Template */}

@@ -273,7 +273,7 @@ export async function updateCampaignDeliveryStatuses(campaignId) {
 /**
  * Update campaign status based on recipient statuses
  * Rules:
- * - If all recipients are delivered/failed (no pending/sending), set to 'sent'
+ * - If all recipients are delivered/failed (no pending/sending), set to 'completed'
  * - If all recipients failed, set to 'failed'
  * - Otherwise, keep as 'sending'
  * @param {string} campaignId - Campaign ID
@@ -345,8 +345,8 @@ export async function updateCampaignStatusFromRecipients(campaignId) {
     if (failed === total) {
       newStatus = CampaignStatus.failed;
     } else {
-      // At least some succeeded, mark as sent
-      newStatus = CampaignStatus.sent;
+      // At least some succeeded, mark as completed (canonical)
+      newStatus = CampaignStatus.completed;
     }
   }
   // If there are still pending recipients, keep as 'sending'

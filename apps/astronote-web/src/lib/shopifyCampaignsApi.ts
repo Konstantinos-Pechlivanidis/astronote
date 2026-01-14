@@ -1,4 +1,8 @@
 import shopifyApi from './shopify/api/axios';
+import {
+  SHOPIFY_CAMPAIGN_STATUS_VALUES,
+  type ShopifyCampaignStatus,
+} from './shopify/constants/campaign-status';
 
 export type CampaignApiError = {
   success: false;
@@ -39,23 +43,12 @@ const safeRequest = async <T>(
   }
 };
 
-export type CampaignStatus =
-  | 'draft'
-  | 'scheduled'
-  | 'sending'
-  | 'paused'
-  | 'completed'
-  | 'sent'
-  | 'failed'
-  | 'cancelled';
+export type CampaignStatus = ShopifyCampaignStatus;
 
-export type CampaignFilterStatus =
-  | 'draft'
-  | 'scheduled'
-  | 'sending'
-  | 'sent'
-  | 'failed'
-  | 'cancelled';
+// Filters should include the full canonical vocabulary (UI supports these).
+export type CampaignFilterStatus = ShopifyCampaignStatus;
+
+export const CAMPAIGN_STATUS_VALUES = SHOPIFY_CAMPAIGN_STATUS_VALUES;
 
 export type ScheduleType = 'immediate' | 'scheduled' | 'recurring';
 

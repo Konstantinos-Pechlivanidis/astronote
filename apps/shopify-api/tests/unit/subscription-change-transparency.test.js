@@ -38,19 +38,39 @@ const mockStripeSync = {
 // Mock stripe service
 const mockStripeService = {
   updateSubscription: jest.fn(),
+  createSubscriptionCheckoutSession: jest.fn(),
+  cancelSubscription: jest.fn(),
+  resumeSubscription: jest.fn(),
+  getCheckoutSession: jest.fn(),
+  ensureStripeCustomer: jest.fn(),
+  scheduleSubscriptionChange: jest.fn(),
 };
 
 // Mock subscription service
 const mockSubscriptionService = {
   activateSubscription: jest.fn(),
+  getSubscriptionStatus: jest.fn(),
+  allocateFreeCredits: jest.fn(),
+  getPlanConfig: jest.fn(),
 };
 
 describe('Subscription Change - Immediate and Scheduled', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.resetModules();
     process.env.STRIPE_SECRET_KEY = 'sk_test_mock';
     process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR = 'price_starter_month_eur';
     process.env.STRIPE_PRICE_ID_SUB_PRO_YEAR_EUR = 'price_pro_year_eur';
+
+    // Ensure ESM mocks are registered BEFORE importing controllers.
+    jest.unstable_mockModule('../../middlewares/store-resolution.js', () => ({
+      getStoreId: () => 'shop_123',
+    }));
+    jest.unstable_mockModule('../../services/stripe-sync.js', () => mockStripeSync);
+    jest.unstable_mockModule('../../services/plan-catalog.js', () => mockPlanCatalog);
+    jest.unstable_mockModule('../../services/stripe.js', () => mockStripeService);
+    jest.unstable_mockModule('../../services/subscription.js', () => mockSubscriptionService);
+    jest.unstable_mockModule('../../services/prisma.js', () => ({ default: mockPrisma }));
   });
 
   it('immediate change updates priceId and returns updated DTO', async () => {
@@ -90,7 +110,9 @@ describe('Subscription Change - Immediate and Scheduled', () => {
       cancel_at_period_end: false,
     };
 
-    mockStripeService.updateSubscription.mockResolvedValue(updatedStripeSubscription);
+    mockStripeService.scheduleSubscriptionChange.mockResolvedValue({
+      subscription: updatedStripeSubscription,
+    });
 
     const canonicalFields = {
       planCode: 'pro',
@@ -125,18 +147,6 @@ describe('Subscription Change - Immediate and Scheduled', () => {
       json: jest.fn().mockReturnThis(),
     };
     const next = jest.fn();
-
-    // Mock getStoreId
-    jest.unstable_mockModule('../../middlewares/store-resolution.js', () => ({
-      getStoreId: () => 'shop_123',
-    }));
-
-    // Mock services
-    jest.unstable_mockModule('../../services/stripe-sync.js', () => mockStripeSync);
-    jest.unstable_mockModule('../../services/plan-catalog.js', () => mockPlanCatalog);
-    jest.unstable_mockModule('../../services/stripe.js', () => mockStripeService);
-    jest.unstable_mockModule('../../services/subscription.js', () => mockSubscriptionService);
-    jest.unstable_mockModule('../../services/prisma.js', () => ({ default: mockPrisma }));
 
     mockPrisma.shop.findUnique.mockResolvedValue({ currency: 'EUR' });
 
@@ -245,30 +255,17 @@ describe('Subscription Change - Immediate and Scheduled', () => {
     };
     const next = jest.fn();
 
-    // Mock getStoreId
-    jest.unstable_mockModule('../../middlewares/store-resolution.js', () => ({
-      getStoreId: () => 'shop_123',
-    }));
-
-    // Mock services
-    jest.unstable_mockModule('../../services/stripe-sync.js', () => mockStripeSync);
-    jest.unstable_mockModule('../../services/plan-catalog.js', () => mockPlanCatalog);
-    jest.unstable_mockModule('../../services/stripe.js', () => mockStripeService);
-    jest.unstable_mockModule('../../services/subscription.js', () => mockSubscriptionService);
-    jest.unstable_mockModule('../../services/prisma.js', () => ({ default: mockPrisma }));
-
     mockPrisma.shop.findUnique.mockResolvedValue({ currency: 'EUR' });
     mockPrisma.subscription.updateMany.mockResolvedValue({ count: 1 });
 
     await update(req, res, next);
 
-    // Verify Stripe subscription was updated with period_end behavior
-    expect(mockStripeService.updateSubscription).toHaveBeenCalledWith(
+    // Verify Stripe subscription was scheduled for period-end change
+    expect(mockStripeService.scheduleSubscriptionChange).toHaveBeenCalledWith(
       'sub_123',
       'starter',
       'EUR',
       'month',
-      'period_end', // Behavior should be period_end for Pro Yearly downgrade
     );
 
     // Verify pendingChange was stored in DB

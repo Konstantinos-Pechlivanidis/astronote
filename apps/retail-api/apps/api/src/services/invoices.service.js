@@ -1,6 +1,8 @@
 const prisma = require('../lib/prisma');
 const pino = require('pino');
 const { credit } = require('./wallet.service');
+const { stripe } = require('./stripe.service');
+const { resolveStripeCustomerId } = require('./stripe-sync.service');
 
 const logger = pino({ name: 'invoices-service' });
 
@@ -141,6 +143,73 @@ async function listInvoices(ownerId, filters = {}) {
     }),
     prisma.invoiceRecord.count({ where }),
   ]);
+
+  // If DB is empty, try to fetch from Stripe and sync (Shopify parity).
+  if (total === 0 && stripe) {
+    try {
+      const stripeCustomerId = await resolveStripeCustomerId(ownerId);
+      if (stripeCustomerId) {
+        logger.info({ ownerId, stripeCustomerId }, 'No invoices in DB, fetching from Stripe as fallback');
+
+        const stripeInvoices = await stripe.invoices.list({
+          customer: stripeCustomerId,
+          limit: Number(pageSize),
+        });
+
+        for (const invoice of stripeInvoices.data) {
+          try {
+            await upsertInvoiceRecord(ownerId, invoice);
+          } catch (err) {
+            logger.warn(
+              { ownerId, invoiceId: invoice.id, err: err.message },
+              'Failed to sync invoice from Stripe',
+            );
+          }
+        }
+
+        // Re-fetch after sync
+        const [syncedInvoices, syncedTotal] = await Promise.all([
+          prisma.invoiceRecord.findMany({
+            where,
+            orderBy: { issuedAt: 'desc' },
+            take: Number(pageSize),
+            skip: (Number(page) - 1) * Number(pageSize),
+          }),
+          prisma.invoiceRecord.count({ where }),
+        ]);
+
+        const totalPagesSynced = Math.ceil(syncedTotal / Number(pageSize));
+        const normalizedInvoicesSynced = syncedInvoices.map((invoice) => ({
+          ...invoice,
+          subtotal: Number.isFinite(invoice.subtotal)
+            ? Number((invoice.subtotal / 100).toFixed(2))
+            : null,
+          tax: Number.isFinite(invoice.tax)
+            ? Number((invoice.tax / 100).toFixed(2))
+            : null,
+          total: Number.isFinite(invoice.total)
+            ? Number((invoice.total / 100).toFixed(2))
+            : null,
+          currency: invoice.currency ? invoice.currency.toUpperCase() : null,
+        }));
+
+        return {
+          invoices: normalizedInvoicesSynced,
+          pagination: {
+            page: Number(page),
+            pageSize: Number(pageSize),
+            total: syncedTotal,
+            totalPages: totalPagesSynced,
+            hasNextPage: Number(page) < totalPagesSynced,
+            hasPrevPage: Number(page) > 1,
+          },
+        };
+      }
+    } catch (err) {
+      logger.warn({ ownerId, err: err.message }, 'Failed to fetch invoices from Stripe fallback');
+      // fall through to empty response
+    }
+  }
 
   const totalPages = Math.ceil(total / Number(pageSize));
 

@@ -120,4 +120,11 @@ r.post(
   ctrl.updateDeliveryStatus,
 );
 
+// POST /campaigns/:id/reconcile - Manually trigger reconciliation for a single campaign (dev/admin)
+r.post(
+  '/:id/reconcile',
+  invalidateCampaignsCache,
+  ctrl.reconcile,
+);
+
 export default r;

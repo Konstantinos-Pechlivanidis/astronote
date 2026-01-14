@@ -12,7 +12,7 @@ import prisma from './services/prisma.js';
 
 // Validate environment variables on startup
 try {
-  validateAndLogEnvironment();
+  await validateAndLogEnvironment();
 } catch (error) {
   logger.error('Environment validation failed', {
     error: error.message,

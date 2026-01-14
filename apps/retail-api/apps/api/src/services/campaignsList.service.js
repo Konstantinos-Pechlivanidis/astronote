@@ -94,7 +94,16 @@ exports.listCampaigns = async ({
   // Note: "delivered" status is mapped to "sent" - we only track sent/failed
   const { computeCampaignMetrics } = require('./campaignMetrics.service');
   const statsMap = new Map();
-  for (const id of ids) {statsMap.set(id, { delivered: 0, deliveryFailed: 0, redemptions: 0 });}
+  for (const id of ids) {
+    statsMap.set(id, {
+      accepted: 0,
+      delivered: 0,
+      deliveryFailed: 0,
+      pendingDelivery: 0,
+      processed: 0,
+      redemptions: 0,
+    });
+  }
 
   // Compute metrics per campaign (canonical)
   const metricsList = await Promise.all(
@@ -102,7 +111,14 @@ exports.listCampaigns = async ({
   );
   metricsList.forEach((m, idx) => {
     const id = ids[idx];
-    statsMap.set(id, { delivered: m.delivered, deliveryFailed: m.deliveryFailed, redemptions: 0 });
+    statsMap.set(id, {
+      accepted: m.accepted,
+      delivered: m.delivered,
+      deliveryFailed: m.deliveryFailed,
+      pendingDelivery: m.pendingDelivery,
+      processed: m.processed,
+      redemptions: 0,
+    });
   });
   for (const row of reds) {
     const s = statsMap.get(row.campaignId);
@@ -113,14 +129,27 @@ exports.listCampaigns = async ({
 
   // Note: "delivered" status is mapped to "sent" - deliveredRate is same as sent rate
   const items = campaigns.map(c => {
-    const s = statsMap.get(c.id) || { delivered:0, deliveryFailed:0, redemptions:0 };
+    const s = statsMap.get(c.id) || {
+      accepted: 0,
+      delivered: 0,
+      deliveryFailed: 0,
+      pendingDelivery: 0,
+      processed: 0,
+      redemptions: 0,
+    };
     return {
       ...c,
       stats: {
-        sent: s.delivered, // keep compatibility with UI expecting "sent"
+        // Canonical
+        accepted: s.accepted,
         delivered: s.delivered,
+        failedDelivery: s.deliveryFailed,
+        pendingDelivery: s.pendingDelivery,
+        processed: s.processed,
+        // Backward compatibility
+        sent: s.delivered, // legacy UI expects "sent" == delivered
         failed: s.deliveryFailed,
-        deliveredRate: rate(s.delivered, s.delivered || 1),
+        deliveredRate: rate(s.delivered, c.total || 1),
         conversionRate: rate(s.redemptions, s.delivered || 1),
       },
     };

@@ -23,6 +23,8 @@ import {
   useGetPortal,
   useSwitchInterval,
   useReconcileSubscription,
+  useCancelScheduledSubscription,
+  useChangeScheduledSubscription,
 } from '@/src/features/shopify/billing/hooks/useSubscriptionMutations';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
@@ -90,6 +92,8 @@ function BillingPageContent() {
   const getPortal = useGetPortal();
   const switchInterval = useSwitchInterval();
   const reconcileSubscription = useReconcileSubscription();
+  const cancelScheduledSubscription = useCancelScheduledSubscription();
+  const changeScheduledSubscription = useChangeScheduledSubscription();
   const syncBillingProfile = useSyncBillingProfileFromStripe();
 
   // Handle URL params for success/cancel and portal return
@@ -111,7 +115,7 @@ function BillingPageContent() {
     selectedCurrency,
   );
 
-  // Normalize data - prefer billing summary if available, fallback to individual calls
+  // Normalize data
   const summary = billingSummary || null;
   const billingCurrency =
     summary?.billingCurrency ||
@@ -123,7 +127,8 @@ function BillingPageContent() {
   const currency = summary?.credits?.currency || balanceData?.currency || billingCurrency || selectedCurrency || 'EUR';
   const currencySymbol = currency === 'USD' ? '$' : '€';
   const showEurPricing = currency === 'EUR';
-  const subscriptionRaw = summary?.subscription || subscriptionData || { status: 'inactive', planType: null, interval: null, active: false };
+  // Stripe-as-truth: prefer /subscriptions/status over summary.subscription
+  const subscriptionRaw = subscriptionData || summary?.subscription || { status: 'inactive', planType: null, interval: null, active: false };
   // Handle subscription type - can be string or object
   const subscription = typeof subscriptionRaw === 'string'
     ? { status: subscriptionRaw, planType: null, interval: null, active: subscriptionRaw === 'active' }
@@ -340,6 +345,9 @@ function BillingPageContent() {
         handleChangePlan(targetPlanCode, targetInterval);
       }
       break;
+    case 'cancelScheduledChange':
+      cancelScheduledSubscription.mutate();
+      break;
     case 'switchInterval':
       if (targetInterval) {
         handleSwitchInterval(targetInterval);
@@ -371,6 +379,19 @@ function BillingPageContent() {
 
   const handleChangePlan = async (planType: 'starter' | 'pro', interval: 'month' | 'year') => {
     try {
+      // If a scheduled change exists, modify the scheduled change instead of applying immediately.
+      if (uiState.pendingChange) {
+        await changeScheduledSubscription.mutateAsync({ planType, interval, currency });
+        return;
+      }
+
+      // If subscribed, use /subscriptions/switch (which delegates to /subscriptions/update on plan changes)
+      if (isSubscriptionActive) {
+        await switchInterval.mutateAsync({ planType, interval, currency });
+        return;
+      }
+
+      // Otherwise create initial subscription
       await subscribe.mutateAsync({ planType, interval, currency });
     } catch (error) {
       // Error handled by mutation hook

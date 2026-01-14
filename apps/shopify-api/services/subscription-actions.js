@@ -11,8 +11,9 @@
  */
 export function computeAllowedActions(subscription) {
   // No subscription
-  if (!subscription.active || !subscription.planCode) {
-    return ['subscribe', 'viewPlans', 'completeBillingDetails'];
+  // Accept either planCode (canonical) or planType (legacy) to avoid false "no subscription" states.
+  if (!subscription.active || !(subscription.planCode || subscription.planType)) {
+    return ['subscribe', 'viewPlans'];
   }
 
   const status = subscription.status || 'inactive';
@@ -45,6 +46,7 @@ export function computeAllowedActions(subscription) {
     if (pendingChange) {
       return [
         'changePlan',
+        'cancelScheduledChange',
         'updatePaymentMethod',
         'viewInvoices',
         'refreshFromStripe',

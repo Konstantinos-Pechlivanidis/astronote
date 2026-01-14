@@ -82,7 +82,7 @@ export function validateEnvironment(
  * Validate and log environment configuration
  * Throws error if required variables are missing
  */
-export function validateAndLogEnvironment() {
+export async function validateAndLogEnvironment() {
   const env = process.env.NODE_ENV || 'development';
   const validation = validateEnvironment(env);
 
@@ -115,7 +115,7 @@ export function validateAndLogEnvironment() {
   });
 
   // Validate URL configurations (critical for Stripe redirects)
-  validateUrlConfigurations(env);
+  await validateUrlConfigurations(env);
 
   return validation;
 }
@@ -125,7 +125,7 @@ export function validateAndLogEnvironment() {
  * Critical for Stripe checkout redirects
  * @param {string} env - Environment
  */
-function validateUrlConfigurations(env) {
+async function validateUrlConfigurations(env) {
   // Check FRONTEND_URL (used for Stripe redirects)
   const frontendUrl =
     process.env.FRONTEND_URL ||
@@ -165,18 +165,23 @@ function validateUrlConfigurations(env) {
 
   // Validate Stripe configuration
   if (process.env.STRIPE_SECRET_KEY) {
-    // Check if subscription price IDs are configured
-    const requiredPriceIds = [
-      'STRIPE_PRICE_ID_SUB_STARTER_EUR',
-      'STRIPE_PRICE_ID_SUB_PRO_EUR',
-    ];
-    const missingPriceIds = requiredPriceIds.filter(
-      key => !process.env[key],
-    );
-    if (missingPriceIds.length > 0 && env === 'production') {
-      logger.warn(
-        `Missing Stripe subscription price IDs: ${missingPriceIds.join(', ')}. Subscription checkout may fail.`,
-      );
+    // Billing v2: require full plan catalog mapping (starter/pro × month/year × EUR/USD).
+    // Fail fast in production with a CONFIG_ERROR-style message.
+    const planCatalog = await import('../services/plan-catalog.js');
+    const strict = planCatalog.validateCatalogStrict();
+    if (!strict.valid) {
+      const missing = strict.missingEnvVars;
+      const message =
+        `Missing required Stripe price env vars for Billing v2 plan catalog: ${missing.join(', ')}`;
+
+      // Fail fast in production AND CI when Stripe is enabled.
+      // This prevents deployments/tests with partial plan catalogs.
+      if (env === 'production' || process.env.CI) {
+        logger.error(message, { missing });
+        throw new Error(message);
+      } else {
+        logger.warn(message, { missing });
+      }
     }
   }
 }

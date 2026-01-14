@@ -4,6 +4,7 @@ const stripeMock = {
   createSubscriptionCheckoutSession: jest.fn(),
   updateSubscription: jest.fn(),
   cancelSubscription: jest.fn(),
+  resumeSubscription: jest.fn(),
   getCheckoutSession: jest.fn(),
   ensureStripeCustomer: jest.fn(),
 };

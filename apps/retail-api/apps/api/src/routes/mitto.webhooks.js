@@ -54,22 +54,32 @@ function mapStatus(s) {
   return 'unknown';
 }
 
-/**
- * Persist a raw webhook for auditing/replay/dedup later.
- * Never blocks the request even if it fails.
- */
-async function persistWebhook(provider, eventType, payload, providerMessageId) {
+const {
+  generateEventHash,
+  processWebhookWithReplayProtection,
+  markWebhookProcessed,
+} = require('../services/webhook-replay.service');
+const { resolveMittoDlrEventId } = require('../services/mitto-dlr-eventid.service');
+
+async function persistInboundWebhook(payload) {
   try {
-    await prisma.webhookEvent.create({
-      data: {
-        provider,
-        eventType,
-        payload,
-        providerMessageId: providerMessageId || null,
-      },
-    });
+    const payloadHash = generateEventHash(payload);
+    const bucket = Math.floor(Date.now() / 60000);
+    const eventId =
+      payload?.eventId ||
+      payload?.event_id ||
+      payload?.EventId ||
+      payload?.eventID ||
+      `inbound:${payloadHash}:${bucket}`;
+
+    await processWebhookWithReplayProtection(
+      'mitto',
+      String(eventId),
+      async () => ({ ok: true }),
+      { payloadHash, eventType: 'inbound', ownerId: null, payload },
+    );
   } catch (e) {
-    logger.warn({ err: e?.message }, 'WebhookEvent persist failed');
+    logger.warn({ err: e?.message }, 'Inbound WebhookEvent persist failed');
   }
 }
 
@@ -103,9 +113,6 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
         doneAt = new Date();
       }
 
-      // Persist raw webhook (best-effort)
-      await persistWebhook('mitto', 'dlr', ev, providerId);
-
       if (!providerId) {
         logger.warn({ ev }, 'DLR without messageId — ignoring');
         continue;
@@ -120,58 +127,95 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
         doneAt: doneAt.toISOString(),
       }, 'DLR webhook received');
 
-      try {
-        const msgs = await prisma.campaignMessage.findMany({
-          where: { providerMessageId: providerId },
-          select: { id: true, campaignId: true, ownerId: true, status: true },
-        });
+      // Deterministic eventId + replay protection
+      const eventId = resolveMittoDlrEventId(ev, providerId, doneAt);
+      const payloadHash = generateEventHash(ev);
 
-        if (msgs.length === 0) {
-          logger.info({ providerId }, 'DLR: no local messages matched');
+      try {
+        const result = await processWebhookWithReplayProtection(
+          'mitto',
+          eventId,
+          async () => {
+            const msgs = await prisma.campaignMessage.findMany({
+              where: { providerMessageId: providerId },
+              select: { id: true, campaignId: true, ownerId: true, status: true },
+            });
+
+            if (msgs.length === 0) {
+              logger.info({ providerId, eventId }, 'DLR: no local messages matched');
+              return { matched: 0, updated: 0 };
+            }
+
+            logger.info({
+              providerId,
+              eventId,
+              messageCount: msgs.length,
+              currentStatuses: msgs.map(m => m.status),
+              newStatus: mapped,
+            }, 'DLR: updating messages');
+
+            const msgIds = msgs.map(m => m.id);
+            let count = 0;
+
+            if (mapped === 'sent') {
+              const r = await prisma.campaignMessage.updateMany({
+                where: { id: { in: msgIds } }, // tenant safety via fetched rows
+                data: {
+                  status: 'sent',
+                  sentAt: doneAt,
+                  deliveryStatus: statusIn || 'sent',
+                  deliveredAt: (statusIn && String(statusIn).toLowerCase().includes('deliv')) ? doneAt : undefined,
+                  updatedAt: new Date(),
+                },
+              });
+              count = r.count;
+              msgs.forEach(m => affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`));
+              logger.info({ providerId, eventId, updated: count, originalStatus: statusIn }, 'DLR: marked as sent');
+            } else if (mapped === 'failed') {
+              const r = await prisma.campaignMessage.updateMany({
+                where: { id: { in: msgIds } }, // tenant safety via fetched rows
+                data: {
+                  status: 'failed',
+                  failedAt: doneAt,
+                  deliveryStatus: statusIn || 'failed',
+                  error: errorDesc || 'FAILED_DLR',
+                  updatedAt: new Date(),
+                },
+              });
+              count = r.count;
+              msgs.forEach(m => affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`));
+              logger.info({ providerId, eventId, updated: count }, 'DLR: marked as failed');
+            } else {
+              logger.warn({ providerId, eventId, statusIn, mapped }, 'DLR unknown/ignored status');
+            }
+
+            return { matched: msgs.length, updated: count };
+          },
+          {
+            payloadHash,
+            eventType: 'dlr',
+            ownerId: null,
+            payload: ev,
+            eventTimestamp: doneAt,
+          },
+        );
+
+        if (!result.processed) {
+          logger.debug({ providerId, eventId }, 'DLR replay detected, skipping');
           continue;
         }
 
-        logger.info({
-          providerId,
-          messageCount: msgs.length,
-          currentStatuses: msgs.map(m => m.status),
-          newStatus: mapped,
-        }, 'DLR: updating messages');
-
-        if (mapped === 'sent') {
-          const r = await prisma.campaignMessage.updateMany({
-            where: { providerMessageId: providerId },
-            data: {
-              status: 'sent',
-              sentAt: doneAt,
-              deliveryStatus: statusIn || 'sent',
-              deliveredAt: (statusIn && String(statusIn).toLowerCase().includes('deliv')) ? doneAt : undefined,
-              updatedAt: new Date(),
-            },
+        // If no rows matched, mark event as unmatched for audit visibility
+        if (result?.result?.matched === 0 && result.webhookEventId) {
+          await markWebhookProcessed(result.webhookEventId, {
+            status: 'unmatched',
+            error: 'No local messages matched providerMessageId',
           });
-          updated += r.count;
-          logger.info({ providerId, updated: r.count, originalStatus: statusIn }, 'DLR: marked as sent');
-          msgs.forEach(m => affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`));
-        } else if (mapped === 'failed') {
-          const r = await prisma.campaignMessage.updateMany({
-            where: { providerMessageId: providerId },
-            data: {
-              status: 'failed',
-              failedAt: doneAt,
-              deliveryStatus: statusIn || 'failed',
-              error: errorDesc || 'FAILED_DLR',
-              updatedAt: new Date(),
-            },
-          });
-          updated += r.count;
-          logger.info({ providerId, updated: r.count }, 'DLR: marked as failed');
-          msgs.forEach(m => affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`));
-        } else {
-          logger.warn({ providerId, statusIn, mapped }, 'DLR unknown/ignored status');
         }
 
+        updated += Number(result?.result?.updated || 0);
       } catch (e) {
-        logger.error({ err: e, providerId, statusIn }, 'DLR update error');
+        logger.error({ err: e?.message || e, providerId, eventId, statusIn }, 'DLR update error');
       }
     }
 
@@ -218,8 +262,8 @@ router.post('/webhooks/mitto/inbound', async (req, res) => {
     const from = body.from || body.msisdn || body.sender;
     const text = (body.text || body.message || '').toString();
 
-    // Persist inbound for audit (best-effort)
-    await persistWebhook('mitto', 'inbound', body, null);
+    // Persist inbound for audit (best-effort + replay safe)
+    await persistInboundWebhook(body);
 
     if (!from || !text) {return res.status(202).json({ ok: true });}
 

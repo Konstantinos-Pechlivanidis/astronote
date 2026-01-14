@@ -62,11 +62,11 @@ export async function updateCampaignAggregates(campaignId, shopId) {
       campaignStatus = CampaignStatus.sending;
     } else if (total > 0 && processed === total) {
       // All recipients have been processed (sent or failed) - Phase 2.2
-      // If all failed, mark as failed, otherwise mark as sent
+      // If all failed, mark as failed, otherwise mark as completed (canonical)
       if (failed === total) {
         campaignStatus = CampaignStatus.failed;
       } else {
-        campaignStatus = CampaignStatus.sent;
+        campaignStatus = CampaignStatus.completed;
       }
     }
     // If total === 0, don't change status (campaign might be in draft)
@@ -102,7 +102,7 @@ export async function updateCampaignAggregates(campaignId, shopId) {
       // Release credit reservation when campaign completes (sent or failed)
       // This happens only once when campaign transitions from 'sending' to final status
       if (
-        campaignStatus === CampaignStatus.sent ||
+        campaignStatus === CampaignStatus.completed ||
         campaignStatus === CampaignStatus.failed
       ) {
         try {

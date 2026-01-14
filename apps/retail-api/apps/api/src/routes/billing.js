@@ -12,6 +12,7 @@ const {
   getIntervalForPlan,
   reconcileSubscriptionFromStripe,
 } = require('../services/subscription.service');
+const { getSubscriptionStatusWithStripeSync } = require('../services/stripe-sync.service');
 const { getBillingProfile, upsertBillingProfile } = require('../services/billing-profile.service');
 const { listInvoices } = require('../services/invoices.service');
 const { resolveBillingCurrency } = require('../billing/currency');
@@ -110,7 +111,7 @@ async function resolveStripeCustomerId({
 r.get('/billing/balance', requireAuth, async (req, res, next) => {
   try {
     const balance = await getBalance(req.user.id);
-    const subscription = await getSubscriptionStatus(req.user.id);
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
     if (subscription?.stripeCustomerId && !isValidStripeCustomerId(subscription.stripeCustomerId)) {
       subscription.stripeCustomerId = await resolveStripeCustomerId({
         userId: req.user.id,
@@ -137,7 +138,7 @@ r.get('/billing/balance', requireAuth, async (req, res, next) => {
 r.get('/billing/wallet', requireAuth, async (req, res, next) => {
   try {
     const balance = await getBalance(req.user.id);
-    const subscription = await getSubscriptionStatus(req.user.id);
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
     if (subscription?.stripeCustomerId && !isValidStripeCustomerId(subscription.stripeCustomerId)) {
       subscription.stripeCustomerId = await resolveStripeCustomerId({
         userId: req.user.id,
@@ -165,7 +166,7 @@ r.get('/billing/summary', requireAuth, async (req, res, next) => {
   try {
     const [balance, subscription] = await Promise.all([
       getBalance(req.user.id),
-      getSubscriptionStatus(req.user.id),
+      getSubscriptionStatusWithStripeSync(req.user.id),
     ]);
 
     const allowance = {
@@ -418,6 +419,50 @@ r.get('/billing/purchases', requireAuth, async (req, res, next) => {
 });
 
 /**
+ * GET /billing/billing-history
+ * Retail parity endpoint: unified billing ledger based on BillingTransaction.
+ * Includes subscription charges, included credits, and topups (when recorded).
+ */
+r.get('/billing/billing-history', requireAuth, async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize || 20)));
+
+    const [total, items] = await Promise.all([
+      prisma.billingTransaction.count({ where: { ownerId: req.user.id } }),
+      prisma.billingTransaction.findMany({
+        where: { ownerId: req.user.id },
+        orderBy: { id: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    res.json({
+      transactions: items.map((t) => ({
+        id: t.id,
+        type: t.packageType || 'billing',
+        amount: Number.isFinite(t.amount) ? Number((t.amount / 100).toFixed(2)) : 0,
+        currency: t.currency || 'EUR',
+        creditsAdded: t.creditsAdded,
+        status: t.status,
+        createdAt: t.createdAt,
+        stripeSessionId: t.stripeSessionId || null,
+        stripePaymentId: t.stripePaymentId || null,
+      })),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+        hasNextPage: page < Math.ceil(total / pageSize),
+        hasPrevPage: page > 1,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+/**
  * POST /billing/seed-packages  (DEV only - optional)
  * Body: { items: [{ name, units, priceCents }] }
  */
@@ -595,10 +640,10 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
       billingProfile,
     });
 
-    const successUrl = buildRetailFrontendUrl('/billing/success', null, {
+    const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
       session_id: '{CHECKOUT_SESSION_ID}',
     });
-    const cancelUrl = buildRetailFrontendUrl('/billing/cancel');
+    const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
 
     if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
       return res.status(500).json({
@@ -656,7 +701,7 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
  */
 r.get('/subscriptions/current', requireAuth, async (req, res, next) => {
   try {
-    const subscription = await getSubscriptionStatus(req.user.id);
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
     const planConfig = subscription.planType ? getPlanConfig(subscription.planType) : null;
     res.json({
       ...subscription,
@@ -757,10 +802,10 @@ r.post('/subscriptions/subscribe', requireAuth, async (req, res, next) => {
       billingProfile,
     });
 
-    const successUrl = buildRetailFrontendUrl('/billing/success', null, {
+    const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
       session_id: '{CHECKOUT_SESSION_ID}',
     });
-    const cancelUrl = buildRetailFrontendUrl('/billing/cancel');
+    const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
 
     if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
       return res.status(500).json({
@@ -1285,10 +1330,10 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       billingProfile,
     });
 
-    const successUrl = buildRetailFrontendUrl('/billing/success', null, {
+    const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
       session_id: '{CHECKOUT_SESSION_ID}',
     });
-    const cancelUrl = buildRetailFrontendUrl('/billing/cancel');
+    const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
 
     if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
       return res.status(500).json({
@@ -1392,12 +1437,10 @@ r.get('/billing/topup/calculate', requireAuth, async (req, res, next) => {
 });
 
 /**
- * POST /api/subscriptions/verify-session
- * Manually verify and activate subscription from checkout session
- * Body: { sessionId: string }
- * Useful if webhook wasn't processed
+ * Internal handler: verify and activate subscription from checkout session (idempotent).
+ * Used by both /subscriptions/verify-session and /subscriptions/finalize.
  */
-r.post('/subscriptions/verify-session', requireAuth, async (req, res, next) => {
+async function handleVerifySubscriptionSession(req, res, next) {
   try {
     const { sessionId } = req.body;
 
@@ -1548,7 +1591,25 @@ r.post('/subscriptions/verify-session', requireAuth, async (req, res, next) => {
     }
     next(e);
   }
-});
+}
+
+/**
+ * POST /api/subscriptions/verify-session
+ * Manually verify and activate subscription from checkout session
+ * Body: { sessionId: string }
+ * Useful if webhook wasn't processed
+ */
+r.post('/subscriptions/verify-session', requireAuth, handleVerifySubscriptionSession);
+
+/**
+ * POST /api/subscriptions/finalize
+ * Alias for verify-session (Shopify parity)
+ * Body: { sessionId: string }
+ *
+ * Used by the Retail billing success page to finalize state after Stripe redirect.
+ * Intentionally reuses the same logic as /subscriptions/verify-session.
+ */
+r.post('/subscriptions/finalize', requireAuth, handleVerifySubscriptionSession);
 
 /**
  * POST /api/billing/verify-payment

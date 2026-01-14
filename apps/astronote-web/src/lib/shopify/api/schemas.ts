@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { SHOPIFY_CAMPAIGN_STATUS_VALUES } from '../constants/campaign-status';
 
 /**
  * Template DTO Schema
@@ -72,7 +73,8 @@ export const campaignSchema = z.object({
   id: z.string().min(1, 'Campaign ID must be non-empty'),
   name: z.string().min(1),
   message: z.string().min(1),
-  status: z.enum(['draft', 'scheduled', 'sending', 'sent', 'failed', 'cancelled']),
+  status: z.enum(SHOPIFY_CAMPAIGN_STATUS_VALUES as unknown as [string, ...string[]]),
+  statusRaw: z.string().nullable().optional(),
   audience: z.union([
     z.string(),
     z.object({
@@ -106,6 +108,20 @@ export const campaignSchema = z.object({
   totalFailed: z.number().int().nonnegative().default(0),
   totalProcessed: z.number().int().nonnegative().default(0),
   totalClicked: z.number().int().nonnegative().default(0),
+  // Canonical contract (new)
+  totals: z.object({
+    recipients: z.number().int().nonnegative(),
+    accepted: z.number().int().nonnegative(),
+    sent: z.number().int().nonnegative(),
+    delivered: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }).nullable().optional(),
+  delivery: z.object({
+    pendingDelivery: z.number().int().nonnegative(),
+    delivered: z.number().int().nonnegative(),
+    failedDelivery: z.number().int().nonnegative(),
+  }).nullable().optional(),
+  sourceOfTruth: z.string().optional(),
   meta: z.record(z.unknown()).nullable().optional(),
 });
 

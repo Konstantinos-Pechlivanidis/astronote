@@ -1,5 +1,11 @@
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
+import Stripe from 'stripe';
+
+// Stripe client (optional). Keep initialization consistent across the codebase.
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' })
+  : null;
 
 const normalizeCurrency = (value) => {
   if (!value) return null;
@@ -125,11 +131,13 @@ export async function recordFreeCreditsGrant(
   creditsGranted,
   invoiceId,
   periodInfo = {},
+  currency = 'EUR',
 ) {
   if (!creditsGranted || creditsGranted <= 0) {
     return null;
   }
 
+  const normalizedCurrency = normalizeCurrency(currency) || 'EUR';
   const idempotencyKey = invoiceId
     ? `free_credits:invoice:${invoiceId}`
     : `free_credits:${planType}:${periodInfo.periodStart || Date.now()}`;
@@ -140,7 +148,7 @@ export async function recordFreeCreditsGrant(
         shopId,
         creditsAdded: creditsGranted,
         amount: 0, // Free credits have no monetary amount
-        currency: 'EUR',
+        currency: normalizedCurrency,
         packageType: `subscription_included_${planType}`,
         stripeSessionId: invoiceId || `free_${Date.now()}`,
         stripePaymentId: null,
@@ -189,88 +197,101 @@ export async function listInvoices(shopId, filters = {}) {
     try {
       const shop = await prisma.shop.findUnique({
         where: { id: shopId },
-        select: { stripeCustomerId: true },
+        select: { stripeCustomerId: true, stripeSubscriptionId: true },
       });
 
-      if (shop?.stripeCustomerId) {
+      let stripeCustomerId = shop?.stripeCustomerId || null;
+      if (!stripeCustomerId && shop?.stripeSubscriptionId && stripe) {
+        try {
+          const stripeSubscription = await stripe.subscriptions.retrieve(
+            shop.stripeSubscriptionId,
+          );
+          const resolvedCustomerId =
+            typeof stripeSubscription.customer === 'string'
+              ? stripeSubscription.customer
+              : stripeSubscription.customer?.id;
+          if (resolvedCustomerId) {
+            stripeCustomerId = resolvedCustomerId;
+            await prisma.shop.update({
+              where: { id: shopId },
+              data: { stripeCustomerId: resolvedCustomerId },
+            });
+          }
+        } catch (err) {
+          logger.warn(
+            { shopId, err: err.message },
+            'Failed to resolve Stripe customer from subscription for invoice fallback',
+          );
+        }
+      }
+
+      if (stripeCustomerId && stripe) {
         logger.info(
-          { shopId, stripeCustomerId: shop.stripeCustomerId },
+          { shopId, stripeCustomerId },
           'No invoices in DB, fetching from Stripe as fallback',
         );
 
-        let stripe = null;
         try {
-          const stripeModule = await import('stripe');
-          const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-          if (stripeSecretKey) {
-            stripe = stripeModule.default(stripeSecretKey);
-          }
-        } catch (err) {
-          logger.warn('Stripe not configured, skipping fallback fetch');
-        }
+          const stripeInvoices = await stripe.invoices.list({
+            customer: stripeCustomerId,
+            limit: Number(pageSize),
+          });
 
-        if (stripe) {
-          try {
-            const stripeInvoices = await stripe.invoices.list({
-              customer: shop.stripeCustomerId,
-              limit: Number(pageSize),
-            });
-
-            // Sync invoices to DB
-            for (const invoice of stripeInvoices.data) {
-              try {
-                await upsertInvoiceRecord(shopId, invoice);
-              } catch (err) {
-                logger.warn(
-                  { shopId, invoiceId: invoice.id, err: err.message },
-                  'Failed to sync invoice from Stripe',
-                );
-              }
+          // Sync invoices to DB
+          for (const invoice of stripeInvoices.data) {
+            try {
+              await upsertInvoiceRecord(shopId, invoice);
+            } catch (err) {
+              logger.warn(
+                { shopId, invoiceId: invoice.id, err: err.message },
+                'Failed to sync invoice from Stripe',
+              );
             }
-
-            // Re-fetch from DB after sync
-            const [syncedInvoices, syncedTotal] = await Promise.all([
-              prisma.invoiceRecord.findMany({
-                where,
-                orderBy: { issuedAt: 'desc' },
-                take: Number(pageSize),
-                skip: (Number(page) - 1) * Number(pageSize),
-              }),
-              prisma.invoiceRecord.count({ where }),
-            ]);
-
-            const normalizedInvoices = syncedInvoices.map((invoice) => ({
-              ...invoice,
-              subtotal: Number.isFinite(invoice.subtotal)
-                ? Number((invoice.subtotal / 100).toFixed(2))
-                : null,
-              tax: Number.isFinite(invoice.tax)
-                ? Number((invoice.tax / 100).toFixed(2))
-                : null,
-              total: Number.isFinite(invoice.total)
-                ? Number((invoice.total / 100).toFixed(2))
-                : null,
-              currency: invoice.currency ? invoice.currency.toUpperCase() : null,
-            }));
-
-            return {
-              invoices: normalizedInvoices,
-              pagination: {
-                page: Number(page),
-                pageSize: Number(pageSize),
-                total: syncedTotal,
-                totalPages: Math.ceil(syncedTotal / Number(pageSize)),
-                hasNextPage: Number(page) < Math.ceil(syncedTotal / Number(pageSize)),
-                hasPrevPage: Number(page) > 1,
-              },
-            };
-          } catch (stripeErr) {
-            logger.warn(
-              { shopId, err: stripeErr.message },
-              'Failed to fetch invoices from Stripe',
-            );
-            // Fall through to return empty result
           }
+
+          // Re-fetch from DB after sync
+          const [syncedInvoices, syncedTotal] = await Promise.all([
+            prisma.invoiceRecord.findMany({
+              where,
+              orderBy: { issuedAt: 'desc' },
+              take: Number(pageSize),
+              skip: (Number(page) - 1) * Number(pageSize),
+            }),
+            prisma.invoiceRecord.count({ where }),
+          ]);
+
+          const normalizedInvoices = syncedInvoices.map((invoice) => ({
+            ...invoice,
+            subtotal: Number.isFinite(invoice.subtotal)
+              ? Number((invoice.subtotal / 100).toFixed(2))
+              : null,
+            tax: Number.isFinite(invoice.tax)
+              ? Number((invoice.tax / 100).toFixed(2))
+              : null,
+            total: Number.isFinite(invoice.total)
+              ? Number((invoice.total / 100).toFixed(2))
+              : null,
+            currency: invoice.currency ? invoice.currency.toUpperCase() : null,
+          }));
+
+          return {
+            invoices: normalizedInvoices,
+            pagination: {
+              page: Number(page),
+              pageSize: Number(pageSize),
+              total: syncedTotal,
+              totalPages: Math.ceil(syncedTotal / Number(pageSize)),
+              hasNextPage:
+                Number(page) < Math.ceil(syncedTotal / Number(pageSize)),
+              hasPrevPage: Number(page) > 1,
+            },
+          };
+        } catch (stripeErr) {
+          logger.warn(
+            { shopId, err: stripeErr.message },
+            'Failed to fetch invoices from Stripe',
+          );
+          // Fall through to return empty result
         }
       }
     } catch (err) {

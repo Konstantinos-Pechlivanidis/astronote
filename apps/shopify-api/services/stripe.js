@@ -1135,9 +1135,10 @@ export async function updateSubscription(
 
   const newPriceId = planCatalog.getPriceId(newPlanType, resolvedInterval, currency);
   if (!newPriceId) {
+    const validation = planCatalog.validateCatalog();
     throw new Error(
       `Stripe price ID not found for ${newPlanType}/${resolvedInterval}/${currency}. ` +
-      'Please configure the required environment variable.',
+      `Missing mappings: ${validation.missing.join(', ')}`,
     );
   }
 
@@ -1177,6 +1178,136 @@ export async function updateSubscription(
     'Subscription updated',
   );
   return updated;
+}
+
+/**
+ * Schedule a subscription change at period end using Stripe subscription schedules.
+ * @param {string} subscriptionId - Stripe subscription ID
+ * @param {string} newPlanType - 'starter' or 'pro'
+ * @param {string} currency - Currency code (EUR, USD, etc.)
+ * @param {string} interval - 'month' or 'year'
+ * @returns {Promise<Object>} Schedule and subscription details
+ */
+export async function scheduleSubscriptionChange(
+  subscriptionId,
+  newPlanType,
+  currency = 'EUR',
+  interval = null,
+) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+
+  if (!['starter', 'pro'].includes(newPlanType)) {
+    throw new Error(`Invalid plan type: ${newPlanType}`);
+  }
+
+  const planCatalog = await import('./plan-catalog.js');
+  const resolvedInterval = interval || (newPlanType === 'starter' ? 'month' : 'year');
+  const newPriceId = planCatalog.getPriceId(newPlanType, resolvedInterval, currency);
+  if (!newPriceId) {
+    const validation = planCatalog.validateCatalog();
+    throw new Error(
+      `Stripe price ID not found for ${newPlanType}/${resolvedInterval}/${currency}. ` +
+      `Missing mappings: ${validation.missing.join(', ')}`,
+    );
+  }
+
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['items.data.price', 'schedule'],
+  });
+
+  if (!subscription.current_period_start || !subscription.current_period_end) {
+    throw new Error('Subscription period information is missing');
+  }
+
+  const currentItems = (subscription.items?.data || [])
+    .map((item) => ({
+      price: item.price?.id || item.price,
+      quantity: item.quantity || 1,
+    }))
+    .filter((item) => item.price);
+
+  if (currentItems.length === 0) {
+    throw new Error('Subscription items not found for scheduling');
+  }
+
+  const phases = [
+    {
+      items: currentItems,
+      start_date: subscription.current_period_start,
+      end_date: subscription.current_period_end,
+    },
+    {
+      items: [{ price: newPriceId, quantity: 1 }],
+      start_date: subscription.current_period_end,
+    },
+  ];
+
+  let scheduleId = subscription.schedule;
+  if (scheduleId && typeof scheduleId === 'object') {
+    scheduleId = scheduleId.id;
+  }
+
+  const scheduleMetadata = {
+    planType: newPlanType,
+    interval: resolvedInterval,
+    currency: String(currency).toUpperCase(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const schedule = scheduleId
+    ? await stripe.subscriptionSchedules.update(scheduleId, {
+      phases,
+      end_behavior: 'release',
+      metadata: scheduleMetadata,
+    })
+    : await stripe.subscriptionSchedules.create({
+      from_subscription: subscriptionId,
+      phases,
+      end_behavior: 'release',
+      metadata: scheduleMetadata,
+    });
+
+  logger.info(
+    { subscriptionId, newPlanType, newPriceId, scheduleId: schedule.id },
+    'Subscription change scheduled',
+  );
+
+  return { schedule, subscription };
+}
+
+/**
+ * Cancel a scheduled subscription change by releasing the subscription schedule.
+ * @param {string} subscriptionId - Stripe subscription ID
+ * @returns {Promise<Object>} Release result
+ */
+export async function cancelScheduledSubscriptionChange(subscriptionId) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['schedule'],
+  });
+
+  let scheduleId = subscription.schedule;
+  if (scheduleId && typeof scheduleId === 'object') {
+    scheduleId = scheduleId.id;
+  }
+
+  if (!scheduleId) {
+    return { released: false, reason: 'no_schedule' };
+  }
+
+  const released = await stripe.subscriptionSchedules.release(scheduleId);
+
+  logger.info(
+    { subscriptionId, scheduleId },
+    'Subscription schedule released',
+  );
+
+  return { released: true, schedule: released };
 }
 
 /**
@@ -1260,6 +1391,9 @@ export default {
   createSubscriptionCheckoutSession,
   createCreditTopupCheckoutSession,
   updateSubscription,
+  scheduleSubscriptionChange,
+  cancelScheduledSubscriptionChange,
   cancelSubscription,
+  resumeSubscription,
   getCustomerPortalUrl,
 };

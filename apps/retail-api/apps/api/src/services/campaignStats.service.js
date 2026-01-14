@@ -69,6 +69,12 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
   return {
     metrics,
     total: metrics.total,
+    // Canonical fields (preferred)
+    accepted: metrics.accepted,
+    delivered: metrics.delivered,
+    failedDelivery: metrics.deliveryFailed,
+    pendingDelivery: metrics.pendingDelivery,
+    // Backward compatibility (legacy consumers treat "sent" as delivered)
     sent: metrics.delivered,
     failed: metrics.deliveryFailed,
     conversions,
@@ -119,6 +125,11 @@ exports.getManyCampaignsStats = async (campaignIds, ownerId) => {
     return {
       campaignId: c.id,
       total: m.total,
+      accepted: m.accepted,
+      delivered: m.delivered,
+      failedDelivery: m.deliveryFailed,
+      pendingDelivery: m.pendingDelivery,
+      // Backward compatibility
       sent: m.delivered,
       failed: m.deliveryFailed,
       conversions: conversionsCount,

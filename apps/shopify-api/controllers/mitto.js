@@ -84,18 +84,19 @@ export async function deliveryReport(req, res) {
         continue; // Skip duplicate
       }
 
-      // Record event
-      await webhookReplay.recordWebhookEvent('mitto', eventId, {
-        eventHash,
-        payload: ev,
-      });
-
       // Map Mitto status to our internal status
       const newStatus = mapStatus(statusIn);
 
       if (newStatus === 'unknown') {
         logger.warn('Unknown DLR status', { providerId, statusIn, event: ev });
-        await webhookReplay.markWebhookProcessed(existing?.id || null, {
+        const webhookEvent = await webhookReplay.recordWebhookEvent('mitto', eventId, {
+          eventHash,
+          eventType: 'dlr',
+          shopId: null,
+          payload: ev,
+          status: 'received',
+        });
+        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
           status: 'failed',
           error: 'Unknown status',
         });
@@ -105,7 +106,7 @@ export async function deliveryReport(req, res) {
       // Find CampaignRecipient by providerMessageId (primary lookup for bulk SMS)
       const recipient = await prisma.campaignRecipient.findFirst({
         where: { mittoMessageId: providerId },
-        select: { id: true, campaignId: true, status: true },
+        select: { id: true, campaignId: true, status: true, sentAt: true },
         include: {
           campaign: {
             select: { shopId: true },
@@ -115,20 +116,13 @@ export async function deliveryReport(req, res) {
 
       // P0: Validate shop-scoping for security
       const shopId = recipient?.campaign?.shopId || recipient?.shopId;
-      if (!shopId) {
-        logger.warn('Mitto DLR webhook: recipient not found or no shopId', { providerId });
-        // Mark webhook as processed (failed)
-        const webhookEvent = await webhookReplay.recordWebhookEvent('mitto', eventId, {
-          eventHash,
-          shopId: null,
-          payload: ev,
-        });
-        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
-          status: 'failed',
-          error: 'Recipient not found',
-        });
-        continue;
-      }
+      const webhookEvent = await webhookReplay.recordWebhookEvent('mitto', eventId, {
+        eventHash,
+        eventType: 'dlr',
+        shopId: shopId || null,
+        payload: ev,
+        status: 'received',
+      });
 
       if (recipient) {
         // Update recipient status (Phase 2.2: sent/failed only)
@@ -155,16 +149,16 @@ export async function deliveryReport(req, res) {
           data: updateData,
         });
 
-        // Mark webhook as processed
-        const webhookEvent = await webhookReplay.recordWebhookEvent('mitto', eventId, {
-          eventHash,
-          shopId,
-          payload: ev,
-        });
         await webhookReplay.markWebhookProcessed(webhookEvent.id, { status: 'processed' });
 
         updated++;
         affectedCampaigns.add(recipient.campaignId);
+      } else {
+        logger.warn('Mitto DLR webhook: recipient not found', { providerId });
+        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+          status: 'unmatched',
+          error: 'Recipient not found',
+        });
       }
 
       // Also update MessageLog if exists (for non-campaign messages or fallback)

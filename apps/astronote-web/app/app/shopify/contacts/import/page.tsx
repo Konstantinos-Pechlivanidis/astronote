@@ -2,10 +2,12 @@
 
 import React, { useState, useRef } from 'react';
 import Link from 'next/link';
-import { Upload, Download, CheckCircle, Loader, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Upload, Download, CheckCircle, Loader, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import { RetailCard } from '@/src/components/retail/RetailCard';
-import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
+import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { useImportContacts } from '@/src/features/shopify/contacts/hooks/useContactMutations';
 import type { ImportContactItem } from '@/src/lib/shopify/api/contacts';
 
@@ -18,6 +20,7 @@ export default function ContactsImportPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<{
     total: number;
     created: number;
@@ -57,12 +60,15 @@ export default function ContactsImportPage() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-        alert('Please select a CSV file');
+        const msg = 'Please select a CSV file';
+        setLocalError(msg);
+        toast.error(msg);
         return;
       }
       setSelectedFile(file);
       setFileName(file.name);
       setImportResult(null);
+      setLocalError(null);
     }
   };
 
@@ -177,12 +183,15 @@ export default function ContactsImportPage() {
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      alert('Please select a file');
+      const msg = 'Please select a file';
+      setLocalError(msg);
+      toast.error(msg);
       return;
     }
 
     setIsUploading(true);
     setImportResult(null);
+    setLocalError(null);
 
     try {
       // Read file
@@ -200,172 +209,184 @@ export default function ContactsImportPage() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      toast.success(`Import completed: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped`);
     } catch (error: any) {
       const message = error?.response?.data?.message || error?.message || 'Failed to import contacts';
-      alert(message);
+      setLocalError(message);
+      toast.error(message);
     } finally {
       setIsUploading(false);
     }
   };
 
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-6 flex items-center gap-4">
-        <Link href="/app/shopify/contacts">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Contacts
-          </Button>
-        </Link>
-        <div className="flex-1">
-          <RetailPageHeader
-            title="Import Contacts"
-            description="Upload a CSV file to import contacts in bulk"
-          />
-        </div>
-      </div>
+    <RetailPageLayout>
+      <div className="space-y-6">
+        <AppPageHeader
+          title="Import Contacts"
+          description="Upload a CSV file to import contacts in bulk"
+          backHref="/app/shopify/contacts"
+          backLabel="Back to Contacts"
+        />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Upload Section */}
-        <RetailCard className="p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Upload CSV File</h3>
-
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="file-input" className="mb-2 block text-sm font-medium text-text-secondary">
-                Select CSV File
-              </label>
-              <input
-                ref={fileInputRef}
-                id="file-input"
-                type="file"
-                accept=".csv"
-                onChange={handleFileChange}
-                className="block w-full text-sm text-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-accent file:text-white hover:file:bg-accent/90"
-                disabled={isUploading}
-              />
-              {fileName && (
-                <p className="mt-2 text-sm text-text-secondary">Selected: {fileName}</p>
-              )}
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={handleUpload}
-                disabled={!selectedFile || isUploading}
-                className="flex-1"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader className="mr-2 h-4 w-4 animate-spin" />
-                    Importing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Import Contacts
-                  </>
-                )}
-              </Button>
-              <Button variant="outline" onClick={downloadSampleCSV}>
-                <Download className="mr-2 h-4 w-4" />
-                Download Sample
-              </Button>
-            </div>
-          </div>
-        </RetailCard>
-
-        {/* Instructions */}
-        <RetailCard className="p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">CSV Format</h3>
-
-          <div className="space-y-4">
-            <div>
-              <h4 className="text-sm font-medium text-text-secondary mb-2">Required Columns:</h4>
-              <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
-                <li><code className="bg-surface-light px-1 rounded">phoneE164</code> - Phone number in E.164 format (e.g., +306977123456)</li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-medium text-text-secondary mb-2">Optional Columns:</h4>
-              <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
-                <li><code className="bg-surface-light px-1 rounded">firstName</code> - First name</li>
-                <li><code className="bg-surface-light px-1 rounded">lastName</code> - Last name</li>
-                <li><code className="bg-surface-light px-1 rounded">email</code> - Email address</li>
-                <li><code className="bg-surface-light px-1 rounded">gender</code> - male, female, or other</li>
-                <li><code className="bg-surface-light px-1 rounded">birthDate</code> - Birth date (YYYY-MM-DD)</li>
-                <li><code className="bg-surface-light px-1 rounded">smsConsent</code> - opted_in, opted_out, or unknown</li>
-                <li><code className="bg-surface-light px-1 rounded">tags</code> - Comma-separated tags</li>
-              </ul>
-            </div>
-
-            <div className="rounded-lg bg-surface-light border border-border p-3">
-              <p className="text-xs text-text-tertiary">
-                <strong>Note:</strong> Maximum 1000 contacts per import. The CSV file must include a header row.
-              </p>
-            </div>
-          </div>
-        </RetailCard>
-      </div>
-
-      {/* Import Result */}
-      {importResult && (
-        <RetailCard className="mt-6 p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
-            {importResult.errors.length > 0 ? (
-              <AlertCircle className="h-5 w-5 text-yellow-400" />
-            ) : (
-              <CheckCircle className="h-5 w-5 text-green-400" />
-            )}
-            Import Results
-          </h3>
-
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
-            <div>
-              <div className="text-sm font-medium text-text-secondary mb-1">Total</div>
-              <div className="text-2xl font-bold text-text-primary">{importResult.total}</div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-text-secondary mb-1">Created</div>
-              <div className="text-2xl font-bold text-green-400">{importResult.created}</div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-text-secondary mb-1">Updated</div>
-              <div className="text-2xl font-bold text-blue-400">{importResult.updated}</div>
-            </div>
-            <div>
-              <div className="text-sm font-medium text-text-secondary mb-1">Skipped</div>
-              <div className="text-2xl font-bold text-red-400">{importResult.skipped}</div>
-            </div>
-          </div>
-
-          {importResult.errors.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium text-text-secondary mb-2">
-                Errors ({importResult.errors.length})
-              </h4>
-              <div className="max-h-48 overflow-y-auto rounded-lg bg-surface-light border border-border p-3">
-                <ul className="space-y-1 text-xs text-text-secondary">
-                  {importResult.errors.map((error, idx) => (
-                    <li key={idx}>
-                      <span className="font-medium">{error.phone}:</span> {error.error}
-                    </li>
-                  ))}
-                </ul>
+        {(localError || importMutation.error) && (
+          <RetailCard variant="danger" className="p-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text-primary">Import failed</div>
+                <div className="mt-1 text-sm text-text-secondary">
+                  {localError ||
+                    (importMutation.error instanceof Error
+                      ? importMutation.error.message
+                      : 'Failed to import contacts.')}
+                </div>
               </div>
             </div>
-          )}
+          </RetailCard>
+        )}
 
-          <div className="mt-6 flex justify-end">
-            <Link href="/app/shopify/contacts">
-              <Button>View Contacts</Button>
-            </Link>
-          </div>
-        </RetailCard>
-      )}
-    </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Upload Section */}
+          <RetailCard className="p-6">
+            <h3 className="text-lg font-semibold text-text-primary mb-4">Upload CSV File</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="file-input" className="mb-2 block text-sm font-medium text-text-secondary">
+                  Select CSV File
+                </label>
+                <input
+                  ref={fileInputRef}
+                  id="file-input"
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-accent file:text-white hover:file:bg-accent/90"
+                  disabled={isUploading}
+                />
+                {fileName && (
+                  <p className="mt-2 text-sm text-text-secondary">Selected: {fileName}</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleUpload}
+                  disabled={!selectedFile || isUploading}
+                  className="flex-1"
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader className="mr-2 h-4 w-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Import Contacts
+                    </>
+                  )}
+                </Button>
+                <Button variant="outline" onClick={downloadSampleCSV} disabled={isUploading}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Sample
+                </Button>
+              </div>
+            </div>
+          </RetailCard>
+
+          {/* Instructions */}
+          <RetailCard className="p-6">
+            <h3 className="text-lg font-semibold text-text-primary mb-4">CSV Format</h3>
+
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-sm font-medium text-text-secondary mb-2">Required Columns:</h4>
+                <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
+                  <li><code className="bg-surface-light px-1 rounded">phoneE164</code> - Phone number in E.164 format (e.g., +306977123456)</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="text-sm font-medium text-text-secondary mb-2">Optional Columns:</h4>
+                <ul className="list-disc list-inside text-sm text-text-secondary space-y-1">
+                  <li><code className="bg-surface-light px-1 rounded">firstName</code> - First name</li>
+                  <li><code className="bg-surface-light px-1 rounded">lastName</code> - Last name</li>
+                  <li><code className="bg-surface-light px-1 rounded">email</code> - Email address</li>
+                  <li><code className="bg-surface-light px-1 rounded">gender</code> - male, female, or other</li>
+                  <li><code className="bg-surface-light px-1 rounded">birthDate</code> - Birth date (YYYY-MM-DD)</li>
+                  <li><code className="bg-surface-light px-1 rounded">smsConsent</code> - opted_in, opted_out, or unknown</li>
+                  <li><code className="bg-surface-light px-1 rounded">tags</code> - Comma-separated tags</li>
+                </ul>
+              </div>
+
+              <div className="rounded-lg bg-surface-light border border-border p-3">
+                <p className="text-xs text-text-tertiary">
+                  <strong>Note:</strong> Maximum 1000 contacts per import. The CSV file must include a header row.
+                </p>
+              </div>
+            </div>
+          </RetailCard>
+        </div>
+
+        {/* Import Result */}
+        {importResult && (
+          <RetailCard className="mt-6 p-6">
+            <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+              {importResult.errors.length > 0 ? (
+                <AlertCircle className="h-5 w-5 text-yellow-400" />
+              ) : (
+                <CheckCircle className="h-5 w-5 text-green-400" />
+              )}
+              Import Results
+            </h3>
+
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
+              <div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Total</div>
+                <div className="text-2xl font-bold text-text-primary">{importResult.total}</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Created</div>
+                <div className="text-2xl font-bold text-green-400">{importResult.created}</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Updated</div>
+                <div className="text-2xl font-bold text-blue-400">{importResult.updated}</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Skipped</div>
+                <div className="text-2xl font-bold text-red-400">{importResult.skipped}</div>
+              </div>
+            </div>
+
+            {importResult.errors.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-text-secondary mb-2">
+                  Errors ({importResult.errors.length})
+                </h4>
+                <div className="max-h-48 overflow-y-auto rounded-lg bg-surface-light border border-border p-3">
+                  <ul className="space-y-1 text-xs text-text-secondary">
+                    {importResult.errors.map((error, idx) => (
+                      <li key={idx}>
+                        <span className="font-medium">{error.phone}:</span> {error.error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end">
+              <Link href="/app/shopify/contacts">
+                <Button>View Contacts</Button>
+              </Link>
+            </div>
+          </RetailCard>
+        )}
+      </div>
+    </RetailPageLayout>
   );
 }
 

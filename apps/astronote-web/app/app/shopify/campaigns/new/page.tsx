@@ -3,21 +3,20 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { format } from 'date-fns';
 import { useCreateCampaign } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
 import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
 import { useAudiences } from '@/src/features/shopify/audiences/hooks/useAudiences';
 import { useDiscounts } from '@/src/features/shopify/discounts/hooks/useDiscounts';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
-import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Save, Send, Clock } from 'lucide-react';
+import { Save, Send, Clock } from 'lucide-react';
 import type { ScheduleType } from '@/src/lib/shopify/api/campaigns';
 
 // Sentinel value for "No discount" (must be non-empty for Radix Select)
@@ -151,22 +150,12 @@ export default function NewCampaignPage() {
 
   return (
     <RetailPageLayout>
-      <div className="min-h-screen bg-background">
-        {/* Header */}
-        <div className="mb-6 flex items-center gap-4">
-          <Link href="/app/shopify/campaigns">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-            </Button>
-          </Link>
-          <div className="flex-1">
-            <RetailPageHeader
-              title="Create Campaign"
-              description="Create a new SMS campaign"
-            />
-          </div>
-        </div>
+      <div className="space-y-6">
+        <AppPageHeader
+          title="Create Campaign"
+          description="Create a new SMS campaign"
+          backHref="/app/shopify/campaigns"
+        />
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Form */}

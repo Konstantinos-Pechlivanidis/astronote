@@ -1,16 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCreateContact } from '@/src/features/shopify/contacts/hooks/useContactMutations';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
-import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 
 // Sentinel value for "Not specified" (must be non-empty for Radix Select)
 const UI_NOT_SPECIFIED = '__not_specified__';
@@ -63,7 +63,7 @@ export default function NewContactPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!validate()) {
       return;
@@ -90,21 +90,11 @@ export default function NewContactPage() {
   return (
     <RetailPageLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <Link href="/app/shopify/contacts">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
-            </Button>
-          </Link>
-          <div className="flex-1">
-            <RetailPageHeader
-              title="Create Contact"
-              description="Add a new contact to your list"
-            />
-          </div>
-        </div>
+        <AppPageHeader
+          title="Create Contact"
+          description="Add a new contact to your list"
+          backHref="/app/shopify/contacts"
+        />
 
         <div className="max-w-2xl">
           <RetailCard className="p-6">

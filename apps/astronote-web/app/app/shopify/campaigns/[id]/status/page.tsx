@@ -85,34 +85,38 @@ export default function CampaignStatusPage() {
         </div>
       </div>
 
-      {/* Status Cards */}
-      {statusData ? (
+      {/* Status Cards (canonical: provider accepted/delivered/failed/pending delivery) */}
+      {statusData?.canonical ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <RetailCard className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-text-secondary">Queued</h3>
               <Hourglass className="h-5 w-5 text-yellow-400" />
             </div>
-            <div className="text-3xl font-bold text-yellow-400">{statusData.queued || 0}</div>
-            <div className="mt-2 text-xs text-text-tertiary">Waiting to be processed</div>
+            <div className="text-3xl font-bold text-yellow-400">{statusData.canonical.queued || 0}</div>
+            <div className="mt-2 text-xs text-text-tertiary">Not yet accepted by provider</div>
           </RetailCard>
 
           <RetailCard className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-text-secondary">Processed</h3>
+              <h3 className="text-sm font-medium text-text-secondary">Accepted</h3>
               <Clock className="h-5 w-5 text-blue-400" />
             </div>
-            <div className="text-3xl font-bold text-blue-400">{statusData.processed || 0}</div>
-            <div className="mt-2 text-xs text-text-tertiary">Currently processing</div>
+            <div className="text-3xl font-bold text-blue-400">
+              {statusData.canonical.totals?.accepted ?? 0}
+            </div>
+            <div className="mt-2 text-xs text-text-tertiary">Provider accepted (Mitto messageId created)</div>
           </RetailCard>
 
           <RetailCard className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-text-secondary">Sent</h3>
+              <h3 className="text-sm font-medium text-text-secondary">Delivered</h3>
               <CheckCircle className="h-5 w-5 text-green-400" />
             </div>
-            <div className="text-3xl font-bold text-green-400">{statusData.sent || 0}</div>
-            <div className="mt-2 text-xs text-text-tertiary">Successfully sent</div>
+            <div className="text-3xl font-bold text-green-400">
+              {statusData.canonical.delivery?.delivered ?? 0}
+            </div>
+            <div className="mt-2 text-xs text-text-tertiary">Confirmed by provider DLR/polling</div>
           </RetailCard>
 
           <RetailCard className="p-6">
@@ -120,8 +124,46 @@ export default function CampaignStatusPage() {
               <h3 className="text-sm font-medium text-text-secondary">Failed</h3>
               <XCircle className="h-5 w-5 text-red-400" />
             </div>
-            <div className="text-3xl font-bold text-red-400">{statusData.failed || 0}</div>
-            <div className="mt-2 text-xs text-text-tertiary">Failed to send</div>
+            <div className="text-3xl font-bold text-red-400">
+              {statusData.canonical.delivery?.failedDelivery ?? 0}
+            </div>
+            <div className="mt-2 text-xs text-text-tertiary">Provider delivery failed / terminal failure</div>
+          </RetailCard>
+        </div>
+      ) : statusData ? (
+        // Fallback: legacy fields if canonical not present (older servers)
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <RetailCard className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-text-secondary">Queued</h3>
+              <Hourglass className="h-5 w-5 text-yellow-400" />
+            </div>
+            <div className="text-3xl font-bold text-yellow-400">{(statusData as any).queued || (statusData as any).metrics?.queued || 0}</div>
+            <div className="mt-2 text-xs text-text-tertiary">Waiting</div>
+          </RetailCard>
+          <RetailCard className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-text-secondary">Sent</h3>
+              <CheckCircle className="h-5 w-5 text-green-400" />
+            </div>
+            <div className="text-3xl font-bold text-green-400">{(statusData as any).sent || (statusData as any).metrics?.success || 0}</div>
+            <div className="mt-2 text-xs text-text-tertiary">Legacy</div>
+          </RetailCard>
+          <RetailCard className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-text-secondary">Failed</h3>
+              <XCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="text-3xl font-bold text-red-400">{(statusData as any).failed || (statusData as any).metrics?.failed || 0}</div>
+            <div className="mt-2 text-xs text-text-tertiary">Legacy</div>
+          </RetailCard>
+          <RetailCard className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-text-secondary">Processed</h3>
+              <Clock className="h-5 w-5 text-blue-400" />
+            </div>
+            <div className="text-3xl font-bold text-blue-400">{(statusData as any).processed || (statusData as any).metrics?.processed || 0}</div>
+            <div className="mt-2 text-xs text-text-tertiary">Legacy</div>
           </RetailCard>
         </div>
       ) : (
@@ -146,28 +188,28 @@ export default function CampaignStatusPage() {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-text-secondary">Overall Progress</span>
                 <span className="text-sm font-medium text-text-primary">
-                  {progressData.percentage}%
+                  {progressData.percentage ?? progressData.progress ?? 0}%
                 </span>
               </div>
               <div className="w-full h-3 bg-surface-light rounded-full overflow-hidden">
                 <div
                   className="h-full bg-accent transition-all duration-300"
-                  style={{ width: `${progressData.percentage}%` }}
+                  style={{ width: `${progressData.percentage ?? progressData.progress ?? 0}%` }}
                 />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Sent</div>
-                <div className="text-2xl font-bold text-green-400">{progressData.sent || 0}</div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Accepted</div>
+                <div className="text-2xl font-bold text-blue-400">{progressData.accepted ?? progressData.sent ?? 0}</div>
               </div>
               <div>
                 <div className="text-sm font-medium text-text-secondary mb-1">Failed</div>
-                <div className="text-2xl font-bold text-red-400">{progressData.failed || 0}</div>
+                <div className="text-2xl font-bold text-red-400">{progressData.failedDelivery ?? progressData.failed ?? 0}</div>
               </div>
               <div>
-                <div className="text-sm font-medium text-text-secondary mb-1">Pending</div>
-                <div className="text-2xl font-bold text-yellow-400">{progressData.pending || 0}</div>
+                <div className="text-sm font-medium text-text-secondary mb-1">Pending delivery</div>
+                <div className="text-2xl font-bold text-yellow-400">{progressData.pendingDelivery ?? 0}</div>
               </div>
             </div>
           </div>

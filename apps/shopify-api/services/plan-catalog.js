@@ -282,6 +282,31 @@ export function validateCatalog() {
 }
 
 /**
+ * Strict validation: require ALL interval-specific env vars (starter/pro × month/year × EUR/USD).
+ * This matches Billing v2 expectations where the UI can toggle monthly/yearly and currency.
+ *
+ * @returns {{ valid: boolean, missingEnvVars: string[] }}
+ */
+export function validateCatalogStrict() {
+  const missingEnvVars = [];
+
+  for (const intervals of Object.values(PLAN_CATALOG_CONFIG)) {
+    for (const currencies of Object.values(intervals)) {
+      for (const envVarName of Object.values(currencies)) {
+        if (!process.env[envVarName]) {
+          missingEnvVars.push(envVarName);
+        }
+      }
+    }
+  }
+
+  return {
+    valid: missingEnvVars.length === 0,
+    missingEnvVars,
+  };
+}
+
+/**
  * Get all available plans for display
  * @returns {Array} Array of { planCode, interval, currency, priceId, configured: boolean }
  */
@@ -314,6 +339,7 @@ export default {
   getPriceId,
   resolvePlanFromPriceId,
   validateCatalog,
+  validateCatalogStrict,
   listAvailablePlans,
 };
 

@@ -26,6 +26,10 @@ const stripe = process.env.STRIPE_SECRET_KEY
   })
   : null;
 
+const webhookDiagnosticsEnabled =
+  process.env.BILLING_DIAGNOSTICS === 'true' ||
+  process.env.NODE_ENV === 'development';
+
 const extractTaxId = (taxIds = []) => {
   if (!Array.isArray(taxIds)) return null;
   const vat = taxIds.find((entry) => entry.type === 'eu_vat') || taxIds[0];
@@ -73,7 +77,7 @@ const resolveShopIdFromStripeEvent = async (event) => {
   const metadata = object.metadata || {};
   const metadataShopId = metadata.shopId || metadata.storeId;
   if (metadataShopId) {
-    return metadataShopId;
+    return { shopId: metadataShopId, resolutionMethod: 'metadata.shopId' };
   }
 
   const customerId =
@@ -87,7 +91,7 @@ const resolveShopIdFromStripeEvent = async (event) => {
       select: { id: true },
     });
     if (shop?.id) {
-      return shop.id;
+      return { shopId: shop.id, resolutionMethod: 'stripeCustomerId' };
     }
   }
 
@@ -104,7 +108,7 @@ const resolveShopIdFromStripeEvent = async (event) => {
       select: { id: true },
     });
     if (shop?.id) {
-      return shop.id;
+      return { shopId: shop.id, resolutionMethod: 'stripeSubscriptionId' };
     }
 
     const record = await prisma.subscription.findFirst({
@@ -112,11 +116,11 @@ const resolveShopIdFromStripeEvent = async (event) => {
       select: { shopId: true },
     });
     if (record?.shopId) {
-      return record.shopId;
+      return { shopId: record.shopId, resolutionMethod: 'subscriptionRecord' };
     }
   }
 
-  return null;
+  return { shopId: null, resolutionMethod: 'unmatched' };
 };
 
 /**
@@ -136,7 +140,16 @@ export async function handleStripeWebhook(req, res) {
 
     // P0: Webhook replay protection
     const webhookReplay = (await import('../services/webhook-replay.js')).default;
-    const shopId = await resolveShopIdFromStripeEvent(event);
+    const { shopId, resolutionMethod } = await resolveShopIdFromStripeEvent(event);
+
+    if (webhookDiagnosticsEnabled) {
+      logger.info('Stripe webhook mapping resolved', {
+        eventType: event.type,
+        eventId: event.id,
+        shopId,
+        resolutionMethod,
+      });
+    }
 
     if (!shopId) {
       const payloadHash = webhookReplay.generateEventHash(payload);
@@ -160,6 +173,7 @@ export async function handleStripeWebhook(req, res) {
       logger.warn('Stripe webhook unmatched (no shop resolved)', {
         eventType: event.type,
         eventId: event.id,
+        resolutionMethod,
       });
 
       return sendSuccess(res, {
@@ -196,6 +210,7 @@ export async function handleStripeWebhook(req, res) {
           break;
 
         case 'invoice.payment_succeeded':
+        case 'invoice.paid':
           await handleInvoicePaymentSucceeded(event.data.object);
           break;
 
@@ -414,12 +429,16 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
               : null,
           }
           : {};
+        const grantCurrency = stripeSubscription?.items?.data?.[0]?.price?.currency
+          ? String(stripeSubscription.items.data[0].price.currency).toUpperCase()
+          : session.currency?.toUpperCase() || 'EUR';
         await recordFreeCreditsGrant(
           shopId,
           planType,
           result.credits,
           `sub_${subscriptionId}`,
           periodInfo,
+          grantCurrency,
         );
         logger.info(
           { shopId, planType, subscriptionId, credits: result.credits },
@@ -800,21 +819,109 @@ async function handleInvoicePaymentSucceeded(invoice) {
   // Always store invoice record (for both subscription_create and subscription_cycle)
   const invoiceRecord = await upsertInvoiceRecord(shop.id, invoice);
 
-  // For subscription_create, only store invoice (credits already handled by checkout.session.completed)
-  if (invoice.billing_reason === 'subscription_create') {
-    logger.info(
-      { shopId: shop.id, invoiceId: invoice.id },
-      'Stored subscription_create invoice (credits already allocated by checkout)',
-    );
-    return;
-  }
-
   const subscriptionId = invoice.subscription;
 
   if (!subscriptionId) {
     logger.warn(
       { invoiceId: invoice.id },
       'Invoice missing subscription ID',
+    );
+    return;
+  }
+
+  // If shop doesn't have a subscription ID yet (webhook ordering), attach it now.
+  if (!shop.stripeSubscriptionId) {
+    try {
+      await prisma.shop.update({
+        where: { id: shop.id },
+        data: { stripeSubscriptionId: subscriptionId },
+      });
+      shop.stripeSubscriptionId = subscriptionId;
+    } catch (err) {
+      logger.warn(
+        { shopId: shop.id, invoiceId: invoice.id, err: err.message },
+        'Failed to attach stripeSubscriptionId to shop during invoice webhook',
+      );
+    }
+  }
+
+  // Get subscription details from Stripe (used for both subscription_create and subscription_cycle).
+  let stripeSubscription = null;
+  try {
+    stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['items.data.price'],
+    });
+  } catch (err) {
+    logger.warn(
+      { subscriptionId, err: err.message },
+      'Failed to retrieve subscription from Stripe',
+    );
+  }
+
+  // Derive canonical plan/interval from Stripe priceId (source of truth).
+  let canonicalPlanCode = shop.planType;
+  try {
+    const priceId = stripeSubscription?.items?.data?.[0]?.price?.id || null;
+    if (priceId) {
+      const planCatalog = await import('../services/plan-catalog.js');
+      const resolved = planCatalog.resolvePlanFromPriceId(priceId);
+      if (resolved?.planCode) {
+        canonicalPlanCode = resolved.planCode;
+      }
+    }
+  } catch (err) {
+    // Non-fatal: fall back to shop.planType
+  }
+
+  // For subscription_create: store invoice, record charge, and ensure included credits are granted idempotently.
+  if (invoice.billing_reason === 'subscription_create') {
+    await recordSubscriptionInvoiceTransaction(shop.id, invoice, {
+      creditsAdded: 0,
+    });
+
+    // Attempt included credits grant here too (idempotent). Use the same idempotency key
+    // as checkout.session.completed (sub_<subscriptionId>) so either webhook can succeed.
+    try {
+      const result = await allocateFreeCredits(
+        shop.id,
+        canonicalPlanCode,
+        `sub_${subscriptionId}`,
+        stripeSubscription,
+        { allowInactive: true },
+      );
+
+      if (result?.allocated) {
+        const periodInfo = stripeSubscription
+          ? {
+            periodStart: stripeSubscription.current_period_start
+              ? new Date(stripeSubscription.current_period_start * 1000).toISOString()
+              : null,
+            periodEnd: stripeSubscription.current_period_end
+              ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
+              : null,
+          }
+          : {};
+
+        const { recordFreeCreditsGrant } = await import('../services/invoices.js');
+        await recordFreeCreditsGrant(
+          shop.id,
+          canonicalPlanCode,
+          result.credits,
+          `sub_${subscriptionId}`,
+          periodInfo,
+          invoice.currency?.toUpperCase() || 'EUR',
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { shopId: shop.id, invoiceId: invoice.id, err: err.message },
+        'Included credits grant on subscription_create invoice failed (non-fatal)',
+      );
+    }
+
+    logger.info(
+      { shopId: shop.id, invoiceId: invoice.id },
+      'Stored subscription_create invoice and recorded charge',
     );
     return;
   }
@@ -881,10 +988,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
     );
   }
 
-  // Get subscription details from Stripe
-  let stripeSubscription = null;
-  try {
-    stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+  if (stripeSubscription) {
     logger.debug(
       {
         subscriptionId,
@@ -892,11 +996,6 @@ async function handleInvoicePaymentSucceeded(invoice) {
         billingPeriodEnd: stripeSubscription.current_period_end,
       },
       'Retrieved subscription details from Stripe',
-    );
-  } catch (err) {
-    logger.warn(
-      { subscriptionId, err: err.message },
-      'Failed to retrieve subscription from Stripe',
     );
   }
 
@@ -940,93 +1039,94 @@ async function handleInvoicePaymentSucceeded(invoice) {
     }
   }
 
-  if (shop.subscriptionStatus === 'active') {
-    // Allocate free credits for this billing cycle (idempotent)
-    logger.info(
-      {
-        shopId: shop.id,
-        planType: shop.planType,
-        invoiceId: invoice.id,
-        subscriptionId,
-      },
-      'Allocating free credits for billing cycle',
+  // Allocate free credits for this billing cycle (idempotent).
+  // We allow allocation even if DB subscription status is stale, because the trigger is an invoice.paid webhook.
+  logger.info(
+    {
+      shopId: shop.id,
+      planType: shop.planType,
+      invoiceId: invoice.id,
+      subscriptionId,
+    },
+    'Allocating free credits for billing cycle',
+  );
+
+  try {
+    const result = await allocateFreeCredits(
+      shop.id,
+      canonicalPlanCode,
+      invoice.id,
+      stripeSubscription,
+      { allowInactive: true },
     );
-
-    try {
-      const result = await allocateFreeCredits(
-        shop.id,
-        shop.planType,
-        invoice.id,
-        stripeSubscription,
+    if (result.allocated) {
+      allocatedCredits = result.credits || 0;
+      logger.info(
+        {
+          shopId: shop.id,
+          planType: shop.planType,
+          invoiceId: invoice.id,
+          credits: result.credits,
+          subscriptionId,
+        },
+        'Free credits allocated successfully for billing cycle',
       );
-      if (result.allocated) {
-        allocatedCredits = result.credits || 0;
-        logger.info(
-          {
-            shopId: shop.id,
-            planType: shop.planType,
-            invoiceId: invoice.id,
-            credits: result.credits,
-            subscriptionId,
-          },
-          'Free credits allocated successfully for billing cycle',
-        );
 
-        // Record free credits grant in purchase history
-        try {
-          const { recordFreeCreditsGrant } = await import('../services/invoices.js');
-          const periodInfo = stripeSubscription
-            ? {
-              periodStart: stripeSubscription.current_period_start
-                ? new Date(stripeSubscription.current_period_start * 1000).toISOString()
-                : null,
-              periodEnd: stripeSubscription.current_period_end
-                ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
-                : null,
-            }
-            : {};
-          await recordFreeCreditsGrant(
-            shop.id,
-            shop.planType,
-            allocatedCredits,
-            invoice.id,
-            periodInfo,
-          );
-          logger.info(
-            { shopId: shop.id, invoiceId: invoice.id, credits: allocatedCredits },
-            'Free credits grant recorded in purchase history',
-          );
-        } catch (recordErr) {
-          logger.warn(
-            { shopId: shop.id, invoiceId: invoice.id, err: recordErr.message },
-            'Failed to record free credits grant in purchase history',
-          );
-          // Don't throw - credit allocation succeeded, history recording is secondary
-        }
-      } else {
-        logger.info(
-          {
-            shopId: shop.id,
-            invoiceId: invoice.id,
-            reason: result.reason,
-            credits: result.credits || 0,
-          },
-          'Free credits not allocated (already allocated or other reason)',
+      // Record free credits grant in purchase history
+      try {
+        const { recordFreeCreditsGrant } = await import('../services/invoices.js');
+        const periodInfo = stripeSubscription
+          ? {
+            periodStart: stripeSubscription.current_period_start
+              ? new Date(stripeSubscription.current_period_start * 1000).toISOString()
+              : null,
+            periodEnd: stripeSubscription.current_period_end
+              ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
+              : null,
+          }
+          : {};
+        await recordFreeCreditsGrant(
+          shop.id,
+          canonicalPlanCode,
+          allocatedCredits,
+          invoice.id,
+          periodInfo,
+          invoice.currency?.toUpperCase() || 'EUR',
         );
+        logger.info(
+          { shopId: shop.id, invoiceId: invoice.id, credits: allocatedCredits },
+          'Free credits grant recorded in purchase history',
+        );
+      } catch (recordErr) {
+        logger.warn(
+          { shopId: shop.id, invoiceId: invoice.id, err: recordErr.message },
+          'Failed to record free credits grant in purchase history',
+        );
+        // Don't throw - credit allocation succeeded, history recording is secondary
       }
-    } catch (err) {
-      logger.error(
+    } else {
+      logger.info(
         {
           shopId: shop.id,
           invoiceId: invoice.id,
-          subscriptionId,
-          err: err.message,
-          stack: err.stack,
+          reason: result.reason,
+          credits: result.credits || 0,
         },
-        'Failed to allocate free credits for billing cycle',
+        'Free credits not allocated (already allocated or other reason)',
       );
-      throw err;
     }
+  } catch (err) {
+    logger.error(
+      {
+        shopId: shop.id,
+        invoiceId: invoice.id,
+        subscriptionId,
+        err: err.message,
+        stack: err.stack,
+      },
+      'Failed to allocate free credits for billing cycle',
+    );
+    throw err;
   }
 
   // Record subscription charge in purchase history (always, even if no credits allocated)
@@ -1169,45 +1269,41 @@ async function handleSubscriptionUpdated(subscription) {
     newStatus = 'cancelled';
   }
 
-  // Extract planType from subscription metadata or price ID
+  // Extract planType from priceId (preferred) or metadata (fallback)
   // Use Plan Catalog to resolve planCode, interval, currency from priceId
   const planCatalog = await import('../services/plan-catalog.js');
   const priceId = subscription.items?.data?.[0]?.price?.id;
 
   let newPlanType = shop.planType;
   let interval = null;
-  let currency = shop.currency || 'EUR';
 
-  // Try metadata first (for backward compatibility)
+  // Prefer Plan Catalog reverse lookup from priceId
+  let resolvedFromPrice = null;
+  if (priceId) {
+    resolvedFromPrice = planCatalog.resolvePlanFromPriceId(priceId);
+    if (resolvedFromPrice) {
+      newPlanType = resolvedFromPrice.planCode;
+      interval = resolvedFromPrice.interval;
+    }
+  }
+
+  // Fallback to metadata (backward compatibility)
   const subscriptionMetadata = subscription.metadata || {};
   const metadataPlanType = subscriptionMetadata.planType;
   const metadataInterval = subscriptionMetadata.interval;
 
-  if (metadataPlanType && ['starter', 'pro'].includes(metadataPlanType)) {
-    newPlanType = metadataPlanType;
-  }
-  if (metadataInterval && ['month', 'year'].includes(metadataInterval)) {
-    interval = metadataInterval;
-  }
-
-  // Use Plan Catalog to resolve from priceId (more reliable)
-  if (priceId) {
-    const resolved = planCatalog.resolvePlanFromPriceId(priceId);
-    if (resolved) {
-      newPlanType = resolved.planCode;
-      interval = resolved.interval;
-      currency = resolved.currency;
+  if (!resolvedFromPrice) {
+    if (metadataPlanType && ['starter', 'pro'].includes(metadataPlanType)) {
+      newPlanType = metadataPlanType;
+    }
+    if (metadataInterval && ['month', 'year'].includes(metadataInterval)) {
+      interval = metadataInterval;
     }
   }
 
   // Fallback: extract interval from Stripe subscription if not resolved
   if (!interval && subscription.items?.data?.[0]?.price?.recurring) {
     interval = subscription.items.data[0].price.recurring.interval; // 'month' or 'year'
-  }
-
-  // Fallback: extract currency from Stripe subscription if not resolved
-  if (!currency && subscription.items?.data?.[0]?.price?.currency) {
-    currency = String(subscription.items.data[0].price.currency).toUpperCase();
   }
 
   // Extract cancelAtPeriodEnd

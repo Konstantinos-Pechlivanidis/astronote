@@ -2,6 +2,14 @@
 -- Migration: 20250127000004_add_campaign_parity_fields
 -- Aligns Shopify Campaign and CampaignRecipient models with Retail canonical implementation
 
+-- Ensure CampaignStatus enum exists (some environments were migrated before enums were introduced)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'CampaignStatus') THEN
+    CREATE TYPE "CampaignStatus" AS ENUM ('draft', 'scheduled', 'sending', 'sent', 'failed', 'cancelled');
+  END IF;
+END $$;
+
 -- Add startedAt and finishedAt to Campaign model (aligned with Retail)
 ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "startedAt" TIMESTAMP(3);
 ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "finishedAt" TIMESTAMP(3);

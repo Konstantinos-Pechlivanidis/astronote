@@ -60,11 +60,20 @@ export function useUpdateSubscription() {
       const response = await subscriptionsApi.update(data);
       return response;
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      // If backend requires "checkout" flow, redirect (Stripe portal acts as the checkout flow).
+      if (data?.checkoutUrl) {
+        toast.success('Redirecting to Stripe to complete the change...');
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+
       // Invalidate subscription status and billing summary
       queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'billing-history'] });
       toast.success('Subscription updated successfully');
     },
     onError: (error: any) => {
@@ -142,10 +151,18 @@ export function useSwitchInterval() {
       return response;
     },
     onSuccess: (data) => {
+      if ((data as any)?.checkoutUrl) {
+        toast.success('Redirecting to Stripe to complete the change...');
+        window.location.href = (data as any).checkoutUrl;
+        return;
+      }
+
       // Invalidate subscription status and billing summary to refresh UI
       queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'billing-history'] });
 
       // Show appropriate message based on whether change is immediate or scheduled
       if (data.scheduled && data.effectiveAt) {
@@ -179,11 +196,65 @@ export function useReconcileSubscription() {
       queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'balance'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'history'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'billing-history'] });
       toast.success('Subscription status refreshed from Stripe');
     },
     onError: (error: any) => {
       const apiError = error as BillingApiError;
       const message = apiError?.message || error.response?.data?.message || 'Failed to reconcile subscription';
+      toast.error(message);
+    },
+  });
+}
+
+/**
+ * React Query hook for changing a scheduled subscription change
+ */
+export function useChangeScheduledSubscription() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: UpdateSubscriptionRequest) => {
+      const response = await subscriptionsApi.changeScheduledSubscription(data);
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      toast.success('Scheduled change updated');
+    },
+    onError: (error: any) => {
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to update scheduled change';
+      toast.error(message);
+    },
+  });
+}
+
+/**
+ * React Query hook for cancelling a scheduled subscription change
+ */
+export function useCancelScheduledSubscription() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await subscriptionsApi.cancelScheduledSubscription();
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      toast.success('Scheduled change cancelled');
+    },
+    onError: (error: any) => {
+      const apiError = error as BillingApiError;
+      const message = apiError?.message || error.response?.data?.message || 'Failed to cancel scheduled change';
       toast.error(message);
     },
   });

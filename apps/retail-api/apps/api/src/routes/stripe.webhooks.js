@@ -577,6 +577,27 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
       }, 'Subscription activated and allowance reset successfully');
     }
 
+    // Record included credits grant in the unified billing ledger (amount=0).
+    // This makes "free included credits" visible in purchase history.
+    try {
+      const included = result?.includedSmsPerPeriod || 0;
+      await recordBillingTransaction({
+        ownerId,
+        creditsAdded: included,
+        amount: 0,
+        currency: subscriptionCurrency || session.currency?.toUpperCase() || 'EUR',
+        packageType: 'subscription_included_credits',
+        stripeSessionId: session.id,
+        stripePaymentId: session.payment_intent || null,
+        idempotencyKey: `free_credits:sub:${subscriptionId}`,
+      });
+    } catch (err) {
+      logger.warn(
+        { ownerId, subscriptionId, err: err.message },
+        'Failed to record included credits grant (non-fatal)',
+      );
+    }
+
     const taxDetails = extractTaxDetailsFromSession(session);
     if (taxDetails.billingCountry || taxDetails.vatId) {
       const treatment = resolveTaxTreatment({
@@ -756,15 +777,10 @@ async function handleCheckoutSessionCompletedForTopup(session) {
 async function handleInvoicePaymentSucceeded(invoice) {
   logger.info({ invoiceId: invoice.id, billingReason: invoice.billing_reason }, 'Processing invoice payment succeeded');
 
-  // Skip subscription_create invoices - they are handled by checkout.session.completed
-  // This prevents race conditions where invoice.payment_succeeded fires before checkout.session.completed
-  if (invoice.billing_reason === 'subscription_create') {
-    logger.debug({ invoiceId: invoice.id, billingReason: invoice.billing_reason }, 'Skipping subscription_create invoice (handled by checkout.session.completed)');
-    return;
-  }
-
-  // Only process subscription_cycle invoices (recurring billing)
-  if (invoice.billing_reason !== 'subscription_cycle') {
+  // Process only subscription invoices.
+  // For subscription_create we still store the invoice + record the charge,
+  // but we avoid resetting allowance here to prevent race conditions with checkout.session.completed.
+  if (invoice.billing_reason !== 'subscription_cycle' && invoice.billing_reason !== 'subscription_create') {
     logger.debug({ invoiceId: invoice.id, billingReason: invoice.billing_reason }, 'Skipping non-subscription-cycle invoice');
     return;
   }
@@ -842,6 +858,13 @@ async function handleInvoicePaymentSucceeded(invoice) {
     data: { lastBillingError: null },
   });
 
+  // For subscription_create: store invoice + record charge, but avoid allowance reset here.
+  // Allowance is reset in checkout.session.completed (idempotent).
+  if (invoice.billing_reason === 'subscription_create') {
+    await recordSubscriptionInvoiceTransaction(user.id, invoice, { creditsAdded: 0 });
+    return;
+  }
+
   if (user.subscriptionStatus !== 'active') {
     logger.warn({
       userId: user.id,
@@ -863,7 +886,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
     logger.warn({ subscriptionId, err: err.message }, 'Failed to retrieve subscription from Stripe');
   }
 
-  if (user.subscriptionStatus === 'active') {
+  if (invoice.billing_reason === 'subscription_cycle' && user.subscriptionStatus === 'active') {
     // Reset allowance for this billing cycle (idempotent)
     logger.info({
       userId: user.id,
@@ -882,6 +905,25 @@ async function handleInvoicePaymentSucceeded(invoice) {
           includedSmsPerPeriod: result.includedSmsPerPeriod,
           subscriptionId,
         }, 'Allowance reset successfully for billing cycle');
+
+        // Record included credits grant in the unified billing ledger (amount=0).
+        try {
+          await recordBillingTransaction({
+            ownerId: user.id,
+            creditsAdded: result.includedSmsPerPeriod || 0,
+            amount: 0,
+            currency: invoice.currency?.toUpperCase() || 'EUR',
+            packageType: 'subscription_included_credits',
+            stripeSessionId: invoice.id,
+            stripePaymentId: invoice.payment_intent || null,
+            idempotencyKey: `free_credits:invoice:${invoice.id}`,
+          });
+        } catch (err) {
+          logger.warn(
+            { ownerId: user.id, invoiceId: invoice.id, err: err.message },
+            'Failed to record included credits grant (non-fatal)',
+          );
+        }
       } else {
         logger.info({
           userId: user.id,

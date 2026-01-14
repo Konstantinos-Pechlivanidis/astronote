@@ -2,9 +2,14 @@
 const prisma = require('../lib/prisma');
 const { getMessageStatus } = require('./mitto.service');
 const { updateCampaignAggregates } = require('./campaignAggregates.service');
+const { deliveredStatuses, failedDeliveryStatuses } = require('./campaignMetrics.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'status-refresh-service' });
+
+const terminalDeliveryStatuses = Array.from(
+  new Set([...(deliveredStatuses || []), ...(failedDeliveryStatuses || [])]),
+);
 
 /**
  * Map Mitto deliveryStatus to internal status (case-insensitive)
@@ -64,7 +69,14 @@ async function refreshCampaignStatuses(campaignId, ownerId) {
           {
             OR: [
               { status: 'queued' },
-              { status: 'sent' },
+              // Only refresh "sent" rows that are missing terminal deliveryStatus (avoid extra polling)
+              {
+                status: 'sent',
+                OR: [
+                  { deliveryStatus: null },
+                  { deliveryStatus: { notIn: terminalDeliveryStatuses } },
+                ],
+              },
             ],
           },
           { providerMessageId: { not: null } },
@@ -183,7 +195,14 @@ async function refreshPendingStatuses(limit = 100) {
           {
             OR: [
               { status: 'queued' },
-              { status: 'sent' },
+              // Only refresh "sent" rows that are missing terminal deliveryStatus
+              {
+                status: 'sent',
+                OR: [
+                  { deliveryStatus: null },
+                  { deliveryStatus: { notIn: terminalDeliveryStatuses } },
+                ],
+              },
             ],
           },
           { providerMessageId: { not: null } },
@@ -442,7 +461,14 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
         {
           OR: [
             { status: 'queued' },
-            { status: 'sent' },
+            // Only refresh "sent" rows that are missing terminal deliveryStatus
+            {
+              status: 'sent',
+              OR: [
+                { deliveryStatus: null },
+                { deliveryStatus: { notIn: terminalDeliveryStatuses } },
+              ],
+            },
           ],
         },
         { providerMessageId: { not: null } },
