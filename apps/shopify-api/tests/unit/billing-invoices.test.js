@@ -52,16 +52,26 @@ describe('Billing Invoices Endpoint', () => {
       },
     ];
 
-    mockInvoicesService.listInvoices.mockResolvedValue(mockInvoices.map((inv) => ({
-      id: inv.id,
-      invoiceNumber: inv.number,
-      status: inv.status,
-      total: inv.total / 100, // Convert from cents
-      currency: inv.currency.toUpperCase(),
-      issuedAt: new Date(inv.created * 1000),
-      hostedInvoiceUrl: inv.hosted_invoice_url,
-      pdfUrl: inv.invoice_pdf,
-    })));
+    mockInvoicesService.listInvoices.mockResolvedValue({
+      invoices: mockInvoices.map((inv) => ({
+        id: inv.id,
+        invoiceNumber: inv.number,
+        status: inv.status,
+        total: inv.total / 100, // Convert from cents
+        currency: inv.currency.toUpperCase(),
+        issuedAt: new Date(inv.created * 1000),
+        hostedInvoiceUrl: inv.hosted_invoice_url,
+        pdfUrl: inv.invoice_pdf,
+      })),
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        total: 2,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPrevPage: false,
+      },
+    });
 
     // Mock getStoreId
     jest.unstable_mockModule('../../middlewares/store-resolution.js', () => ({
@@ -71,6 +81,20 @@ describe('Billing Invoices Endpoint', () => {
     // Mock services
     jest.unstable_mockModule('../../services/invoices.js', () => mockInvoicesService);
     jest.unstable_mockModule('../../services/prisma.js', () => ({ default: mockPrisma }));
+
+    // Mock sendPaginated to return the expected structure
+    jest.unstable_mockModule('../../utils/response.js', () => ({
+      sendPaginated: (res, items, pagination, meta) => {
+        return res.json({
+          success: true,
+          data: items,
+          pagination,
+          ...meta,
+        });
+      },
+      sendSuccess: (res, data) => res.json({ success: true, data }),
+      sendError: (res, error) => res.status(400).json({ success: false, error }),
+    }));
 
     const { getInvoices } = await import('../../controllers/billing.js');
 
@@ -93,8 +117,10 @@ describe('Billing Invoices Endpoint', () => {
     expect(res.json).toHaveBeenCalled();
     const responseData = res.json.mock.calls[0][0];
     expect(responseData.success).toBe(true);
+    // sendPaginated returns { success, data: items, pagination, ...meta }
     expect(Array.isArray(responseData.data)).toBe(true);
     expect(responseData.data.length).toBe(2);
+    expect(responseData.pagination).toBeDefined();
 
     // Verify first invoice DTO structure
     const firstInvoice = responseData.data[0];
@@ -125,7 +151,17 @@ describe('Billing Invoices Endpoint', () => {
       stripeCustomerId: 'cus_123',
     });
 
-    mockInvoicesService.listInvoices.mockResolvedValue([]);
+    mockInvoicesService.listInvoices.mockResolvedValue({
+      invoices: [],
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPrevPage: false,
+      },
+    });
 
     // Mock getStoreId
     jest.unstable_mockModule('../../middlewares/store-resolution.js', () => ({
@@ -135,6 +171,20 @@ describe('Billing Invoices Endpoint', () => {
     // Mock services
     jest.unstable_mockModule('../../services/invoices.js', () => mockInvoicesService);
     jest.unstable_mockModule('../../services/prisma.js', () => ({ default: mockPrisma }));
+
+    // Mock sendPaginated to return the expected structure
+    jest.unstable_mockModule('../../utils/response.js', () => ({
+      sendPaginated: (res, items, pagination, meta) => {
+        return res.json({
+          success: true,
+          data: items,
+          pagination,
+          ...meta,
+        });
+      },
+      sendSuccess: (res, data) => res.json({ success: true, data }),
+      sendError: (res, error) => res.status(400).json({ success: false, error }),
+    }));
 
     const { getInvoices } = await import('../../controllers/billing.js');
 
@@ -154,8 +204,10 @@ describe('Billing Invoices Endpoint', () => {
     expect(res.json).toHaveBeenCalled();
     const responseData = res.json.mock.calls[0][0];
     expect(responseData.success).toBe(true);
+    // sendPaginated returns { success, data: items, pagination, ...meta }
     expect(Array.isArray(responseData.data)).toBe(true);
     expect(responseData.data.length).toBe(0);
+    expect(responseData.pagination).toBeDefined();
   });
 });
 

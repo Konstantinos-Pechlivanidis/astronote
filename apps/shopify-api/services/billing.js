@@ -1060,6 +1060,44 @@ export async function getBillingHistory(storeId, filters = {}) {
   // Use Promise.all to handle async package lookups
   const transformedTransactions = await Promise.all(
     transactions.map(async transaction => {
+      // Determine transaction type and title
+      let type = 'purchase';
+      let title = 'Purchase';
+      let subtitle = null;
+      let linkUrl = null;
+
+      // Check if this is a subscription charge
+      if (transaction.packageType === 'subscription') {
+        type = 'subscription_charge';
+        title = 'Subscription Payment';
+        subtitle = 'Recurring subscription charge';
+        // Try to find invoice URL
+        try {
+          const invoice = await prisma.invoiceRecord.findFirst({
+            where: {
+              shopId: storeId,
+              stripeInvoiceId: transaction.stripeSessionId,
+            },
+            select: { hostedInvoiceUrl: true },
+          });
+          if (invoice?.hostedInvoiceUrl) {
+            linkUrl = invoice.hostedInvoiceUrl;
+          }
+        } catch (err) {
+          // Invoice not found, that's OK
+        }
+      } else if (transaction.packageType?.startsWith('subscription_included_')) {
+        // Free credits included with subscription
+        type = 'subscription_included_credits';
+        const planType = transaction.packageType.replace('subscription_included_', '');
+        title = 'Included Credits';
+        subtitle = `Free credits included with ${planType} subscription`;
+      } else {
+        // Credit pack purchase
+        type = 'credit_pack_purchase';
+        title = 'Credit Pack Purchase';
+      }
+
       // Get package info from packageType
       let packageName = 'N/A';
       let packageCredits = transaction.creditsAdded;
@@ -1072,6 +1110,9 @@ export async function getBillingHistory(storeId, filters = {}) {
         if (pkg) {
           packageName = pkg.name;
           packageCredits = pkg.units;
+          if (type === 'credit_pack_purchase') {
+            title = pkg.name;
+          }
         } else {
           // Fallback: use packageType as name
           packageName = transaction.packageType || 'N/A';
@@ -1088,9 +1129,13 @@ export async function getBillingHistory(storeId, filters = {}) {
 
       return {
         id: transaction.id,
+        type, // 'subscription_charge' | 'credit_pack_purchase' | 'subscription_included_credits'
+        title,
+        subtitle,
         packageName,
         credits: transaction.creditsAdded,
         creditsAdded: transaction.creditsAdded, // Keep for backward compatibility
+        creditsGranted: transaction.creditsAdded, // Alias for clarity
         amount: parseFloat(amountInCurrency), // Amount in currency (not cents)
         amountCents: transaction.amount, // Keep original in cents for reference
         price: parseFloat(amountInCurrency), // Alias for amount
@@ -1099,6 +1144,8 @@ export async function getBillingHistory(storeId, filters = {}) {
         packageType: transaction.packageType,
         createdAt: transaction.createdAt,
         updatedAt: transaction.updatedAt,
+        linkUrl, // Invoice URL if available
+        stripeInvoiceId: transaction.packageType === 'subscription' ? transaction.stripeSessionId : null,
         // Include package info for backward compatibility
         package: {
           name: packageName,

@@ -400,6 +400,38 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
         },
         'Free credits allocated successfully',
       );
+
+      // Record free credits grant in purchase history for initial subscription
+      try {
+        const { recordFreeCreditsGrant } = await import('../services/invoices.js');
+        const periodInfo = stripeSubscription
+          ? {
+            periodStart: stripeSubscription.current_period_start
+              ? new Date(stripeSubscription.current_period_start * 1000).toISOString()
+              : null,
+            periodEnd: stripeSubscription.current_period_end
+              ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
+              : null,
+          }
+          : {};
+        await recordFreeCreditsGrant(
+          shopId,
+          planType,
+          result.credits,
+          `sub_${subscriptionId}`,
+          periodInfo,
+        );
+        logger.info(
+          { shopId, planType, subscriptionId, credits: result.credits },
+          'Free credits grant recorded in purchase history',
+        );
+      } catch (recordErr) {
+        logger.warn(
+          { shopId, subscriptionId, err: recordErr.message },
+          'Failed to record free credits grant in purchase history',
+        );
+        // Don't throw - credit allocation succeeded, history recording is secondary
+      }
     } else {
       logger.info(
         {
@@ -563,7 +595,7 @@ async function handleCheckoutSessionCompletedForTopup(session) {
             creditsAdded: credits,
             amount: actualAmountCents,
             currency: session.currency?.toUpperCase() || 'EUR',
-            packageType: 'topup',
+            packageType: 'credit_pack_purchase', // Use consistent type for purchase history
             stripeSessionId: session.id,
             stripePaymentId: session.payment_intent || null,
             idempotencyKey: `stripe:topup:${session.id}`,
@@ -752,20 +784,27 @@ async function handleInvoicePaymentSucceeded(invoice) {
     return;
   }
 
-  // Skip subscription_create invoices - they are handled by checkout.session.completed
-  if (invoice.billing_reason === 'subscription_create') {
+  // Process ALL subscription invoices (both subscription_create and subscription_cycle)
+  // subscription_create invoices need to be stored in DB even though credits are handled by checkout.session.completed
+  // subscription_cycle invoices are renewals and need full processing
+  const isSubscriptionInvoice = invoice.billing_reason === 'subscription_create' || invoice.billing_reason === 'subscription_cycle';
+
+  if (!isSubscriptionInvoice) {
     logger.debug(
       { invoiceId: invoice.id, billingReason: invoice.billing_reason },
-      'Skipping subscription_create invoice (handled by checkout.session.completed)',
+      'Skipping non-subscription invoice',
     );
     return;
   }
 
-  // Only process subscription_cycle invoices (recurring billing)
-  if (invoice.billing_reason !== 'subscription_cycle') {
-    logger.debug(
-      { invoiceId: invoice.id, billingReason: invoice.billing_reason },
-      'Skipping non-subscription-cycle invoice',
+  // Always store invoice record (for both subscription_create and subscription_cycle)
+  const invoiceRecord = await upsertInvoiceRecord(shop.id, invoice);
+
+  // For subscription_create, only store invoice (credits already handled by checkout.session.completed)
+  if (invoice.billing_reason === 'subscription_create') {
+    logger.info(
+      { shopId: shop.id, invoiceId: invoice.id },
+      'Stored subscription_create invoice (credits already allocated by checkout)',
     );
     return;
   }
@@ -793,7 +832,8 @@ async function handleInvoicePaymentSucceeded(invoice) {
     return;
   }
 
-  const invoiceRecord = await upsertInvoiceRecord(shop.id, invoice);
+  // Invoice record already stored above (for subscription_create case)
+  // For subscription_cycle, continue with full processing
   const taxDetails = extractTaxDetailsFromInvoice(invoice);
   const treatment = resolveTaxTreatment({
     billingCountry: taxDetails.billingCountry,
@@ -931,6 +971,38 @@ async function handleInvoicePaymentSucceeded(invoice) {
           },
           'Free credits allocated successfully for billing cycle',
         );
+
+        // Record free credits grant in purchase history
+        try {
+          const { recordFreeCreditsGrant } = await import('../services/invoices.js');
+          const periodInfo = stripeSubscription
+            ? {
+              periodStart: stripeSubscription.current_period_start
+                ? new Date(stripeSubscription.current_period_start * 1000).toISOString()
+                : null,
+              periodEnd: stripeSubscription.current_period_end
+                ? new Date(stripeSubscription.current_period_end * 1000).toISOString()
+                : null,
+            }
+            : {};
+          await recordFreeCreditsGrant(
+            shop.id,
+            shop.planType,
+            allocatedCredits,
+            invoice.id,
+            periodInfo,
+          );
+          logger.info(
+            { shopId: shop.id, invoiceId: invoice.id, credits: allocatedCredits },
+            'Free credits grant recorded in purchase history',
+          );
+        } catch (recordErr) {
+          logger.warn(
+            { shopId: shop.id, invoiceId: invoice.id, err: recordErr.message },
+            'Failed to record free credits grant in purchase history',
+          );
+          // Don't throw - credit allocation succeeded, history recording is secondary
+        }
       } else {
         logger.info(
           {
@@ -957,6 +1029,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
     }
   }
 
+  // Record subscription charge in purchase history (always, even if no credits allocated)
   await recordSubscriptionInvoiceTransaction(shop.id, invoice, {
     creditsAdded: allocatedCredits,
   });

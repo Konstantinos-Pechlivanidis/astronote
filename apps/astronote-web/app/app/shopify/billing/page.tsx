@@ -158,23 +158,9 @@ function BillingPageContent() {
   const packages = packagesData?.packages || [];
   const subscriptionRequired = packagesData?.subscriptionRequired === false ? false : packages.length === 0 && isSubscriptionActive === false;
   const history = historyData?.transactions || [];
+  const historyPagination = historyData?.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false };
   const invoices = invoicesData?.invoices || [];
-  const invoicesPagination = invoicesData?.pagination || {
-    page: 1,
-    pageSize: 20,
-    total: 0,
-    totalPages: 1,
-    hasNextPage: false,
-    hasPrevPage: false,
-  };
-  const pagination = historyData?.pagination || {
-    page: 1,
-    pageSize: 20,
-    total: 0,
-    totalPages: 1,
-    hasNextPage: false,
-    hasPrevPage: false,
-  };
+  const invoicesPagination = invoicesData?.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false };
   const topupPrice = topupPriceData;
   const topupCurrency = topupPrice?.currency || selectedCurrency || currency || 'EUR';
   const topupBase = topupPrice?.basePrice ?? topupPrice?.priceEur ?? 0;
@@ -1035,7 +1021,7 @@ function BillingPageContent() {
             <EmptyState
               icon={History}
               title="No purchase history"
-              description="Your purchase history will appear here once you make your first credit purchase."
+              description="Your purchase history will appear here after subscription payments, credit pack purchases, or included credits are granted."
             />
           ) : (
             <>
@@ -1066,26 +1052,63 @@ function BillingPageContent() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
                           {format(new Date(transaction.createdAt), 'MMM d, yyyy HH:mm')}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary capitalize">
-                          {transaction.type?.replace(/_/g, ' ') || 'N/A'}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                          <div className="flex flex-col">
+                            <span className="font-medium capitalize">
+                              {(transaction as any).title || transaction.type?.replace(/_/g, ' ') || 'Purchase'}
+                            </span>
+                            {(transaction as any).subtitle && (
+                              <span className="text-xs text-text-secondary mt-0.5">
+                                {(transaction as any).subtitle}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                          {transaction.credits?.toLocaleString() || '—'}
+                          {(() => {
+                            const creditsAmount = (transaction as any).creditsGranted || (transaction as any).creditsAdded || transaction.credits;
+                            return creditsAmount ? (
+                              <span className="font-medium">
+                                +{Number(creditsAmount).toLocaleString()}
+                              </span>
+                            ) : (
+                              '—'
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                          {transaction.amount?.toFixed(2) || '0.00'} {transaction.currency || currency}
+                          {transaction.amount && transaction.amount > 0 ? (
+                            <>
+                              {transaction.amount.toFixed(2)} {transaction.currency || currency}
+                            </>
+                          ) : (
+                            <span className="text-text-secondary italic">Free</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <StatusBadge
-                            status={
-                              transaction.status === 'completed'
-                                ? 'success'
-                                : transaction.status === 'pending'
-                                  ? 'warning'
-                                  : 'danger'
-                            }
-                            label={transaction.status || 'unknown'}
-                          />
+                          <div className="flex items-center gap-2">
+                            <StatusBadge
+                              status={
+                                transaction.status === 'completed'
+                                  ? 'success'
+                                  : transaction.status === 'pending'
+                                    ? 'warning'
+                                    : 'danger'
+                              }
+                              label={transaction.status || 'unknown'}
+                            />
+                            {(transaction as any).linkUrl && (
+                              <a
+                                href={(transaction as any).linkUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-accent hover:underline text-xs"
+                              >
+                                View
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1094,30 +1117,30 @@ function BillingPageContent() {
               </div>
 
               {/* Pagination */}
-              {pagination.totalPages > 1 && (
+              {historyPagination.totalPages > 1 && (
                 <div className="mt-6 flex items-center justify-between">
                   <div className="text-sm text-text-secondary">
-                    Showing {((pagination.page - 1) * pagination.pageSize) + 1} to{' '}
-                    {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
-                    {pagination.total} transactions
+                    Showing {((historyPagination.page - 1) * historyPagination.pageSize) + 1} to{' '}
+                    {Math.min(historyPagination.page * historyPagination.pageSize, historyPagination.total)} of{' '}
+                    {historyPagination.total} transactions
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={!pagination.hasPrevPage || historyLoading}
+                      disabled={!historyPagination.hasPrevPage || historyLoading}
                     >
                       Previous
                     </Button>
                     <div className="text-sm text-text-secondary">
-                      Page {pagination.page} of {pagination.totalPages}
+                      Page {historyPagination.page} of {historyPagination.totalPages}
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
-                      disabled={!pagination.hasNextPage || historyLoading}
+                      onClick={() => setPage((p) => Math.min(historyPagination.totalPages, p + 1))}
+                      disabled={!historyPagination.hasNextPage || historyLoading}
                     >
                       Next
                     </Button>

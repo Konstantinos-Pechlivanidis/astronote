@@ -76,6 +76,15 @@ async function purgeBillingForShop() {
       shopDomain: true,
       stripeCustomerId: true,
       stripeSubscriptionId: true,
+      credits: true,
+      wallet: {
+        select: {
+          id: true,
+          balance: true,
+          totalUsed: true,
+          totalBought: true,
+        },
+      },
     },
   });
 
@@ -87,6 +96,8 @@ async function purgeBillingForShop() {
   console.log(`✅ Found shop: ${shop.shopDomain} (ID: ${shop.id})`);
   console.log(`   Stripe Customer ID: ${shop.stripeCustomerId || 'none'}`);
   console.log(`   Stripe Subscription ID: ${shop.stripeSubscriptionId || 'none'}`);
+  console.log(`   Shop.credits: ${shop.credits || 0}`);
+  console.log(`   Wallet balance: ${shop.wallet?.balance || 0} (totalUsed: ${shop.wallet?.totalUsed || 0}, totalBought: ${shop.wallet?.totalBought || 0})`);
   console.log('');
 
   const shopId = shop.id;
@@ -97,6 +108,8 @@ async function purgeBillingForShop() {
     stripe: {
       subscriptionsCancelled: 0,
       customerDeleted: false,
+      customerReplaced: false,
+      newCustomerId: null,
       errors: [],
     },
     database: {
@@ -106,8 +119,13 @@ async function purgeBillingForShop() {
       TaxEvidence: 0,
       BillingTransaction: 0,
       Purchase: 0,
+      CreditTransaction: 0,
+      CreditReservation: 0,
+      WalletTransaction: 0,
+      Wallet: 0, // Reset balance
       WebhookEvent: 0, // Only Stripe webhooks for this shop
       ShopFieldsCleared: false,
+      ShopCreditsReset: false,
     },
   };
 
@@ -159,9 +177,25 @@ async function purgeBillingForShop() {
         console.error(`   ❌ Failed to list subscriptions: ${err.message}`);
       }
 
-      // Note: We do NOT delete the Stripe customer itself, as it may be needed for future testing
-      // If you need a complete reset, you can manually delete the customer in Stripe Dashboard
-      console.log(`   ℹ️  Stripe customer ${stripeCustomerId} kept (can be manually deleted if needed)`);
+      // Create a new Stripe customer for clean slate (recommended)
+      try {
+        const newCustomer = await stripe.customers.create({
+          email: `${shopDomainArg.replace('.myshopify.com', '')}@astronote-test.com`,
+          metadata: {
+            shopId: String(shopId),
+            shopDomain: shopDomainArg,
+            resetAt: new Date().toISOString(),
+          },
+        });
+        deletionSummary.stripe.customerReplaced = true;
+        deletionSummary.stripe.newCustomerId = newCustomer.id;
+        console.log(`   ✅ Created new Stripe customer: ${newCustomer.id}`);
+        console.log(`   ℹ️  Old customer ${stripeCustomerId} will be replaced in DB`);
+      } catch (err) {
+        deletionSummary.stripe.errors.push(`Failed to create new customer: ${err.message}`);
+        console.error(`   ⚠️  Failed to create new customer: ${err.message}`);
+        console.log(`   ℹ️  Old Stripe customer ${stripeCustomerId} will be cleared from DB`);
+      }
       
     } catch (err) {
       deletionSummary.stripe.errors.push(`Stripe purge error: ${err.message}`);
@@ -257,6 +291,88 @@ async function purgeBillingForShop() {
       }
     }
 
+    // Delete CreditTransaction records
+    try {
+      const creditTxnDeleted = await prisma.creditTransaction.deleteMany({
+        where: { shopId },
+      });
+      deletionSummary.database.CreditTransaction = creditTxnDeleted.count;
+      console.log(`   ✅ Deleted ${creditTxnDeleted.count} CreditTransaction record(s)`);
+    } catch (err) {
+      console.error(`   ❌ Failed to delete CreditTransaction: ${err.message}`);
+      throw err;
+    }
+
+    // Delete CreditReservation records
+    try {
+      const creditResDeleted = await prisma.creditReservation.deleteMany({
+        where: { shopId },
+      });
+      deletionSummary.database.CreditReservation = creditResDeleted.count;
+      console.log(`   ✅ Deleted ${creditResDeleted.count} CreditReservation record(s)`);
+    } catch (err) {
+      if (err.message?.includes('does not exist') || err.code === 'P2021') {
+        console.log(`   ⚠️  CreditReservation table does not exist (skipping)`);
+      } else {
+        console.error(`   ❌ Failed to delete CreditReservation: ${err.message}`);
+        throw err;
+      }
+    }
+
+    // Delete WalletTransaction records
+    try {
+      const walletTxnDeleted = await prisma.walletTransaction.deleteMany({
+        where: { shopId },
+      });
+      deletionSummary.database.WalletTransaction = walletTxnDeleted.count;
+      console.log(`   ✅ Deleted ${walletTxnDeleted.count} WalletTransaction record(s)`);
+    } catch (err) {
+      if (err.message?.includes('does not exist') || err.code === 'P2021') {
+        console.log(`   ⚠️  WalletTransaction table does not exist (skipping)`);
+      } else {
+        console.error(`   ❌ Failed to delete WalletTransaction: ${err.message}`);
+        throw err;
+      }
+    }
+
+    // Reset Wallet balance (or delete if exists)
+    try {
+      const walletReset = await prisma.wallet.updateMany({
+        where: { shopId },
+        data: {
+          balance: 0,
+          totalUsed: 0,
+          totalBought: 0,
+          active: true,
+        },
+      });
+      deletionSummary.database.Wallet = walletReset.count;
+      console.log(`   ✅ Reset ${walletReset.count} Wallet record(s) (balance = 0)`);
+    } catch (err) {
+      if (err.code === 'P2025') {
+        // Wallet doesn't exist, create one with zero balance
+        try {
+          await prisma.wallet.create({
+            data: {
+              shopId,
+              balance: 0,
+              totalUsed: 0,
+              totalBought: 0,
+              active: true,
+            },
+          });
+          deletionSummary.database.Wallet = 1;
+          console.log(`   ✅ Created Wallet record with zero balance`);
+        } catch (createErr) {
+          console.error(`   ❌ Failed to create Wallet: ${createErr.message}`);
+          throw createErr;
+        }
+      } else {
+        console.error(`   ❌ Failed to reset Wallet: ${err.message}`);
+        throw err;
+      }
+    }
+
     // Delete Stripe webhook events for this shop
     try {
       const webhookDeleted = await prisma.webhookEvent.deleteMany({
@@ -273,11 +389,13 @@ async function purgeBillingForShop() {
     }
 
     // Clear Shop billing fields (but keep the Shop record)
+    // Use new Stripe customer ID if created, otherwise null
+    const newStripeCustomerId = deletionSummary.stripe.newCustomerId || null;
     try {
       await prisma.shop.update({
         where: { id: shopId },
         data: {
-          stripeCustomerId: null,
+          stripeCustomerId: newStripeCustomerId,
           stripeSubscriptionId: null,
           planType: null,
           subscriptionStatus: 'inactive',
@@ -290,10 +408,15 @@ async function purgeBillingForShop() {
           lastPeriodResetAt: null,
           lastFreeCreditsAllocatedAt: null,
           lastBillingError: null,
+          credits: 0, // Reset legacy credits field
         },
       });
       deletionSummary.database.ShopFieldsCleared = true;
+      deletionSummary.database.ShopCreditsReset = true;
       console.log(`   ✅ Cleared all billing fields on Shop record`);
+      if (newStripeCustomerId) {
+        console.log(`   ✅ Updated stripeCustomerId to new customer: ${newStripeCustomerId}`);
+      }
     } catch (err) {
       console.error(`   ❌ Failed to clear Shop billing fields: ${err.message}`);
       throw err;
@@ -354,21 +477,37 @@ async function purgeBillingForShop() {
     process.exit(1);
   }
 
+  // Check wallet balance
+  let walletBalance = 0;
+  try {
+    const wallet = await prisma.wallet.findUnique({
+      where: { shopId },
+      select: { balance: true },
+    });
+    walletBalance = wallet?.balance || 0;
+  } catch (err) {
+    // Wallet might not exist, that's OK
+  }
+
   const allCleared = 
-    !verification.stripeCustomerId &&
+    (!verification.stripeCustomerId || deletionSummary.stripe.newCustomerId === verification.stripeCustomerId) &&
     !verification.stripeSubscriptionId &&
     !verification.planType &&
     verification.subscriptionStatus === 'inactive' &&
     !verification.billingProfile &&
     !verification.subscriptionRecord &&
     verification.invoiceRecords.length === 0 &&
-    (!hasBillingTransactions || (verification.billingTransactions && verification.billingTransactions.length === 0));
+    (!hasBillingTransactions || (verification.billingTransactions && verification.billingTransactions.length === 0)) &&
+    walletBalance === 0;
 
   if (allCleared) {
     console.log('   ✅ All billing data successfully purged');
+    console.log(`   ✅ Wallet balance: ${walletBalance} (reset to 0)`);
   } else {
     console.warn('   ⚠️  Some billing data may still exist:');
-    if (verification.stripeCustomerId) console.warn(`      - stripeCustomerId: ${verification.stripeCustomerId}`);
+    if (verification.stripeCustomerId && deletionSummary.stripe.newCustomerId !== verification.stripeCustomerId) {
+      console.warn(`      - stripeCustomerId: ${verification.stripeCustomerId} (expected: ${deletionSummary.stripe.newCustomerId || 'null'})`);
+    }
     if (verification.stripeSubscriptionId) console.warn(`      - stripeSubscriptionId: ${verification.stripeSubscriptionId}`);
     if (verification.planType) console.warn(`      - planType: ${verification.planType}`);
     if (verification.billingProfile) console.warn(`      - billingProfile still exists`);
@@ -377,6 +516,7 @@ async function purgeBillingForShop() {
     if (hasBillingTransactions && verification.billingTransactions && verification.billingTransactions.length > 0) {
       console.warn(`      - ${verification.billingTransactions.length} billingTransaction(s) still exist`);
     }
+    if (walletBalance !== 0) console.warn(`      - Wallet balance: ${walletBalance} (expected: 0)`);
   }
 
   console.log('');
@@ -388,7 +528,7 @@ async function purgeBillingForShop() {
   console.log('');
   console.log('Stripe:');
   console.log(`  - Subscriptions cancelled: ${deletionSummary.stripe.subscriptionsCancelled}`);
-  console.log(`  - Customer deleted: ${deletionSummary.stripe.customerDeleted ? 'Yes' : 'No (kept for future use)'}`);
+  console.log(`  - Customer replaced: ${deletionSummary.stripe.customerReplaced ? `Yes (new: ${deletionSummary.stripe.newCustomerId})` : 'No'}`);
   if (deletionSummary.stripe.errors.length > 0) {
     console.log(`  - Errors: ${deletionSummary.stripe.errors.length}`);
     deletionSummary.stripe.errors.forEach(err => console.log(`    - ${err}`));
@@ -401,8 +541,13 @@ async function purgeBillingForShop() {
   console.log(`  - TaxEvidence: ${deletionSummary.database.TaxEvidence} record(s)`);
   console.log(`  - BillingTransaction: ${deletionSummary.database.BillingTransaction} record(s)`);
   console.log(`  - Purchase: ${deletionSummary.database.Purchase} record(s)`);
+  console.log(`  - CreditTransaction: ${deletionSummary.database.CreditTransaction} record(s)`);
+  console.log(`  - CreditReservation: ${deletionSummary.database.CreditReservation} record(s)`);
+  console.log(`  - WalletTransaction: ${deletionSummary.database.WalletTransaction} record(s)`);
+  console.log(`  - Wallet reset: ${deletionSummary.database.Wallet} record(s) (balance = 0)`);
   console.log(`  - WebhookEvent (Stripe): ${deletionSummary.database.WebhookEvent} record(s)`);
   console.log(`  - Shop billing fields cleared: ${deletionSummary.database.ShopFieldsCleared ? 'Yes' : 'No'}`);
+  console.log(`  - Shop.credits reset: ${deletionSummary.database.ShopCreditsReset ? 'Yes (0)' : 'No'}`);
   console.log('');
   console.log('✅ Purge completed successfully!');
   console.log('═══════════════════════════════════════════════════════════');

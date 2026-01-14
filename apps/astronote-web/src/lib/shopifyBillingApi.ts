@@ -144,10 +144,16 @@ export interface TopupPrice {
 
 export interface Transaction {
   id: string;
-  type: 'credit_purchase' | 'topup' | 'subscription' | 'refund';
+  type?: 'subscription_charge' | 'credit_pack_purchase' | 'subscription_included_credits' | 'credit_purchase' | 'topup' | 'subscription' | 'refund';
+  title?: string;
+  subtitle?: string;
   amount: number;
   currency: string;
   credits?: number;
+  creditsAdded?: number;
+  creditsGranted?: number;
+  linkUrl?: string;
+  stripeInvoiceId?: string | null;
   status: 'completed' | 'pending' | 'failed';
   createdAt: string;
   description?: string;

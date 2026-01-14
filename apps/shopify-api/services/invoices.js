@@ -109,6 +109,63 @@ export async function recordSubscriptionInvoiceTransaction(
   }
 }
 
+/**
+ * Record free credits grant as a purchase history entry
+ * Creates a BillingTransaction with amount=0 but creditsGranted>0
+ * @param {string} shopId - Shop ID
+ * @param {string} planType - Plan type (starter/pro)
+ * @param {number} creditsGranted - Number of credits granted
+ * @param {string} invoiceId - Stripe invoice ID (for idempotency)
+ * @param {Object} periodInfo - Period information
+ * @returns {Promise<Object>} Created transaction
+ */
+export async function recordFreeCreditsGrant(
+  shopId,
+  planType,
+  creditsGranted,
+  invoiceId,
+  periodInfo = {},
+) {
+  if (!creditsGranted || creditsGranted <= 0) {
+    return null;
+  }
+
+  const idempotencyKey = invoiceId
+    ? `free_credits:invoice:${invoiceId}`
+    : `free_credits:${planType}:${periodInfo.periodStart || Date.now()}`;
+
+  try {
+    return await prisma.billingTransaction.create({
+      data: {
+        shopId,
+        creditsAdded: creditsGranted,
+        amount: 0, // Free credits have no monetary amount
+        currency: 'EUR',
+        packageType: `subscription_included_${planType}`,
+        stripeSessionId: invoiceId || `free_${Date.now()}`,
+        stripePaymentId: null,
+        idempotencyKey,
+        status: 'completed',
+      },
+    });
+  } catch (error) {
+    if (error?.code === 'P2002') {
+      // Already recorded, return existing
+      return prisma.billingTransaction.findFirst({
+        where: { shopId, idempotencyKey },
+      });
+    }
+    logger.error('Failed to record free credits grant', {
+      shopId,
+      planType,
+      creditsGranted,
+      invoiceId,
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
 export async function listInvoices(shopId, filters = {}) {
   const { page = 1, pageSize = 20, status } = filters;
 
@@ -126,6 +183,104 @@ export async function listInvoices(shopId, filters = {}) {
     }),
     prisma.invoiceRecord.count({ where }),
   ]);
+
+  // If DB is empty, try to fetch from Stripe and sync
+  if (total === 0) {
+    try {
+      const shop = await prisma.shop.findUnique({
+        where: { id: shopId },
+        select: { stripeCustomerId: true },
+      });
+
+      if (shop?.stripeCustomerId) {
+        logger.info(
+          { shopId, stripeCustomerId: shop.stripeCustomerId },
+          'No invoices in DB, fetching from Stripe as fallback',
+        );
+
+        let stripe = null;
+        try {
+          const stripeModule = await import('stripe');
+          const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+          if (stripeSecretKey) {
+            stripe = stripeModule.default(stripeSecretKey);
+          }
+        } catch (err) {
+          logger.warn('Stripe not configured, skipping fallback fetch');
+        }
+
+        if (stripe) {
+          try {
+            const stripeInvoices = await stripe.invoices.list({
+              customer: shop.stripeCustomerId,
+              limit: Number(pageSize),
+            });
+
+            // Sync invoices to DB
+            for (const invoice of stripeInvoices.data) {
+              try {
+                await upsertInvoiceRecord(shopId, invoice);
+              } catch (err) {
+                logger.warn(
+                  { shopId, invoiceId: invoice.id, err: err.message },
+                  'Failed to sync invoice from Stripe',
+                );
+              }
+            }
+
+            // Re-fetch from DB after sync
+            const [syncedInvoices, syncedTotal] = await Promise.all([
+              prisma.invoiceRecord.findMany({
+                where,
+                orderBy: { issuedAt: 'desc' },
+                take: Number(pageSize),
+                skip: (Number(page) - 1) * Number(pageSize),
+              }),
+              prisma.invoiceRecord.count({ where }),
+            ]);
+
+            const normalizedInvoices = syncedInvoices.map((invoice) => ({
+              ...invoice,
+              subtotal: Number.isFinite(invoice.subtotal)
+                ? Number((invoice.subtotal / 100).toFixed(2))
+                : null,
+              tax: Number.isFinite(invoice.tax)
+                ? Number((invoice.tax / 100).toFixed(2))
+                : null,
+              total: Number.isFinite(invoice.total)
+                ? Number((invoice.total / 100).toFixed(2))
+                : null,
+              currency: invoice.currency ? invoice.currency.toUpperCase() : null,
+            }));
+
+            return {
+              invoices: normalizedInvoices,
+              pagination: {
+                page: Number(page),
+                pageSize: Number(pageSize),
+                total: syncedTotal,
+                totalPages: Math.ceil(syncedTotal / Number(pageSize)),
+                hasNextPage: Number(page) < Math.ceil(syncedTotal / Number(pageSize)),
+                hasPrevPage: Number(page) > 1,
+              },
+            };
+          } catch (stripeErr) {
+            logger.warn(
+              { shopId, err: stripeErr.message },
+              'Failed to fetch invoices from Stripe',
+            );
+            // Fall through to return empty result
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        { shopId, err: err.message },
+        'Failed to fetch invoices from Stripe fallback',
+      );
+      // Fall through to return empty result
+    }
+  }
 
   const totalPages = Math.ceil(total / Number(pageSize));
 
@@ -159,5 +314,6 @@ export async function listInvoices(shopId, filters = {}) {
 export default {
   upsertInvoiceRecord,
   recordSubscriptionInvoiceTransaction,
+  recordFreeCreditsGrant,
   listInvoices,
 };
