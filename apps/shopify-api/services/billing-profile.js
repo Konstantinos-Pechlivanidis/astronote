@@ -127,7 +127,7 @@ export async function syncBillingProfileFromStripe({
 } = {}) {
   try {
     const customerDetails = session?.customer_details || null;
-    const customerAddress = customerDetails?.address || invoice?.customer_address || null;
+    const customerAddress = customerDetails?.address || invoice?.customer_address || customer?.address || null;
     const invoiceEmail = invoice?.customer_email || null;
     const invoiceName = invoice?.customer_name || null;
 
@@ -141,6 +141,8 @@ export async function syncBillingProfileFromStripe({
     const billingEmail = customerDetails?.email || invoiceEmail || customer?.email || null;
     const legalName = customerDetails?.name || invoiceName || customer?.name || null;
 
+    // PHASE 3.5: Always sync what we have, even if minimal
+    // This ensures DB reflects what was collected in Checkout
     const updatePayload = {
       legalName,
       billingEmail,
@@ -151,28 +153,41 @@ export async function syncBillingProfileFromStripe({
       taxExempt: taxExempt === true ? true : undefined,
     };
 
-    // Strip empty values to avoid overwriting with nulls unless needed
-    Object.keys(updatePayload).forEach((key) => {
-      if (updatePayload[key] === undefined || updatePayload[key] === null) {
-        delete updatePayload[key];
-        return;
+    // Only strip truly empty values (not nulls that should be set)
+    // Keep billingAddress even if partially empty (line1 is required, others optional)
+    if (updatePayload.billingAddress) {
+      const hasLine1 = updatePayload.billingAddress.line1;
+      if (!hasLine1) {
+        // If no line1, remove entire address (invalid)
+        delete updatePayload.billingAddress;
       }
-      if (key === 'billingAddress') {
-        const values = Object.values(updatePayload.billingAddress || {});
-        if (!values.some((value) => value)) {
-          delete updatePayload.billingAddress;
-        }
+    }
+
+    // Remove undefined values but keep nulls for fields that should be cleared
+    Object.keys(updatePayload).forEach((key) => {
+      if (updatePayload[key] === undefined) {
+        delete updatePayload[key];
       }
     });
 
-    if (!Object.keys(updatePayload).length) {
+    // If we have at least email or name, sync it
+    if (!updatePayload.billingEmail && !updatePayload.legalName && !updatePayload.billingAddress) {
+      logger.debug('No billing details to sync from Stripe', { shopId });
       return null;
     }
 
     const profile = await upsertBillingProfile(shopId, updatePayload);
 
     logger.info(
-      { shopId, taxTreatment, vatNumber: profile.vatNumber, taxStatus: profile.taxStatus },
+      {
+        shopId,
+        taxTreatment,
+        vatNumber: profile.vatNumber,
+        taxStatus: profile.taxStatus,
+        hasEmail: !!profile.billingEmail,
+        hasName: !!profile.legalName,
+        hasAddress: !!profile.billingAddress,
+      },
       'Billing profile synced from Stripe',
     );
 

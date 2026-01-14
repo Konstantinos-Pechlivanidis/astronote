@@ -435,11 +435,18 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
         taxTreatment: treatment.mode,
       });
 
+      // PHASE 3.5: Always sync billing profile from checkout session (authoritative source)
       await syncBillingProfileFromStripe({
         shopId,
         session,
         taxTreatment: treatment.mode,
         taxExempt: treatment.taxRate === 0,
+      });
+    } else {
+      // Even without tax details, sync billing profile from checkout session
+      await syncBillingProfileFromStripe({
+        shopId,
+        session,
       });
     }
   } catch (err) {

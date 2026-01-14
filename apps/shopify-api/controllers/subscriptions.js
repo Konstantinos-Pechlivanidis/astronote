@@ -22,7 +22,7 @@ import { resolveTaxTreatment, resolveTaxRateForInvoice } from '../services/tax-r
 import { upsertTaxEvidence } from '../services/tax-evidence.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
-import { getBillingProfile, validateBillingProfileForCheckout, upsertBillingProfile } from '../services/billing-profile.js';
+import { getBillingProfile } from '../services/billing-profile.js';
 
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -240,99 +240,35 @@ export async function subscribe(req, res, next) {
       );
     }
 
-    // Get billing profile and attempt auto-sync from Stripe if incomplete
-    let billingProfile = await getBillingProfile(shopId);
-    let profileValidation = validateBillingProfileForCheckout(billingProfile);
+    // PHASE 3.5: Remove pre-checkout billing profile gating
+    // Stripe Checkout collects all required billing details (email, address, tax ID)
+    // We no longer require in-app billing profile to be complete before checkout
+    // Billing profile will be auto-synced from Stripe after successful checkout
 
-    // If profile is incomplete but we have a Stripe customer, try to sync from Stripe
-    if (!profileValidation.valid && currentSubscription.stripeCustomerId && stripe) {
-      const isValidStripeCustomerId = (value) =>
-        typeof value === 'string' && value.startsWith('cus_');
+    // Get existing billing profile (if any) for pre-filling checkout email
+    const billingProfile = await getBillingProfile(shopId);
 
-      if (isValidStripeCustomerId(currentSubscription.stripeCustomerId)) {
-        try {
-          logger.info('Attempting auto-sync billing profile from Stripe', {
-            shopId,
-            stripeCustomerId: currentSubscription.stripeCustomerId,
-          });
+    // Validate Stripe Checkout configuration instead of DB profile
+    // Checkout must be configured to collect required details
+    // This is already ensured in createSubscriptionCheckoutSession:
+    // - billing_address_collection: 'required'
+    // - tax_id_collection: { enabled: true }
+    // - customer_email or customer creation
 
-          // Fetch customer from Stripe
-          const customer = await stripe.customers.retrieve(currentSubscription.stripeCustomerId, {
-            expand: ['tax_ids'],
-          });
+    logger.info('Allowing checkout without pre-filled billing profile', {
+      shopId,
+      hasBillingProfile: !!billingProfile,
+      note: 'Billing details will be collected in Stripe Checkout and synced after payment',
+    });
 
-          // Map Stripe customer to billing profile
-          const taxId = customer.tax_ids?.data?.find((t) => t.type === 'eu_vat') || customer.tax_ids?.data?.[0];
-          const address = customer.address;
-
-          billingProfile = await upsertBillingProfile(shopId, {
-            billingEmail: customer.email || billingProfile?.billingEmail || null,
-            legalName: customer.name || billingProfile?.legalName || null,
-            billingAddress: address
-              ? {
-                line1: address.line1 || billingProfile?.billingAddress?.line1 || null,
-                line2: address.line2 || billingProfile?.billingAddress?.line2 || null,
-                city: address.city || billingProfile?.billingAddress?.city || null,
-                state: address.state || billingProfile?.billingAddress?.state || null,
-                postalCode: address.postal_code || billingProfile?.billingAddress?.postalCode || null,
-                country: address.country || billingProfile?.billingAddress?.country || null,
-              }
-              : billingProfile?.billingAddress || null,
-            vatNumber: taxId?.value
-              ? String(taxId.value).replace(/\s+/g, '').toUpperCase()
-              : billingProfile?.vatNumber || null,
-            vatCountry: taxId?.country || address?.country || billingProfile?.vatCountry || null,
-          });
-
-          // Re-validate after sync
-          profileValidation = validateBillingProfileForCheckout(billingProfile);
-
-          logger.info('Auto-sync billing profile completed', {
-            shopId,
-            valid: profileValidation.valid,
-            missingFields: profileValidation.missingFields,
-          });
-        } catch (syncError) {
-          logger.warn('Auto-sync billing profile from Stripe failed', {
-            shopId,
-            error: syncError.message,
-          });
-          // Continue with original validation - don't fail subscribe if sync fails
-        }
-      }
-    }
-
-    // Validate billing profile completeness after auto-sync attempt
-    if (!profileValidation.valid) {
-      logger.warn('Billing profile incomplete for checkout', {
-        shopId,
-        missingFields: profileValidation.missingFields,
-        vatRequired: profileValidation.vatRequired,
-      });
-      const errorMessage = profileValidation.vatMessage
-        ? profileValidation.vatMessage
-        : 'Billing profile is incomplete. Please complete your billing details before subscribing.';
-      return sendError(
-        res,
-        400,
-        'BILLING_PROFILE_INCOMPLETE',
-        errorMessage,
-        {
-          missingFields: profileValidation.missingFields,
-          vatRequired: profileValidation.vatRequired || false,
-          vatMessage: profileValidation.vatMessage || null,
-        },
-      );
-    }
-
-    // Ensure Stripe customer exists with correct email from billing profile
+    // Ensure Stripe customer exists (use billing profile email if available, otherwise let Checkout collect it)
     const stripeCustomerId = await ensureStripeCustomer({
       shopId,
       shopDomain,
       shopName: req.ctx?.store?.shopName,
       currency,
       stripeCustomerId: currentSubscription.stripeCustomerId,
-      billingProfile,
+      billingProfile, // Pre-fill email if available, but not required
     });
 
     const session = await createSubscriptionCheckoutSession({
@@ -1376,7 +1312,8 @@ export async function finalize(req, res, next) {
       stripeSubscription,
     );
 
-    // Extract tax details and sync billing profile
+    // PHASE 3.5: Always sync billing profile from checkout session (authoritative source)
+    // Stripe Checkout collected all required billing details, sync them to DB
     const extractTaxId = (taxIds = []) => {
       if (!Array.isArray(taxIds)) return null;
       const vat = taxIds.find((entry) => entry.type === 'eu_vat') || taxIds[0];
@@ -1394,32 +1331,53 @@ export async function finalize(req, res, next) {
     const subtotal = session.amount_subtotal ?? null;
     const taxAmount = session.total_details?.amount_tax ?? null;
 
-    if (billingCountry || taxId?.value) {
-      const treatment = resolveTaxTreatment({
-        billingCountry,
-        vatId: taxId?.value || null,
-        vatIdValidated: taxId?.verified || false,
-      });
-      const taxRateApplied = resolveTaxRateForInvoice({
-        subtotal,
-        tax: taxAmount,
-      });
+    // Always sync billing profile from checkout session (even if no tax details)
+    // This ensures DB reflects what was collected in Checkout
+    try {
+      const treatment = billingCountry || taxId?.value
+        ? resolveTaxTreatment({
+          billingCountry,
+          vatId: taxId?.value || null,
+          vatIdValidated: taxId?.verified || false,
+        })
+        : { mode: null, taxRate: null, taxJurisdiction: null };
 
-      await upsertTaxEvidence({
-        shopId,
-        billingCountry,
-        vatIdProvided: taxId?.value || null,
-        vatIdValidated: taxId?.verified || false,
-        taxRateApplied,
-        taxJurisdiction: treatment.taxJurisdiction,
-        taxTreatment: treatment.mode,
-      });
+      if (billingCountry || taxId?.value) {
+        const taxRateApplied = resolveTaxRateForInvoice({
+          subtotal,
+          tax: taxAmount,
+        });
 
+        await upsertTaxEvidence({
+          shopId,
+          billingCountry,
+          vatIdProvided: taxId?.value || null,
+          vatIdValidated: taxId?.verified || false,
+          taxRateApplied,
+          taxJurisdiction: treatment.taxJurisdiction,
+          taxTreatment: treatment.mode,
+        });
+      }
+
+      // Sync billing profile from checkout session (always, even if minimal data)
       await syncBillingProfileFromStripe({
         shopId,
         session,
         taxTreatment: treatment.mode,
         taxExempt: treatment.taxRate === 0,
+      });
+
+      logger.info('Billing profile synced from checkout session', {
+        shopId,
+        hasEmail: !!customerDetails.email,
+        hasAddress: !!customerDetails.address,
+        hasTaxId: !!taxId?.value,
+      });
+    } catch (syncError) {
+      // Log but don't fail finalize if billing profile sync fails
+      logger.warn('Failed to sync billing profile from checkout session', {
+        shopId,
+        error: syncError.message,
       });
     }
 

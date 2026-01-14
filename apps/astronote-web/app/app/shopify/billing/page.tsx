@@ -766,15 +766,29 @@ function BillingPageContent() {
         {/* Billing Details */}
         <RetailCard className="p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-            <h2 className="text-2xl font-bold text-text-primary">Billing Details</h2>
-            <Button
-              variant="outline"
-              onClick={handleManageSubscription}
-              disabled={getPortal.isPending}
-            >
-              <ExternalLink className="mr-2 h-4 w-4" />
-              Manage in Stripe
-            </Button>
+            <div>
+              <h2 className="text-2xl font-bold text-text-primary">Billing Details</h2>
+              <p className="text-sm text-text-secondary mt-1">
+                Billing details are collected securely during checkout and saved automatically.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => window.location.href = '/app/shopify/billing/settings'}
+              >
+                Edit Details
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleManageSubscription}
+                disabled={getPortal.isPending}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Manage in Stripe
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="rounded-xl border border-border bg-surface-light p-4">

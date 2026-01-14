@@ -34,14 +34,9 @@ export function useSubscribe() {
       if (code === 'ALREADY_SUBSCRIBED') {
         toast.error('You already have an active subscription. Please cancel your current subscription first.');
       } else if (code === 'BILLING_PROFILE_INCOMPLETE') {
-        const missingFields = error.response?.data?.missingFields || [];
-        toast.error('Please complete your billing details before subscribing. You can sync from Stripe or edit manually.', {
-          duration: 7000,
-        });
-        // Redirect to billing settings with missing fields
-        setTimeout(() => {
-          window.location.href = `/app/shopify/billing?missingFields=${encodeURIComponent(JSON.stringify(missingFields))}`;
-        }, 1000);
+        // PHASE 3.5: This error should no longer occur (billing details collected in checkout)
+        // But if it does (e.g., config error), show a helpful message
+        toast.error('Payment configuration error. Billing details should be collected during checkout. Please contact support if this persists.');
       } else if (code === 'MISSING_PRICE_ID') {
         toast.error('Payment configuration error. Please contact support.');
       } else if (code === 'INVALID_PLAN_TYPE') {
