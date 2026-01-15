@@ -28,6 +28,7 @@ import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
+import { Dialog } from '@/src/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -75,6 +76,9 @@ function BillingPageContent() {
     action: BillingAction | null;
     onConfirm: () => void;
       }>(() => ({ open: false, action: null, onConfirm: () => {} }));
+  const [changePlanDialogOpen, setChangePlanDialogOpen] = useState(false);
+  const [changePlanSelectedPlan, setChangePlanSelectedPlan] = useState<'starter' | 'pro'>('starter');
+  const [changePlanSelectedInterval, setChangePlanSelectedInterval] = useState<'month' | 'year'>('month');
 
   // Fetch data
   const { data: balanceData } = useBillingBalance();
@@ -251,6 +255,39 @@ function BillingPageContent() {
   const starterYearAvailable = availableSubscriptionOptions.some(
     (o) => o.planCode === 'starter' && o.interval === 'year' && o.currency === currency,
   );
+  const availableOptionsForCurrency = availableSubscriptionOptions.filter((o) => o.currency === currency);
+
+  const openChangePlanDialog = () => {
+    // Default selection heuristics:
+    // - Prefer switching Starter month -> Starter year if available
+    // - Otherwise prefer Pro year (upgrade path)
+    const currentPlan = subscriptionPlan || 'starter';
+    const currentInterval = subscriptionInterval || 'month';
+
+    let nextPlan: 'starter' | 'pro' = currentPlan;
+    let nextInterval: 'month' | 'year' = currentInterval === 'month' ? 'year' : 'month';
+
+    const hasStarterYear = availableOptionsForCurrency.some(
+      (o) => o.planCode === 'starter' && o.interval === 'year',
+    );
+    const hasProYear = availableOptionsForCurrency.some(
+      (o) => o.planCode === 'pro' && o.interval === 'year',
+    );
+
+    if (currentPlan === 'starter' && currentInterval === 'month') {
+      if (hasStarterYear) {
+        nextPlan = 'starter';
+        nextInterval = 'year';
+      } else if (hasProYear) {
+        nextPlan = 'pro';
+        nextInterval = 'year';
+      }
+    }
+
+    setChangePlanSelectedPlan(nextPlan);
+    setChangePlanSelectedInterval(nextInterval);
+    setChangePlanDialogOpen(true);
+  };
 
   const handleSubscribe = async (planType: 'starter' | 'pro', interval?: 'month' | 'year') => {
     try {
@@ -284,6 +321,13 @@ function BillingPageContent() {
 
   // Action handlers with confirmation support
   const handleAction = (action: BillingAction, targetPlanCode?: 'starter' | 'pro', targetInterval?: 'month' | 'year') => {
+    // "Change plan" requires picking a target plan+interval. If none provided, open the picker modal.
+    // This fixes the no-op click path where executeAction() silently does nothing.
+    if (action.id === 'changePlan' && (!targetPlanCode || !targetInterval)) {
+      openChangePlanDialog();
+      return;
+    }
+
     // Special handling for switchInterval - determine target interval if not provided
     let finalTargetInterval = targetInterval;
     if (action.id === 'switchInterval' && !finalTargetInterval) {
@@ -356,6 +400,62 @@ function BillingPageContent() {
       break;
     default:
       toast.error('Action not implemented');
+    }
+  };
+
+  const submitChangePlan = async () => {
+    const currentPlan = subscriptionPlan || null;
+    const currentInterval = subscriptionInterval || null;
+
+    if (
+      isSubscriptionActive &&
+      currentPlan &&
+      currentInterval &&
+      changePlanSelectedPlan === currentPlan &&
+      changePlanSelectedInterval === currentInterval
+    ) {
+      toast.info('You are already on this plan.');
+      return;
+    }
+
+    const hasSku = availableOptionsForCurrency.some(
+      (o) => o.planCode === changePlanSelectedPlan && o.interval === changePlanSelectedInterval,
+    );
+    if (!hasSku) {
+      toast.error('This option is not available for your current configuration.');
+      return;
+    }
+
+    try {
+      // If a scheduled change exists, modify the scheduled change instead of applying immediately.
+      if (uiState.pendingChange) {
+        await changeScheduledSubscription.mutateAsync({
+          planType: changePlanSelectedPlan,
+          interval: changePlanSelectedInterval,
+          currency,
+        });
+        setChangePlanDialogOpen(false);
+        return;
+      }
+
+      if (isSubscriptionActive) {
+        await switchInterval.mutateAsync({
+          planType: changePlanSelectedPlan,
+          interval: changePlanSelectedInterval,
+          currency,
+        });
+        setChangePlanDialogOpen(false);
+        return;
+      }
+
+      await subscribe.mutateAsync({
+        planType: changePlanSelectedPlan,
+        interval: changePlanSelectedInterval,
+        currency,
+      });
+      setChangePlanDialogOpen(false);
+    } catch {
+      // Errors are surfaced via the mutation hooks (toast). Keep the dialog open for retry.
     }
   };
 
@@ -631,6 +731,7 @@ function BillingPageContent() {
                     return (
                       <Button
                         key={action.id}
+                        type="button"
                         onClick={() => handleAction(action)}
                         disabled={disabled || isLoading}
                         variant={
@@ -1234,6 +1335,109 @@ function BillingPageContent() {
           (confirmDialog.action?.id === 'subscribe' && subscribe.isPending)
         }
       />
+
+      {/* Change Plan Dialog (fixes Change plan button no-op) */}
+      <Dialog
+        open={changePlanDialogOpen}
+        onClose={() => setChangePlanDialogOpen(false)}
+        title={uiState.pendingChange ? 'Change Scheduled Plan' : 'Change Plan'}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">
+            Choose your target plan and billing interval. Upgrades to yearly require payment now. Downgrades from yearly take effect at the end of your current billing period.
+          </p>
+
+          <div className="grid grid-cols-1 gap-3">
+            <div>
+              <div className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
+                Plan
+              </div>
+              <Select
+                value={changePlanSelectedPlan}
+                onValueChange={(v: string) => setChangePlanSelectedPlan(v as 'starter' | 'pro')}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select plan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(['starter', 'pro'] as const)
+                    .filter((p) => availableOptionsForCurrency.some((o) => o.planCode === p))
+                    .map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p === 'starter' ? 'Starter' : 'Pro'}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <div className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">
+                Billing interval
+              </div>
+              <Select
+                value={changePlanSelectedInterval}
+                onValueChange={(v: string) => setChangePlanSelectedInterval(v as 'month' | 'year')}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select interval" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(['month', 'year'] as const)
+                    .filter((i) =>
+                      availableOptionsForCurrency.some(
+                        (o) => o.planCode === changePlanSelectedPlan && o.interval === i,
+                      ),
+                    )
+                    .map((i) => (
+                      <SelectItem key={i} value={i}>
+                        {i === 'month' ? 'Monthly' : 'Yearly'}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-surface-light p-3 text-sm text-text-secondary">
+            <div className="font-medium text-text-primary mb-1">What happens next</div>
+            {subscriptionInterval === 'month' && changePlanSelectedInterval === 'year' ? (
+              <div>Requires payment now and applies immediately after Stripe checkout.</div>
+            ) : subscriptionInterval === 'year' && changePlanSelectedInterval === 'month' ? (
+              <div>Downgrade scheduled at period end. You keep access until then.</div>
+            ) : subscriptionPlan === 'pro' && changePlanSelectedPlan === 'starter' ? (
+              <div>Downgrade scheduled at period end (yearly plan).</div>
+            ) : (
+              <div>We’ll apply the best available policy for this change.</div>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2 justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setChangePlanDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={submitChangePlan}
+              disabled={switchInterval.isPending || changeScheduledSubscription.isPending}
+            >
+              {switchInterval.isPending || changeScheduledSubscription.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                'Continue'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </RetailPageLayout>
   );
 }
