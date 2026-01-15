@@ -27,9 +27,9 @@ const mockPlanCatalog = {
   getPlanChangeType: jest.fn(),
   listSupportedSkus: jest.fn(() => [
     { planCode: 'starter', interval: 'month', currency: 'EUR', priceId: 'price_starter_month_eur' },
-    { planCode: 'starter', interval: 'year', currency: 'EUR', priceId: 'price_starter_year_eur' },
     { planCode: 'pro', interval: 'year', currency: 'EUR', priceId: 'price_pro_year_eur' },
   ]),
+  isUserSelectableSku: jest.fn(() => true),
 };
 
 // Mock stripe-sync
@@ -44,6 +44,7 @@ const mockStripeSync = {
 const mockStripeService = {
   updateSubscription: jest.fn(),
   createSubscriptionCheckoutSession: jest.fn(),
+  createSubscriptionChangeCheckoutSession: jest.fn(),
   cancelSubscription: jest.fn(),
   resumeSubscription: jest.fn(),
   getCheckoutSession: jest.fn(),
@@ -79,7 +80,7 @@ describe('Subscription Change - Immediate and Scheduled', () => {
     jest.unstable_mockModule('../../services/prisma.js', () => ({ default: mockPrisma }));
   });
 
-  it('month → year change returns checkoutUrl (portal) and does NOT mutate subscription immediately', async () => {
+  it('month → year change returns checkoutUrl (checkout) and does NOT mutate subscription immediately', async () => {
     // Setup: Current subscription is starter/month, upgrading to pro/year (month→year requires checkout)
     const currentSubscription = {
       active: true,
@@ -94,7 +95,10 @@ describe('Subscription Change - Immediate and Scheduled', () => {
     mockStripeSync.getSubscriptionStatusWithStripeSync.mockResolvedValue(currentSubscription);
     mockPlanCatalog.getPlanChangeType.mockReturnValue('upgrade');
     mockPlanCatalog.getPriceId.mockReturnValue('price_pro_year_eur');
-    mockStripeService.getCustomerPortalUrl.mockResolvedValue('https://stripe.example/portal');
+    mockStripeService.createSubscriptionChangeCheckoutSession.mockResolvedValue({
+      id: 'cs_change_123',
+      url: 'https://checkout.example.com/change',
+    });
 
     // Import update function (mocked)
     const { update } = await import('../../controllers/subscriptions.js');
@@ -116,7 +120,7 @@ describe('Subscription Change - Immediate and Scheduled', () => {
     // Verify no mutation call is made (checkout flow)
     expect(mockStripeService.updateSubscription).not.toHaveBeenCalled();
     expect(mockStripeService.scheduleSubscriptionChange).not.toHaveBeenCalled();
-    expect(mockStripeService.getCustomerPortalUrl).toHaveBeenCalled();
+    expect(mockStripeService.createSubscriptionChangeCheckoutSession).toHaveBeenCalled();
 
     // Verify response includes updated subscription
     expect(res.json).toHaveBeenCalled();

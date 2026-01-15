@@ -318,6 +318,7 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
   const metadata = session.metadata || {};
   const shopId = metadata.shopId || metadata.storeId;
   const planType = metadata.planType;
+  const previousStripeSubscriptionId = metadata.previousStripeSubscriptionId || null;
 
   if (!shopId || !planType) {
     logger.warn(
@@ -391,6 +392,27 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
       { shopId, planType, subscriptionId },
       'Subscription activated successfully with allowance tracking',
     );
+
+    // Checkout-based subscription change creates a NEW subscription.
+    // Cancel previous subscription (if provided) to prevent double billing/subscriptions.
+    if (
+      previousStripeSubscriptionId &&
+      previousStripeSubscriptionId !== subscriptionId
+    ) {
+      try {
+        const { cancelSubscriptionImmediately } = await import('../services/stripe.js');
+        await cancelSubscriptionImmediately(previousStripeSubscriptionId);
+        logger.info(
+          { shopId, previousStripeSubscriptionId, newSubscriptionId: subscriptionId },
+          'Cancelled previous subscription after subscription change checkout',
+        );
+      } catch (err) {
+        logger.warn(
+          { shopId, previousStripeSubscriptionId, err: err.message },
+          'Failed to cancel previous subscription after subscription change checkout',
+        );
+      }
+    }
 
     // Allocate free credits (idempotent)
     // Pass planType explicitly to avoid race condition with database read

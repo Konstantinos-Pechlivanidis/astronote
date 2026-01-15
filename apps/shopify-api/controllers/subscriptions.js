@@ -12,6 +12,8 @@ import { SubscriptionPlanType } from '../utils/prismaEnums.js';
 import { computeAllowedActions } from '../services/subscription-actions.js';
 import {
   createSubscriptionCheckoutSession,
+  // New: use Checkout (not portal) for paid subscription changes
+  createSubscriptionChangeCheckoutSession,
   cancelSubscription,
   resumeSubscription,
   getCheckoutSession,
@@ -24,7 +26,7 @@ import {
   decideChangeMode,
   isValidScheduledChange,
 } from '../services/subscription-change-policy.js';
-import { getPriceId, listSupportedSkus } from '../services/plan-catalog.js';
+import { getPriceId, listSupportedSkus, isUserSelectableSku } from '../services/plan-catalog.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
 import { getBillingProfile } from '../services/billing-profile.js';
@@ -61,6 +63,22 @@ function validateSkuOrSendError(res, planType, requestedInterval, currency = 'EU
   }
 
   const resolvedCurrency = String(currency || 'EUR').toUpperCase();
+  if (!isUserSelectableSku(planType, normalized)) {
+    sendError(
+      res,
+      400,
+      'UNSUPPORTED_PLAN_INTERVAL',
+      `Unsupported subscription option: ${planType}/${normalized}/${resolvedCurrency}`,
+      {
+        planType,
+        interval: normalized,
+        currency: resolvedCurrency,
+        supportedSkus: listSupportedSkus(resolvedCurrency),
+      },
+    );
+    return { ok: false };
+  }
+
   const priceId = getPriceId(planType, normalized, resolvedCurrency);
   if (!priceId) {
     sendError(
@@ -419,7 +437,9 @@ export async function switchInterval(req, res, next) {
       return update(req, res, next);
     }
 
-    // If only interval switch (same plan, different interval) or inferred plan change
+    // If only interval switch, map it to the 2-SKU world:
+    // - starter/month + interval=year => upgrade to pro/year (checkout)
+    // - pro/year + interval=month => downgrade to starter/month (scheduled)
     if (targetInterval) {
       const currentPlan = subscription.planCode || subscription.planType;
       normalizedTarget = normalizeInterval(targetInterval);
@@ -433,13 +453,12 @@ export async function switchInterval(req, res, next) {
       }
       const currency = (subscription.currency || 'EUR').toUpperCase();
 
-      // If caller omitted planType, we try to keep the same plan if the SKU exists.
-      // If same-plan target interval doesn't exist and switching to yearly, we allow upgrade to Pro yearly if available.
       let inferredPlan = currentPlan;
-      if (!getPriceId(inferredPlan, normalizedTarget, currency)) {
-        if (normalizedTarget === 'year' && getPriceId('pro', 'year', currency)) {
-          inferredPlan = 'pro';
-        }
+      if (normalizedTarget === 'year' && currentPlan === 'starter') {
+        inferredPlan = 'pro';
+      }
+      if (normalizedTarget === 'month' && currentPlan === 'pro') {
+        inferredPlan = 'starter';
       }
       const skuCheck = validateSkuOrSendError(res, inferredPlan, normalizedTarget, currency);
       if (!skuCheck.ok) {
@@ -479,17 +498,27 @@ export async function switchInterval(req, res, next) {
       );
 
       // If policy says checkout is required, do not mutate subscription here.
-      // Return a Stripe portal URL to complete the change (acts as the "checkout" flow).
+      // Return a Stripe Checkout URL to complete the change (NOT portal).
       if (changeMode === 'checkout') {
         const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
-        const { getCustomerPortalUrl } = await import('../services/stripe.js');
         const { getFrontendBaseUrlSync } = await import('../utils/frontendUrl.js');
         const { normalizeBaseUrl } = await import('../utils/url-helpers.js');
 
         const baseUrl = normalizeBaseUrl(getFrontendBaseUrlSync());
-        const returnUrl = `${baseUrl}/app/shopify/billing?fromPortal=true`;
         const stripeCustomerId = updatedStatus.stripeCustomerId || subscription.stripeCustomerId;
-        const portalUrl = stripeCustomerId ? await getCustomerPortalUrl(stripeCustomerId, returnUrl) : null;
+        const successUrl = `${baseUrl}/app/shopify/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`;
+        const cancelUrl = `${baseUrl}/app/shopify/billing/cancel`;
+
+        const session = await createSubscriptionChangeCheckoutSession({
+          shopId,
+          planType: inferredPlan,
+          interval: normalizedTarget,
+          currency,
+          stripeCustomerId,
+          successUrl,
+          cancelUrl,
+          previousStripeSubscriptionId: subscription.stripeSubscriptionId,
+        });
 
         const subscriptionDto = {
           ...updatedStatus,
@@ -501,7 +530,7 @@ export async function switchInterval(req, res, next) {
           res,
           {
             changeMode,
-            checkoutUrl: portalUrl,
+            checkoutUrl: session?.url || null,
             subscription: subscriptionDto,
           },
           'Action requires payment. Please complete the change in Stripe.',
@@ -682,7 +711,7 @@ export async function update(req, res, next) {
     );
 
     // If policy says checkout is required, do not mutate subscription here.
-    // Return a Stripe portal URL to complete the change (acts as the "checkout" flow).
+    // Return a Stripe Checkout URL to complete the change (NOT portal).
     if (changeMode === 'checkout') {
       const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
       const subscriptionDto = {
@@ -690,14 +719,24 @@ export async function update(req, res, next) {
         allowedActions: computeAllowedActions(updatedStatus),
         availableOptions: listSupportedSkus(updatedStatus?.currency || currency),
       };
-      const { getCustomerPortalUrl } = await import('../services/stripe.js');
       const { getFrontendBaseUrlSync } = await import('../utils/frontendUrl.js');
       const { normalizeBaseUrl } = await import('../utils/url-helpers.js');
 
       const baseUrl = normalizeBaseUrl(getFrontendBaseUrlSync());
-      const returnUrl = `${baseUrl}/app/shopify/billing?fromPortal=true`;
       const stripeCustomerId = updatedStatus.stripeCustomerId || subscription.stripeCustomerId;
-      const portalUrl = stripeCustomerId ? await getCustomerPortalUrl(stripeCustomerId, returnUrl) : null;
+      const successUrl = `${baseUrl}/app/shopify/billing/success?session_id={CHECKOUT_SESSION_ID}&type=subscription`;
+      const cancelUrl = `${baseUrl}/app/shopify/billing/cancel`;
+
+      const session = await createSubscriptionChangeCheckoutSession({
+        shopId,
+        planType: targetPlanCode,
+        interval: resolvedInterval,
+        currency,
+        stripeCustomerId,
+        successUrl,
+        cancelUrl,
+        previousStripeSubscriptionId: subscription.stripeSubscriptionId,
+      });
 
       return sendSuccess(
         res,
@@ -707,7 +746,7 @@ export async function update(req, res, next) {
           interval: resolvedInterval,
           currency,
           changeMode,
-          checkoutUrl: portalUrl,
+          checkoutUrl: session?.url || null,
           subscription: subscriptionDto,
         },
         'Action requires payment. Please complete the change in Stripe.',
@@ -1749,6 +1788,30 @@ export async function finalize(req, res, next) {
       extractedInterval, // Pass string, not object
       stripeSubscription, // Pass as last parameter (optional)
     );
+
+    // If this checkout created a new subscription as part of a subscription change,
+    // cancel the previous subscription to prevent double billing.
+    const previousStripeSubscriptionId = metadata.previousStripeSubscriptionId || null;
+    if (
+      previousStripeSubscriptionId &&
+      previousStripeSubscriptionId !== subscriptionId
+    ) {
+      try {
+        const { cancelSubscriptionImmediately } = await import('../services/stripe.js');
+        await cancelSubscriptionImmediately(previousStripeSubscriptionId);
+        logger.info('Cancelled previous subscription during finalize', {
+          shopId,
+          previousStripeSubscriptionId,
+          newSubscriptionId: subscriptionId,
+        });
+      } catch (err) {
+        logger.warn('Failed to cancel previous subscription during finalize', {
+          shopId,
+          previousStripeSubscriptionId,
+          err: err.message,
+        });
+      }
+    }
 
     // Allocate free credits (idempotent)
     const creditResult = await allocateFreeCredits(

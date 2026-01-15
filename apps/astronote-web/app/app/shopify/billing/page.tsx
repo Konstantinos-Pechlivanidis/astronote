@@ -252,37 +252,16 @@ function BillingPageContent() {
   // Use backend allowedActions if provided (prevents drift), otherwise compute locally
   const availableActions = getAvailableActions(uiState, subscription?.allowedActions);
   const availableSubscriptionOptions = subscription?.availableOptions || [];
-  const starterYearAvailable = availableSubscriptionOptions.some(
-    (o) => o.planCode === 'starter' && o.interval === 'year' && o.currency === currency,
-  );
   const availableOptionsForCurrency = availableSubscriptionOptions.filter((o) => o.currency === currency);
 
   const openChangePlanDialog = () => {
     // Default selection heuristics:
-    // - Prefer switching Starter month -> Starter year if available
-    // - Otherwise prefer Pro year (upgrade path)
+    // Billing v2 alignment (2 SKUs):
+    // - If on Starter Monthly: default to Pro Yearly (upgrade)
+    // - If on Pro Yearly: default to Starter Monthly (scheduled downgrade)
     const currentPlan = subscriptionPlan || 'starter';
-    const currentInterval = subscriptionInterval || 'month';
-
-    let nextPlan: 'starter' | 'pro' = currentPlan;
-    let nextInterval: 'month' | 'year' = currentInterval === 'month' ? 'year' : 'month';
-
-    const hasStarterYear = availableOptionsForCurrency.some(
-      (o) => o.planCode === 'starter' && o.interval === 'year',
-    );
-    const hasProYear = availableOptionsForCurrency.some(
-      (o) => o.planCode === 'pro' && o.interval === 'year',
-    );
-
-    if (currentPlan === 'starter' && currentInterval === 'month') {
-      if (hasStarterYear) {
-        nextPlan = 'starter';
-        nextInterval = 'year';
-      } else if (hasProYear) {
-        nextPlan = 'pro';
-        nextInterval = 'year';
-      }
-    }
+    const nextPlan: 'starter' | 'pro' = currentPlan === 'starter' ? 'pro' : 'starter';
+    const nextInterval: 'month' | 'year' = currentPlan === 'starter' ? 'year' : 'month';
 
     setChangePlanSelectedPlan(nextPlan);
     setChangePlanSelectedInterval(nextInterval);
@@ -805,24 +784,6 @@ function BillingPageContent() {
                   >
                     {getPlanActionLabel(uiState, 'starter', 'month')}
                   </Button>
-
-                  {starterYearAvailable && (
-                    <>
-                      <div className="text-xs text-text-tertiary italic">
-                        Switching to yearly requires payment now and takes effect immediately after checkout.
-                      </div>
-                      <Button
-                        onClick={() => handleAction({ id: 'subscribe', label: 'Subscribe (Yearly)', intent: 'primary', variant: 'outline' }, 'starter', 'year')}
-                        disabled={subscribe.isPending || (isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'year')}
-                        className="w-full"
-                        variant={isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'year' ? 'outline' : 'outline'}
-                      >
-                        {isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'year'
-                          ? 'Current plan'
-                          : 'Switch to Starter (Yearly)'}
-                      </Button>
-                    </>
-                  )}
                 </div>
               </RetailCard>
               <RetailCard className="p-6 border-2 border-accent relative">

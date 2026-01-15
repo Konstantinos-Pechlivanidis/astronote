@@ -21,40 +21,52 @@ describe('Plan Catalog', () => {
   });
 
   describe('getPriceId', () => {
-    it('resolves priceId for starter month EUR', () => {
-      process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR = 'price_starter_month_eur';
+    it('resolves priceId for starter month EUR (matrix var)', () => {
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR = 'price_starter_month_eur_matrix';
       const result = getPriceId('starter', 'month', 'EUR');
-      expect(result).toBe('price_starter_month_eur');
+      expect(result).toBe('price_starter_month_eur_matrix');
     });
 
-    it('resolves priceId for starter year EUR', () => {
-      process.env.STRIPE_PRICE_ID_SUB_STARTER_YEAR_EUR = 'price_starter_year_eur';
+    it('resolves priceId for starter year EUR (matrix var; reverse-lookup support)', () => {
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_YEAR_EUR = 'price_starter_year_eur_matrix';
       const result = getPriceId('starter', 'year', 'EUR');
-      expect(result).toBe('price_starter_year_eur');
+      expect(result).toBe('price_starter_year_eur_matrix');
     });
 
-    it('resolves priceId for pro month USD', () => {
-      process.env.STRIPE_PRICE_ID_SUB_PRO_MONTH_USD = 'price_pro_month_usd';
+    it('resolves priceId for pro month USD (matrix var; reverse-lookup support)', () => {
+      process.env.STRIPE_PRICE_ID_SUB_PRO_MONTH_USD = 'price_pro_month_usd_matrix';
       const result = getPriceId('pro', 'month', 'USD');
-      expect(result).toBe('price_pro_month_usd');
+      expect(result).toBe('price_pro_month_usd_matrix');
     });
 
-    it('resolves priceId for pro year USD', () => {
-      process.env.STRIPE_PRICE_ID_SUB_PRO_YEAR_USD = 'price_pro_year_usd';
+    it('resolves priceId for pro year USD (matrix var)', () => {
+      process.env.STRIPE_PRICE_ID_SUB_PRO_YEAR_USD = 'price_pro_year_usd_matrix';
       const result = getPriceId('pro', 'year', 'USD');
-      expect(result).toBe('price_pro_year_usd');
+      expect(result).toBe('price_pro_year_usd_matrix');
     });
 
-    it('falls back to legacy format for starter EUR (assumed monthly)', () => {
+    it('falls back to legacy format for starter EUR (retail-simple: starter/month)', () => {
       process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR = 'price_starter_legacy_eur';
       const result = getPriceId('starter', 'month', 'EUR');
       expect(result).toBe('price_starter_legacy_eur');
     });
 
-    it('falls back to legacy format for pro EUR (assumed yearly)', () => {
+    it('falls back to legacy format for pro EUR (retail-simple: pro/year)', () => {
       process.env.STRIPE_PRICE_ID_SUB_PRO_EUR = 'price_pro_legacy_eur';
       const result = getPriceId('pro', 'year', 'EUR');
       expect(result).toBe('price_pro_legacy_eur');
+    });
+
+    it('returns null for starter year in retail-simple (unsupported)', () => {
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR = 'price_starter_legacy_eur';
+      const result = getPriceId('starter', 'year', 'EUR');
+      expect(result).toBeNull();
+    });
+
+    it('returns null for pro month in retail-simple (unsupported)', () => {
+      process.env.STRIPE_PRICE_ID_SUB_PRO_EUR = 'price_pro_legacy_eur';
+      const result = getPriceId('pro', 'month', 'EUR');
+      expect(result).toBeNull();
     });
 
     it('returns null for invalid planCode', () => {
@@ -140,7 +152,7 @@ describe('Plan Catalog', () => {
   });
 
   describe('validateCatalog', () => {
-    it('returns valid in legacy mode when the 4 legacy vars are configured', () => {
+    it('returns valid in retail-simple mode when the 4 legacy vars are configured', () => {
       process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR = 'price_starter_eur';
       process.env.STRIPE_PRICE_ID_SUB_STARTER_USD = 'price_starter_usd';
       process.env.STRIPE_PRICE_ID_SUB_PRO_EUR = 'price_pro_eur';
@@ -148,11 +160,11 @@ describe('Plan Catalog', () => {
 
       const result = validateCatalog();
       expect(result.valid).toBe(true);
-      expect(result.mode).toBe('legacy');
+      expect(result.mode).toBe('retail-simple');
       expect(result.missing).toHaveLength(0);
     });
 
-    it('returns invalid in legacy mode if any one of the 4 vars is missing', () => {
+    it('returns invalid in retail-simple mode if any one of the 4 vars is missing', () => {
       process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR = 'price_starter_eur';
       process.env.STRIPE_PRICE_ID_SUB_STARTER_USD = 'price_starter_usd';
       process.env.STRIPE_PRICE_ID_SUB_PRO_EUR = 'price_pro_eur';
@@ -160,22 +172,8 @@ describe('Plan Catalog', () => {
 
       const result = validateCatalog();
       expect(result.valid).toBe(false);
-      expect(result.mode).toBe('legacy');
+      expect(result.mode).toBe('retail-simple');
       expect(result.missingEnvVars).toContain('STRIPE_PRICE_ID_SUB_PRO_USD');
-    });
-
-    it('returns valid in supported_skus mode when Starter month/year + Pro year are configured', () => {
-      process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR = 'price_1';
-      process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_USD = 'price_2';
-      process.env.STRIPE_PRICE_ID_SUB_STARTER_YEAR_EUR = 'price_3';
-      process.env.STRIPE_PRICE_ID_SUB_STARTER_YEAR_USD = 'price_4';
-      process.env.STRIPE_PRICE_ID_SUB_PRO_YEAR_EUR = 'price_7';
-      process.env.STRIPE_PRICE_ID_SUB_PRO_YEAR_USD = 'price_8';
-
-      const result = validateCatalog();
-      expect(result.valid).toBe(true);
-      expect(result.mode).toBe('supported_skus');
-      expect(result.missing).toHaveLength(0);
     });
 
     it('returns valid when all priceIds are configured', () => {

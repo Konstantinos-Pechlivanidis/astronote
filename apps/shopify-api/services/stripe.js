@@ -903,6 +903,59 @@ export async function createSubscriptionCheckoutSession({
 }
 
 /**
+ * Create a Stripe checkout session for a subscription change (upgrade path).
+ *
+ * NOTE:
+ * Stripe Checkout creates a new subscription. To avoid double subscriptions for the same customer,
+ * we include `previousStripeSubscriptionId` in metadata so webhook/finalize can cancel the old one
+ * after the new subscription is successfully created.
+ */
+export async function createSubscriptionChangeCheckoutSession({
+  shopId,
+  planType,
+  interval,
+  currency = 'EUR',
+  stripeCustomerId,
+  billingProfile = null,
+  successUrl,
+  cancelUrl,
+  previousStripeSubscriptionId = null,
+}) {
+  const session = await createSubscriptionCheckoutSession({
+    shopId,
+    shopDomain: null,
+    planType,
+    interval,
+    currency,
+    stripeCustomerId,
+    billingProfile,
+    successUrl,
+    cancelUrl,
+  });
+
+  // Best-effort: attach previous subscription id for safe cancellation after upgrade.
+  // We do this via a follow-up update because `createSubscriptionCheckoutSession` owns metadata shape.
+  if (previousStripeSubscriptionId && stripe) {
+    try {
+      await stripe.checkout.sessions.update(session.id, {
+        metadata: {
+          ...(session.metadata || {}),
+          previousStripeSubscriptionId: String(previousStripeSubscriptionId),
+          type: 'subscription_change',
+        },
+      });
+    } catch (err) {
+      logger.warn(
+        { shopId, sessionId: session.id, err: err.message },
+        'Failed to attach previousStripeSubscriptionId to checkout session metadata',
+      );
+    }
+  }
+
+  return session;
+}
+
+/**
  * Create a Stripe checkout session for credit top-up
  * @param {Object} params
  * @param {string} params.shopId - Shop ID
@@ -1356,6 +1409,25 @@ export async function resumeSubscription(subscriptionId) {
 }
 
 /**
+ * Cancel subscription immediately (used for upgrade replacement flow).
+ * Best-effort: prevents double subscriptions after a Checkout-based upgrade.
+ */
+export async function cancelSubscriptionImmediately(subscriptionId) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+  if (!subscriptionId) {
+    return null;
+  }
+
+  // Immediate cancellation, without proration/invoice. (We already charged for the new subscription.)
+  return stripe.subscriptions.cancel(subscriptionId, {
+    invoice_now: false,
+    prorate: false,
+  });
+}
+
+/**
  * Get Stripe customer portal URL
  * @param {string} customerId - Stripe customer ID
  * @param {string} returnUrl - URL to return to after portal session
@@ -1394,6 +1466,7 @@ export default {
   scheduleSubscriptionChange,
   cancelScheduledSubscriptionChange,
   cancelSubscription,
+  cancelSubscriptionImmediately,
   resumeSubscription,
   getCustomerPortalUrl,
 };

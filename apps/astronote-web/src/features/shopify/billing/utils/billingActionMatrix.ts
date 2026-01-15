@@ -314,13 +314,18 @@ function getAllActionsForState(uiState: BillingUIState): BillingAction[] {
       },
       {
         id: 'switchInterval',
-        label: uiState.currentInterval === 'month' ? 'Switch to Yearly' : 'Switch to Monthly',
+        // Billing v2 alignment (2 SKUs): "interval switch" is actually a plan change shortcut
+        // starter/month -> pro/year (upgrade, pay now)
+        // pro/year -> starter/month (downgrade, scheduled)
+        label: uiState.currentPlanCode === 'starter'
+          ? 'Upgrade to Pro (Yearly)'
+          : 'Downgrade to Starter (Monthly)',
         intent: 'secondary',
         variant: 'outline',
         confirmationCopy:
           uiState.currentInterval === 'month'
-            ? 'You will be charged for the yearly plan today. Changes apply immediately.'
-            : 'Your billing interval will change to monthly. Changes apply immediately.',
+            ? 'You will be charged today and your plan will upgrade to Pro (Yearly).'
+            : 'This downgrade will take effect at the end of your current billing period.',
         requiresConfirmation: true,
       },
       {

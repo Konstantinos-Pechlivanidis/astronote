@@ -32,17 +32,26 @@ export const CURRENCIES = {
 };
 
 /**
- * Shopify Subscription SKUs (supported)
- * - starter: month (EUR, USD)
- * - starter: year (EUR, USD)
- * - pro: year (EUR, USD)
+ * Billing catalog modes:
+ * - retail-simple: 2 SKUs only (Starter Monthly, Pro Yearly) using legacy 4 env vars:
+ *   - STRIPE_PRICE_ID_SUB_STARTER_{EUR|USD}
+ *   - STRIPE_PRICE_ID_SUB_PRO_{EUR|USD}
+ * - matrix: legacy Billing v2 matrix env vars (starter/pro × month/year × EUR/USD)
  *
- * Notes:
- * - We keep legacy env vars for backward compatibility, but they do NOT enable Starter Yearly.
+ * IMPORTANT: UI-exposed subscription options are ALWAYS limited to the 2 SKUs:
+ * - starter/month
+ * - pro/year
+ *
+ * Even in matrix mode we may still resolve reverse-lookups for other existing Stripe prices,
+ * but they are not considered user-selectable targets for switching in Billing v2 alignment.
  */
-export const SUPPORTED_SUBSCRIPTION_SKUS = [
+export const CATALOG_MODES = {
+  RETAIL_SIMPLE: 'retail-simple',
+  MATRIX: 'matrix',
+};
+
+export const USER_SELECTABLE_SUBSCRIPTION_SKUS = [
   { planCode: 'starter', interval: 'month' },
-  { planCode: 'starter', interval: 'year' },
   { planCode: 'pro', interval: 'year' },
 ];
 
@@ -150,16 +159,25 @@ function flattenSimplifiedEnvVars() {
   return vars;
 }
 
-export function isSupportedSku(planCode, interval) {
+function hasAnyMatrixEnvVars() {
+  const matrixEnvVars = flattenMatrixEnvVars();
+  return matrixEnvVars.some((k) => !!process.env[k]);
+}
+
+export function getCatalogMode() {
+  return hasAnyMatrixEnvVars() ? CATALOG_MODES.MATRIX : CATALOG_MODES.RETAIL_SIMPLE;
+}
+
+export function isUserSelectableSku(planCode, interval) {
   const p = String(planCode || '').toLowerCase();
   const i = String(interval || '').toLowerCase();
-  return SUPPORTED_SUBSCRIPTION_SKUS.some((s) => s.planCode === p && s.interval === i);
+  return USER_SELECTABLE_SUBSCRIPTION_SKUS.some((s) => s.planCode === p && s.interval === i);
 }
 
 export function listSupportedSkus(currency = null) {
   const normalizedCurrency = currency ? String(currency).toUpperCase() : null;
   const out = [];
-  for (const sku of SUPPORTED_SUBSCRIPTION_SKUS) {
+  for (const sku of USER_SELECTABLE_SUBSCRIPTION_SKUS) {
     const planCode = sku.planCode;
     const interval = sku.interval;
     for (const cur of Object.values(CURRENCIES)) {
@@ -208,7 +226,7 @@ export function getPriceId(planCode, interval, currency = 'EUR') {
     return null;
   }
 
-  // Preferred: interval-specific env vars (SKU-driven)
+  // Preferred: interval-specific env vars (matrix mode compatible)
   const envVarName =
     PLAN_CATALOG_CONFIG[normalizedPlanCode]?.[normalizedInterval]?.[normalizedCurrency];
   if (envVarName) {
@@ -226,15 +244,8 @@ export function getPriceId(planCode, interval, currency = 'EUR') {
   }
 
   // Fallback to legacy format for backward compatibility
-  // Legacy implies: starter=month, pro=year. It does NOT support starter=year.
-  if (
-    !(
-      (normalizedPlanCode === 'starter' && normalizedInterval === 'month') ||
-      (normalizedPlanCode === 'pro' && normalizedInterval === 'year')
-    )
-  ) {
-    return null;
-  }
+  // Legacy implies: starter=month, pro=year (retail-simple 2 SKU mode).
+  if (!isUserSelectableSku(normalizedPlanCode, normalizedInterval)) return null;
   const legacyEnvVar = LEGACY_ENV_VAR_MAP[normalizedPlanCode]?.[normalizedCurrency];
   if (legacyEnvVar) {
     const priceId = process.env[legacyEnvVar];
@@ -320,41 +331,11 @@ export function resolvePlanFromPriceId(priceId) {
  * @returns {Object} { valid: boolean, missing: string[] }
  */
 export function validateCatalog() {
-  // We consider the catalog "valid" if at least the baseline legacy pair exists for both currencies
-  // OR if the new supported-SKU vars exist.
-  //
-  // This prevents breaking existing subscriptions while allowing Starter Yearly where configured.
-
-  const requiredSkuEnvVars = [
-    'STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR',
-    'STRIPE_PRICE_ID_SUB_STARTER_MONTH_USD',
-    'STRIPE_PRICE_ID_SUB_STARTER_YEAR_EUR',
-    'STRIPE_PRICE_ID_SUB_STARTER_YEAR_USD',
-    'STRIPE_PRICE_ID_SUB_PRO_YEAR_EUR',
-    'STRIPE_PRICE_ID_SUB_PRO_YEAR_USD',
-  ];
-
   const legacyEnvVars = flattenSimplifiedEnvVars(); // 4 vars: STARTER/PRO × EUR/USD
   const matrixEnvVars = flattenMatrixEnvVars(); // 8 vars: STARTER/PRO × MONTH/YEAR × EUR/USD
 
-  const hasAnyRequiredSku = requiredSkuEnvVars.some((k) => !!process.env[k]);
-  const hasAnyLegacy = legacyEnvVars.some((k) => !!process.env[k]);
-  const hasAnyMatrix = matrixEnvVars.some((k) => !!process.env[k]);
-  const hasFullMatrix = matrixEnvVars.every((k) => !!process.env[k]);
-
-  // Mode selection:
-  // - If full matrix is configured, treat as matrix (backward compatible Billing v2 installs).
-  // - Else if the supported-SKU vars appear, validate those (Starter month/year + Pro year).
-  // - Else validate legacy 4-var set (Starter/Pro by currency only).
-  const mode = hasFullMatrix ? 'matrix' : hasAnyRequiredSku ? 'supported_skus' : 'legacy';
-
-  const requiredVars =
-    mode === 'supported_skus'
-      ? requiredSkuEnvVars
-      : mode === 'matrix'
-        ? matrixEnvVars
-        : legacyEnvVars;
-
+  const mode = getCatalogMode();
+  const requiredVars = mode === CATALOG_MODES.MATRIX ? matrixEnvVars : legacyEnvVars;
   const missingEnvVars = requiredVars.filter((k) => !process.env[k]);
 
   return {
@@ -363,8 +344,6 @@ export function validateCatalog() {
     missingEnvVars,
     missing: missingEnvVars,
     supportedSkus: listSupportedSkus(),
-    hasAnyLegacy,
-    hasAnyMatrix,
   };
 }
 
@@ -410,8 +389,10 @@ export default {
   PLAN_CODES,
   INTERVALS,
   CURRENCIES,
-  SUPPORTED_SUBSCRIPTION_SKUS,
-  isSupportedSku,
+  CATALOG_MODES,
+  USER_SELECTABLE_SUBSCRIPTION_SKUS,
+  getCatalogMode,
+  isUserSelectableSku,
   listSupportedSkus,
   getPriceId,
   resolvePlanFromPriceId,

@@ -172,6 +172,12 @@ async function validateUrlConfigurations(env) {
     //   if those vars exist (matrix-only installs remain supported).
     const planCatalog = await import('../services/plan-catalog.js');
     const validation = planCatalog.validateCatalog();
+    logger.info('Billing catalog mode', {
+      mode: validation.mode,
+      supportedSkus: Array.isArray(validation.supportedSkus)
+        ? validation.supportedSkus.map((s) => `${s.planCode}/${s.interval}/${s.currency}`).join(', ')
+        : '(unknown)',
+    });
     if (!validation.valid) {
       const missing = validation.missingEnvVars || validation.missing || [];
       const mode = validation.mode || 'unknown';

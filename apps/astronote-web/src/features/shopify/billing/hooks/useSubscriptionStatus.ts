@@ -9,10 +9,10 @@ export function useSubscriptionStatus() {
   return useQuery({
     queryKey: shopifyQueryKeys.subscriptions.status(),
     queryFn: () => subscriptionsApi.getStatus(),
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 10 * 1000, // 10s (billing UX: keep status fresh after changes)
     gcTime: 10 * 60 * 1000, // 10 minutes
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
     placeholderData: (previousData) => previousData,
   });
 }

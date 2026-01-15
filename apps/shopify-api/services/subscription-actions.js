@@ -64,14 +64,16 @@ export function computeAllowedActions(subscription) {
       'refreshFromStripe',
     ];
 
-    // Only allow "switchInterval" when the catalog actually supports an alternate interval
-    // for the current plan in the current currency. (Prevents invalid "starter→year" or "pro→month" UX.)
+    // Billing v2 alignment (2 SKUs):
+    // Allow "switchInterval" as a shortcut between the two SKUs:
+    // - starter/month -> pro/year (interval=year)
+    // - pro/year -> starter/month (interval=month, scheduled)
     const planCode = subscription.planCode || subscription.planType;
     const currency = (subscription.currency || 'EUR').toUpperCase();
-    const supported = listSupportedSkus(currency).filter((s) => s.planCode === planCode);
-    const hasMonth = supported.some((s) => s.interval === 'month');
-    const hasYear = supported.some((s) => s.interval === 'year');
-    if (hasMonth && hasYear) {
+    const supported = listSupportedSkus(currency);
+    const hasStarterMonth = supported.some((s) => s.planCode === 'starter' && s.interval === 'month');
+    const hasProYear = supported.some((s) => s.planCode === 'pro' && s.interval === 'year');
+    if ((planCode === 'starter' && hasProYear) || (planCode === 'pro' && hasStarterMonth)) {
       actions.splice(1, 0, 'switchInterval');
     }
 

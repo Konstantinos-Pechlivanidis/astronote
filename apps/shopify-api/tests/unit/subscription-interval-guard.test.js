@@ -30,7 +30,7 @@ describe('Subscription interval guard (SKU-driven plan catalog)', () => {
     );
   });
 
-  it('accepts starter=year when Starter Year SKU is configured', async () => {
+  it('rejects starter=year even if matrix env var exists (Billing v2 aligns to 2 SKUs)', async () => {
     const sendError = jest.fn();
 
     jest.unstable_mockModule('../../utils/response.js', () => ({
@@ -43,9 +43,14 @@ describe('Subscription interval guard (SKU-driven plan catalog)', () => {
     const res = {};
     process.env.STRIPE_PRICE_ID_SUB_STARTER_YEAR_EUR = 'price_starter_year_eur';
     const result = __test.validateSkuOrSendError(res, 'starter', 'year', 'EUR');
-    expect(result.ok).toBe(true);
-    expect(result.resolvedInterval).toBe('year');
-    expect(sendError).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    expect(sendError).toHaveBeenCalledWith(
+      res,
+      400,
+      'UNSUPPORTED_PLAN_INTERVAL',
+      expect.stringContaining('Unsupported subscription option'),
+      expect.any(Object),
+    );
   });
 
   it('accepts pro=year interval when Pro Year SKU is configured (or legacy pro)', async () => {
