@@ -285,7 +285,11 @@ export default function CampaignDetailPage() {
             <div className="space-y-4">
               <div>
                 <div className="text-sm font-medium text-text-secondary mb-1">Status</div>
-                <CampaignStatusBadge status={campaign.status} />
+                <CampaignStatusBadge
+                  status={campaign.status}
+                  scheduleType={campaign.scheduleType}
+                  scheduleAt={campaign.scheduleAt}
+                />
               </div>
               <div>
                 <div className="text-sm font-medium text-text-secondary mb-1">Recipients</div>

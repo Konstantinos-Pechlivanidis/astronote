@@ -20,7 +20,13 @@ export async function processScheduledCampaigns() {
     // Find all campaigns that are scheduled and due to be sent
     const dueCampaigns = await prisma.campaign.findMany({
       where: {
-        status: CampaignStatus.scheduled,
+        // Backward compatibility:
+        // Some legacy flows wrote scheduleAt but left status as "draft". We still want those to send.
+        OR: [
+          { status: CampaignStatus.scheduled },
+          { status: CampaignStatus.draft, scheduleType: 'scheduled' },
+          { status: CampaignStatus.draft, scheduleType: 'recurring' },
+        ],
         scheduleAt: {
           lte: now, // scheduleAt is in UTC, so we compare with UTC now
         },
@@ -30,6 +36,7 @@ export async function processScheduledCampaigns() {
         shopId: true,
         name: true,
         scheduleAt: true,
+        scheduleType: true,
       },
       take: 50, // Process up to 50 campaigns per run to avoid overload
     });
@@ -56,13 +63,21 @@ export async function processScheduledCampaigns() {
           // This prevents race conditions if the campaign was already processed
           const currentCampaign = await tx.campaign.findUnique({
             where: { id: campaign.id },
-            select: { id: true, status: true },
+            select: { id: true, status: true, scheduleType: true },
           });
 
-          if (!currentCampaign || currentCampaign.status !== CampaignStatus.scheduled) {
+          const isSchedulable =
+            currentCampaign &&
+            (currentCampaign.status === CampaignStatus.scheduled ||
+              (currentCampaign.status === CampaignStatus.draft &&
+                (currentCampaign.scheduleType === 'scheduled' ||
+                  currentCampaign.scheduleType === 'recurring')));
+
+          if (!isSchedulable) {
             logger.warn('Campaign status changed before queuing, skipping', {
               campaignId: campaign.id,
               currentStatus: currentCampaign?.status,
+              scheduleType: currentCampaign?.scheduleType,
             });
             return; // Skip this campaign
           }
@@ -83,7 +98,8 @@ export async function processScheduledCampaigns() {
             campaignId: campaign.id,
           },
           {
-            jobId: `campaign-send-${campaign.id}`, // Use campaign ID only to prevent duplicates
+            // Include scheduleAt in jobId so re-scheduling creates a new job id, but duplicate ticks don't.
+            jobId: `campaign-send:${campaign.id}:${campaign.scheduleAt ? new Date(campaign.scheduleAt).getTime() : 'no-scheduleAt'}`,
             removeOnComplete: true,
             attempts: 3, // Retry up to 3 times if execution fails
             backoff: {
@@ -113,7 +129,7 @@ export async function processScheduledCampaigns() {
         try {
           await prisma.campaign.update({
             where: { id: campaign.id },
-            data: { status: 'scheduled' },
+            data: { status: CampaignStatus.scheduled },
           });
         } catch (revertError) {
           logger.error('Failed to revert campaign status after queuing error', {
@@ -175,10 +191,13 @@ async function acquireSchedulerLock(lockType = 'campaigns') {
  * This should be called on application startup
  */
 export function startScheduledCampaignsProcessor() {
-  // CRITICAL: Check if scheduler should run on this instance
-  // Set RUN_SCHEDULER=false in production to disable on worker instances
-  if (process.env.RUN_SCHEDULER === 'false') {
-    logger.info('Scheduled campaigns processor disabled (RUN_SCHEDULER=false)');
+  // IMPORTANT:
+  // Scheduled campaigns MUST send in production. Historically this was gated by RUN_SCHEDULER,
+  // which is commonly set to "false" in Render deployments (API vs worker separation).
+  // To avoid "scheduled campaigns never send", this processor is now controlled ONLY by
+  // SCHEDULED_CAMPAIGNS_ENABLED (default: enabled).
+  if (process.env.SCHEDULED_CAMPAIGNS_ENABLED === 'false') {
+    logger.info('Scheduled campaigns processor disabled (SCHEDULED_CAMPAIGNS_ENABLED=false)');
     return;
   }
 
@@ -188,13 +207,14 @@ export function startScheduledCampaignsProcessor() {
     return;
   }
 
-  // Check for due campaigns every minute
-  const INTERVAL_MS = 60 * 1000; // 1 minute
+  // Check cadence (overrideable for smoke tests)
+  const INTERVAL_MS = Number(process.env.SCHEDULED_CAMPAIGNS_INTERVAL_MS || 60 * 1000); // default 1 minute
+  const INITIAL_DELAY_MS = Number(process.env.SCHEDULED_CAMPAIGNS_INITIAL_DELAY_MS || 30 * 1000); // default 30s
 
   // Initial delay of 30 seconds to let the app fully start
   setTimeout(() => {
     processNextBatch();
-  }, 30000); // 30 seconds
+  }, INITIAL_DELAY_MS);
 
   function processNextBatch() {
     // Use Redis lock to prevent multiple instances from processing simultaneously
@@ -235,7 +255,9 @@ export function startScheduledCampaignsProcessor() {
 
   logger.info('Scheduled campaigns processor started with distributed lock', {
     interval: `${INTERVAL_MS / 1000}s`,
-    runScheduler: process.env.RUN_SCHEDULER || 'true (default)',
+    initialDelay: `${INITIAL_DELAY_MS / 1000}s`,
+    scheduledCampaignsEnabled: process.env.SCHEDULED_CAMPAIGNS_ENABLED || 'true (default)',
+    runScheduler: process.env.RUN_SCHEDULER || 'unset',
   });
 }
 

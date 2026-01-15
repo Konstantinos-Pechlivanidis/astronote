@@ -569,6 +569,21 @@ export async function createCampaign(storeId, campaignData) {
     }
   }
 
+  // If scheduleType is scheduled/recurring, the campaign should be created as "scheduled" immediately.
+  // This ensures the scheduler can pick it up without requiring an extra /schedule call.
+  const requestedScheduleType = campaignData.scheduleType || ScheduleType.immediate;
+  if (requestedScheduleType === ScheduleType.scheduled && !scheduleAtDate) {
+    throw new ValidationError('Schedule date is required for scheduled campaigns');
+  }
+  if (requestedScheduleType === ScheduleType.recurring && !campaignData.recurringDays) {
+    throw new ValidationError('Recurring days is required for recurring campaigns');
+  }
+  const initialStatus =
+    requestedScheduleType === ScheduleType.scheduled ||
+    requestedScheduleType === ScheduleType.recurring
+      ? CampaignStatus.scheduled
+      : CampaignStatus.draft;
+
   // Use transaction to ensure both campaign and metrics are created atomically
   try {
     const result = await prisma.$transaction(async tx => {
@@ -621,10 +636,10 @@ export async function createCampaign(storeId, campaignData) {
           audience: audienceValue,
           discountId: campaignData.discountId || null,
           meta: Object.keys(meta).length > 0 ? meta : null,
-          scheduleType: campaignData.scheduleType || ScheduleType.immediate,
+          scheduleType: requestedScheduleType,
           scheduleAt: scheduleAtDate,
           recurringDays: campaignData.recurringDays || null,
-          status: CampaignStatus.draft,
+          status: initialStatus,
           priority: campaignData.priority || CampaignPriority.normal,
         },
       });
@@ -739,7 +754,7 @@ export async function updateCampaign(storeId, campaignId, campaignData) {
       updateData.scheduleAt = null;
       updateData.status = CampaignStatus.draft;
     }
-    // If changing to scheduled, status will be set by schedule endpoint
+    // If changing to scheduled/recurring, we set status based on the final scheduleAt/recurringDays below.
   }
   if (campaignData.scheduleAt !== undefined) {
     if (campaignData.scheduleAt) {
@@ -759,6 +774,28 @@ export async function updateCampaign(storeId, campaignId, campaignData) {
   }
   if (campaignData.recurringDays !== undefined)
     updateData.recurringDays = campaignData.recurringDays;
+
+  // Normalize status for scheduled/recurring updates.
+  // The create/edit flows in the web app use PUT /campaigns/:id (not /schedule), so we must set status here.
+  const finalScheduleType =
+    campaignData.scheduleType !== undefined ? campaignData.scheduleType : existing.scheduleType;
+  const finalScheduleAt =
+    campaignData.scheduleAt !== undefined ? updateData.scheduleAt : existing.scheduleAt;
+  const finalRecurringDays =
+    campaignData.recurringDays !== undefined ? updateData.recurringDays : existing.recurringDays;
+
+  if (finalScheduleType === ScheduleType.scheduled) {
+    if (!finalScheduleAt) {
+      throw new ValidationError('Schedule date is required for scheduled campaigns');
+    }
+    updateData.status = CampaignStatus.scheduled;
+  } else if (finalScheduleType === ScheduleType.recurring) {
+    if (!finalRecurringDays) {
+      throw new ValidationError('Recurring days is required for recurring campaigns');
+    }
+    // For recurring campaigns, treat them as scheduled (scheduler handles execution cadence).
+    updateData.status = CampaignStatus.scheduled;
+  }
 
   // Update campaign
   const campaign = await prisma.campaign.update({

@@ -15,16 +15,29 @@ type CampaignStatusKey = keyof typeof variants;
 
 export function CampaignStatusBadge({
   status,
+  scheduleType,
+  scheduleAt,
   label,
   className,
 }: {
   status: string | null | undefined;
+  scheduleType?: string | null;
+  scheduleAt?: string | null;
   label?: string;
   className?: string;
 }) {
   if (!status) return null;
-  const key = (status as CampaignStatusKey) in variants ? (status as CampaignStatusKey) : 'draft';
-  const display = label || status.charAt(0).toUpperCase() + status.slice(1);
+  // Backward compat: some legacy scheduled flows stored scheduleAt but kept status as "draft".
+  const normalizedStatus =
+    status === 'draft' && scheduleAt && scheduleType === 'scheduled' ? 'scheduled' : status;
+
+  const key =
+    (normalizedStatus as CampaignStatusKey) in variants
+      ? (normalizedStatus as CampaignStatusKey)
+      : 'draft';
+  const display =
+    label ||
+    normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1);
 
   return (
     <span className={cn('px-2 py-1 rounded-full text-xs font-medium', variants[key], className)}>

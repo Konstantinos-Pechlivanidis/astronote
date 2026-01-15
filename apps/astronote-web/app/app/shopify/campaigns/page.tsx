@@ -213,7 +213,13 @@ export default function CampaignsPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (campaign: Campaign) => <CampaignStatusBadge status={campaign.status} />,
+      render: (campaign: Campaign) => (
+        <CampaignStatusBadge
+          status={campaign.status}
+          scheduleType={campaign.scheduleType}
+          scheduleAt={campaign.scheduleAt}
+        />
+      ),
     },
     {
       key: 'recipients',
@@ -305,7 +311,11 @@ export default function CampaignsPage() {
         <div className="space-y-3">
           <div className="flex items-start justify-between">
             <h3 className="text-base font-semibold text-text-primary">{campaign.name}</h3>
-            <CampaignStatusBadge status={campaign.status} />
+            <CampaignStatusBadge
+              status={campaign.status}
+              scheduleType={campaign.scheduleType}
+              scheduleAt={campaign.scheduleAt}
+            />
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
             <span className="text-text-secondary">

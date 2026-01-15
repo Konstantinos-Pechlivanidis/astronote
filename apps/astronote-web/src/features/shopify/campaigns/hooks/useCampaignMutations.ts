@@ -149,7 +149,12 @@ export function useScheduleCampaign() {
         queryClient.invalidateQueries({
           queryKey: shopifyQueryKeys.campaigns.detail(String(data.id)),
         });
+        queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.metrics(String(data.id)) });
+        queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.status(String(data.id)) });
+        queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.progress(String(data.id)) });
       }
+      // Campaign stats counters depend on status transitions.
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.stats() });
 
       toast.success('Campaign scheduled successfully');
     },
