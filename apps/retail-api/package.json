@@ -15,6 +15,7 @@
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
     "prisma:check": "prisma validate && prisma migrate status",
+    "verify:contracts": "cd apps/api && npm run verify:contracts",
     "seed:templates": "cd apps/api && node scripts/seed-templates-final-idempotent.js",
     "start": "cd apps/api && node src/server.js",
     "start:all": "cd apps/api && node src/server.js",

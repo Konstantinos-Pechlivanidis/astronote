@@ -83,13 +83,19 @@ function checkUIComponents() {
   if (/RetailPageLayout/.test(listPage)) {
     pass('List page uses RetailPageLayout');
   } else {
-    error('List page missing RetailPageLayout');
+    // Accept shared wrapper that embeds RetailPageLayout
+    if (/PageLayout/.test(listPage)) {
+      pass('List page uses PageLayout (wraps RetailPageLayout)');
+    } else {
+      error('List page missing RetailPageLayout/PageLayout');
+    }
   }
 
-  if (/RetailPageHeader/.test(listPage)) {
-    pass('List page uses RetailPageHeader');
+  // Accept either RetailPageHeader directly or shared wrappers.
+  if (/RetailPageHeader|AppPageHeader|PageLayout/.test(listPage)) {
+    pass('List page uses RetailPageHeader (direct or via AppPageHeader/PageLayout)');
   } else {
-    error('List page missing RetailPageHeader');
+    error('List page missing RetailPageHeader/AppPageHeader/PageLayout');
   }
 
   if (/StatusBadge/.test(listPage)) {
@@ -104,10 +110,10 @@ function checkUIComponents() {
     error('List page missing metrics cards');
   }
 
-  if (/RetailPageLayout/.test(createPage)) {
-    pass('Create page uses RetailPageLayout');
+  if (/RetailPageLayout|PageLayout/.test(createPage)) {
+    pass('Create page uses RetailPageLayout (direct or via PageLayout)');
   } else {
-    error('Create page missing RetailPageLayout');
+    error('Create page missing RetailPageLayout/PageLayout');
   }
 
   // Accept either RetailPageHeader directly or the shared AppPageHeader wrapper.

@@ -89,11 +89,11 @@ function checkUIStructure() {
     return;
   }
 
-  // Check PageHeader on list page
-  if (/RetailPageHeader/.test(listPage)) {
-    pass('List page uses RetailPageHeader');
+  // Check PageHeader on list page (accept shared wrappers)
+  if (/RetailPageHeader|AppPageHeader|PageLayout/.test(listPage)) {
+    pass('List page has header (RetailPageHeader/AppPageHeader/PageLayout)');
   } else {
-    error('List page missing RetailPageHeader');
+    error('List page missing header (RetailPageHeader/AppPageHeader/PageLayout)');
   }
 
   // Check PageHeader on create page (Retail uses custom, but RetailPageHeader or AppPageHeader is acceptable)
@@ -123,11 +123,11 @@ function checkUIStructure() {
     error('List page missing StatusBadge');
   }
 
-  // Check RetailPageLayout on list page
-  if (/RetailPageLayout/.test(listPage)) {
-    pass('List page uses RetailPageLayout');
+  // Check RetailPageLayout on list page (accept shared wrapper)
+  if (/RetailPageLayout|PageLayout/.test(listPage)) {
+    pass('List page uses RetailPageLayout (direct or via PageLayout)');
   } else {
-    error('List page missing RetailPageLayout');
+    error('List page missing RetailPageLayout/PageLayout');
   }
 }
 

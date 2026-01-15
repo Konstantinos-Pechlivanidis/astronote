@@ -20,7 +20,7 @@ import {
 } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
 import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
-import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { CampaignStatusBadge } from '@/src/components/shopify/CampaignStatusBadge';
 import { Button } from '@/components/ui/button';
@@ -154,7 +154,7 @@ export default function CampaignDetailPage() {
   if (campaignLoading) {
     return (
       <div>
-        <RetailPageHeader title="Campaign Details" />
+        <AppPageHeader title="Campaign Details" />
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {[1, 2, 3, 4].map((i) => (
             <RetailCard key={i} className="p-6">
@@ -173,7 +173,7 @@ export default function CampaignDetailPage() {
   if (campaignError || !campaign) {
     return (
       <div>
-        <RetailPageHeader title="Campaign Details" />
+        <AppPageHeader title="Campaign Details" />
         <RetailCard variant="danger" className="p-6">
           <div className="text-center py-8">
             <AlertCircle className="mx-auto h-12 w-12 text-red-400 mb-4" />
@@ -210,7 +210,7 @@ export default function CampaignDetailPage() {
             </Button>
           </Link>
           <div className="flex-1">
-            <RetailPageHeader
+            <AppPageHeader
               title={campaign.name}
               description="Campaign details and metrics"
             />

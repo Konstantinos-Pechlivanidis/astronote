@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { contactsApi } from '@/src/lib/shopify/api/contacts';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for getting a single contact
  */
 export function useContact(id: string | undefined) {
   return useQuery({
-    queryKey: ['shopify', 'contacts', 'detail', id],
+    queryKey: shopifyQueryKeys.contacts.detail(id || ''),
     queryFn: () => contactsApi.get(id!),
     enabled: !!id,
     staleTime: 5 * 60 * 1000, // 5 minutes

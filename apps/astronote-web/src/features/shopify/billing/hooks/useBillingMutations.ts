@@ -8,6 +8,7 @@ import {
   type CreatePurchaseRequest,
   type CreateTopupRequest,
 } from '@/src/lib/shopifyBillingApi';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for creating a purchase (credit packs)
@@ -53,9 +54,11 @@ export function useCreateTopup() {
       return response;
     },
     onSuccess: (data) => {
-      // Invalidate balance
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'balance'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'history'] });
+      // Invalidate billing surfaces that reflect credits / money
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.balance() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.invoicesRoot() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.historyRoot() });
 
       // Redirect to Stripe checkout
       const checkoutUrl = data.checkoutUrl || data.sessionUrl;
@@ -87,8 +90,8 @@ export function useSyncBillingProfileFromStripe() {
     },
     onSuccess: () => {
       // Invalidate billing profile and summary
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'profile'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.profile() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
       toast.success('Billing profile synced from Stripe');
     },
     onError: (error: any) => {

@@ -9,6 +9,7 @@ import {
   type CampaignPreview,
   type FailedRecipientsResponse,
 } from '@/src/lib/shopify/api/campaigns';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for campaign metrics
@@ -18,7 +19,7 @@ export function useCampaignMetrics(id: string | undefined) {
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
   return useQuery<CampaignMetrics>({
-    queryKey: ['shopify', 'campaigns', id, 'metrics'],
+    queryKey: shopifyQueryKeys.campaigns.metrics(id || ''),
     queryFn: async () => {
       if (!id) throw new Error('Campaign ID is required');
       const response = await campaignsApi.getMetrics(id);
@@ -43,7 +44,7 @@ export function useCampaignStatus(
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
   return useQuery<CampaignStatusResponse>({
-    queryKey: ['shopify', 'campaigns', id, 'status'],
+    queryKey: shopifyQueryKeys.campaigns.status(id || ''),
     queryFn: async () => {
       if (!id) throw new Error('Campaign ID is required');
       const response = await campaignsApi.getStatus(id);
@@ -68,7 +69,7 @@ export function useCampaignProgress(id: string | undefined) {
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
   return useQuery<CampaignProgress>({
-    queryKey: ['shopify', 'campaigns', id, 'progress'],
+    queryKey: shopifyQueryKeys.campaigns.progress(id || ''),
     queryFn: async () => {
       if (!id) throw new Error('Campaign ID is required');
       const response = await campaignsApi.getProgress(id);
@@ -93,7 +94,7 @@ export function useCampaignPreview(id: string | undefined, enabled = false) {
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
   return useQuery<CampaignPreview>({
-    queryKey: ['shopify', 'campaigns', id, 'preview'],
+    queryKey: shopifyQueryKeys.campaigns.preview(id || ''),
     queryFn: async () => {
       if (!id) throw new Error('Campaign ID is required');
       const response = await campaignsApi.getPreview(id);
@@ -115,7 +116,7 @@ export function useCampaignFailedRecipients(id: string | undefined, enabled = fa
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
   return useQuery<FailedRecipientsResponse>({
-    queryKey: ['shopify', 'campaigns', id, 'failed-recipients'],
+    queryKey: shopifyQueryKeys.campaigns.failedRecipients(id || ''),
     queryFn: async () => {
       if (!id) throw new Error('Campaign ID is required');
       const response = await campaignsApi.getFailedRecipients(id);

@@ -6,6 +6,7 @@ import {
   type CampaignListParams,
   type CampaignListResponse,
 } from '@/src/lib/shopify/api/campaigns';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for listing campaigns
@@ -15,7 +16,7 @@ export function useCampaigns(params?: CampaignListParams) {
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
   return useQuery<CampaignListResponse>({
-    queryKey: ['shopify', 'campaigns', 'list', params],
+    queryKey: shopifyQueryKeys.campaigns.list(params || {}),
     queryFn: async () => {
       const response = await campaignsApi.list(params);
       return response;

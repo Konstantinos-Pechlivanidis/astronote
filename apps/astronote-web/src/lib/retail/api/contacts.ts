@@ -1,5 +1,6 @@
 import api from './axios';
 import { endpoints } from './endpoints';
+import { ContactsListSchema, validateRetailResponse } from './schemas';
 
 export interface Contact {
   id: number
@@ -38,7 +39,19 @@ export const contactsApi = {
     if (params?.isSubscribed !== undefined && params.isSubscribed !== null) {
       queryParams.isSubscribed = params.isSubscribed ? 'true' : 'false';
     }
-    return api.get<ContactsListResponse>(endpoints.contacts.list, { params: queryParams });
+    const baseTransform = api.defaults.transformResponse;
+    const baseTransformArray = Array.isArray(baseTransform)
+      ? baseTransform
+      : baseTransform
+        ? [baseTransform]
+        : [];
+    return api.get<ContactsListResponse>(endpoints.contacts.list, {
+      params: queryParams,
+      transformResponse: [
+        ...baseTransformArray,
+        (data) => validateRetailResponse(ContactsListSchema, data, 'contacts.list'),
+      ],
+    });
   },
   get: (id: number) => api.get<Contact>(endpoints.contacts.detail(id)),
   create: (data: Partial<Contact>) => api.post<Contact>(endpoints.contacts.create, data),

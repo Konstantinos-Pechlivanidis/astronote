@@ -8,6 +8,7 @@ import {
   type UpdateCampaignRequest,
   type ScheduleCampaignRequest,
 } from '@/src/lib/shopify/api/campaigns';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for creating a campaign
@@ -21,9 +22,8 @@ export function useCreateCampaign() {
       return response;
     },
     onSuccess: () => {
-      // Invalidate campaigns list
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'stats'] });
+      // Invalidate campaigns list + stats (dashboard KPIs may depend on these)
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.root() });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'dashboard'] });
 
       toast.success('Campaign created successfully');
@@ -49,10 +49,12 @@ export function useUpdateCampaign() {
       return response;
     },
     onSuccess: (data) => {
-      // Invalidate campaigns list and detail
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'detail', data.id] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.root() });
+      if (data?.id) {
+        queryClient.invalidateQueries({
+          queryKey: shopifyQueryKeys.campaigns.detail(String(data.id)),
+        });
+      }
 
       toast.success('Campaign updated successfully');
     },
@@ -74,9 +76,7 @@ export function useDeleteCampaign() {
       await campaignsApi.delete(id);
     },
     onSuccess: () => {
-      // Invalidate campaigns list and stats
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.root() });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'dashboard'] });
 
       toast.success('Campaign deleted successfully');
@@ -99,12 +99,11 @@ export function useEnqueueCampaign() {
       await campaignsApi.enqueue(id);
     },
     onSuccess: (_, id) => {
-      // Invalidate all campaign-related queries
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'detail', id] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.root() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.detail(id) });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.metrics(id) });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.status(id) });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.progress(id) });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'dashboard'] });
 
       toast.success('Campaign queued for sending');
@@ -142,10 +141,12 @@ export function useScheduleCampaign() {
       return response;
     },
     onSuccess: (data) => {
-      // Invalidate campaigns list and detail
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'detail', data.id] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.root() });
+      if (data?.id) {
+        queryClient.invalidateQueries({
+          queryKey: shopifyQueryKeys.campaigns.detail(String(data.id)),
+        });
+      }
 
       toast.success('Campaign scheduled successfully');
     },
@@ -168,12 +169,10 @@ export function useCancelCampaign() {
       return response;
     },
     onSuccess: (data, id) => {
-      // Invalidate all campaign-related queries
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'detail', id] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'progress'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.root() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.detail(id) });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.status(id) });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.progress(id) });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'dashboard'] });
 
       toast.success('Campaign cancelled successfully');
@@ -202,13 +201,14 @@ export function useRetryFailedCampaign() {
       await campaignsApi.retryFailedRecipients(id);
     },
     onSuccess: (_, id) => {
-      // Invalidate all campaign-related queries
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', 'detail', id] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'progress'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'campaigns', id, 'failed-recipients'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.root() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.detail(id) });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.metrics(id) });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.status(id) });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.progress(id) });
+      queryClient.invalidateQueries({
+        queryKey: shopifyQueryKeys.campaigns.failedRecipients(id),
+      });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'dashboard'] });
 
       toast.success('Failed recipients queued for retry');

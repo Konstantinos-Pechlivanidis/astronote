@@ -5,6 +5,7 @@ import {
   campaignsApi,
   type CampaignStatsSummary,
 } from '@/src/lib/shopify/api/campaigns';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for campaign stats summary
@@ -14,7 +15,7 @@ export function useCampaignStats() {
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
   return useQuery<CampaignStatsSummary>({
-    queryKey: ['shopify', 'campaigns', 'stats', 'summary'],
+    queryKey: shopifyQueryKeys.campaigns.stats(),
     queryFn: async () => {
       const response = await campaignsApi.getStatsSummary();
       return response;

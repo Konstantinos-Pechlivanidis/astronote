@@ -10,6 +10,9 @@
     "lint": "eslint . --ext .js",
     "test": "node --test tests/**/*.test.js",
     "build": "node -c src/server.js",
+    "verify:contracts": "node scripts/verify-contracts.js",
+    "verify:parity": "node scripts/prisma-db-parity.js",
+    "smoke:mutations": "node scripts/smoke-retail-mutations.js",
     "worker:sms": "cross-env NODE_PATH=./node_modules node ../worker/src/sms.worker.js",
     "worker:scheduler": "cross-env NODE_PATH=./node_modules node ../worker/src/scheduler.worker.js",
     "worker:contactImport": "cross-env NODE_PATH=./node_modules node ../worker/src/contactImport.worker.js"

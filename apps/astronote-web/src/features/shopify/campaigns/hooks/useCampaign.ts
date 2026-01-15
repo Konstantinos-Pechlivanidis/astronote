@@ -5,6 +5,7 @@ import {
   campaignsApi,
   type Campaign,
 } from '@/src/lib/shopify/api/campaigns';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for getting a single campaign
@@ -14,7 +15,7 @@ export function useCampaign(id: string | undefined) {
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
   return useQuery<Campaign>({
-    queryKey: ['shopify', 'campaigns', 'detail', id],
+    queryKey: shopifyQueryKeys.campaigns.detail(id || ''),
     queryFn: async () => {
       if (!id) throw new Error('Campaign ID is required');
       const response = await campaignsApi.get(id);

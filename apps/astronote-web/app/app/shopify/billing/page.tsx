@@ -4,14 +4,11 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useBillingBalance } from '@/src/features/shopify/billing/hooks/useBillingBalance';
-import { useBillingPackages } from '@/src/features/shopify/billing/hooks/useBillingPackages';
-import { useBillingHistory } from '@/src/features/shopify/billing/hooks/useBillingHistory';
 import { useBillingSummary } from '@/src/features/shopify/billing/hooks/useBillingSummary';
 import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
 import { useBillingProfile } from '@/src/features/shopify/billing/hooks/useBillingProfile';
 import { useBillingInvoices } from '@/src/features/shopify/billing/hooks/useBillingInvoices';
 import {
-  useCreatePurchase,
   useCreateTopup,
   useSyncBillingProfileFromStripe,
 } from '@/src/features/shopify/billing/hooks/useBillingMutations';
@@ -27,13 +24,12 @@ import {
   useChangeScheduledSubscription,
 } from '@/src/features/shopify/billing/hooks/useSubscriptionMutations';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
-import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState } from '@/src/components/retail/EmptyState';
 import {
   CreditCard,
@@ -63,9 +59,7 @@ import {
 function BillingPageContent() {
   const searchParams = useSearchParams();
   const [selectedCurrency, setSelectedCurrency] = useState<string>('EUR');
-  const [currencyTouched, setCurrencyTouched] = useState(false);
   const [topupCredits, setTopupCredits] = useState<string>('');
-  const [page, setPage] = useState(1);
   const [invoicePage, setInvoicePage] = useState(1);
   const pageSize = 20;
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -78,13 +72,10 @@ function BillingPageContent() {
   const { data: balanceData } = useBillingBalance();
   const { data: billingSummary, isLoading: summaryLoading } = useBillingSummary();
   const { data: subscriptionData, isLoading: subscriptionLoading } = useSubscriptionStatus();
-  const { data: packagesData, isLoading: packagesLoading } = useBillingPackages(selectedCurrency);
-  const { data: historyData, isLoading: historyLoading } = useBillingHistory({ page, pageSize });
   const { data: billingProfile } = useBillingProfile();
   const { data: invoicesData, isLoading: invoicesLoading } = useBillingInvoices({ page: invoicePage, pageSize });
 
   // Mutations
-  const createPurchase = useCreatePurchase();
   const createTopup = useCreateTopup();
   const subscribe = useSubscribe();
   const cancelSubscription = useCancelSubscription();
@@ -160,10 +151,6 @@ function BillingPageContent() {
   const cancelAtPeriodEnd = (subscription as any).cancelAtPeriodEnd || false;
   const lastBillingError = (subscription as any).lastBillingError || null;
   const allowance = summary?.allowance || null;
-  const packages = packagesData?.packages || [];
-  const subscriptionRequired = packagesData?.subscriptionRequired === false ? false : packages.length === 0 && isSubscriptionActive === false;
-  const history = historyData?.transactions || [];
-  const historyPagination = historyData?.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false };
   const invoices = invoicesData?.invoices || [];
   const invoicesPagination = invoicesData?.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false };
   const topupPrice = topupPriceData;
@@ -176,11 +163,10 @@ function BillingPageContent() {
     : null;
 
   useEffect(() => {
-    if (currencyTouched) return;
     if (billingCurrency && billingCurrency !== selectedCurrency) {
       setSelectedCurrency(billingCurrency);
     }
-  }, [billingCurrency, currencyTouched, selectedCurrency]);
+  }, [billingCurrency, selectedCurrency]);
 
   const formatDateSafe = (value: string | null) => {
     if (!value) return null;
@@ -216,24 +202,6 @@ function BillingPageContent() {
   const getFrontendUrl = (path: string) => {
     if (typeof window === 'undefined') return '';
     return `${window.location.origin}${path}`;
-  };
-
-  const handlePurchase = async (packageId: string) => {
-    try {
-      const successUrl = getFrontendUrl(
-        '/app/shopify/billing/success?session_id={CHECKOUT_SESSION_ID}&type=credit_pack',
-      );
-      const cancelUrl = getFrontendUrl('/app/shopify/billing/cancel');
-
-      await createPurchase.mutateAsync({
-        packageId,
-        successUrl,
-        cancelUrl,
-        currency: selectedCurrency,
-      });
-    } catch (error) {
-      // Error handled by mutation hook
-    }
   };
 
   const handleTopup = async () => {
@@ -415,7 +383,7 @@ function BillingPageContent() {
     <RetailPageLayout>
       <div className="space-y-6">
         {/* Header */}
-        <RetailPageHeader
+        <AppPageHeader
           title="Billing"
           description="Manage your SMS credits and subscription"
         />
@@ -944,233 +912,8 @@ function BillingPageContent() {
           </div>
         </RetailCard>
 
-        {/* Credit Packs (Only if subscription active) */}
-        {isSubscriptionActive && (
-          <RetailCard className="p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-text-primary mb-1">Credit Packs</h2>
-                <p className="text-sm text-text-secondary">Purchase credit packs at discounted rates</p>
-              </div>
-              <Select
-                value={selectedCurrency}
-                onValueChange={(value) => {
-                  setSelectedCurrency(value);
-                  setCurrencyTouched(true);
-                }}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Currency" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="EUR">EUR (€)</SelectItem>
-                  <SelectItem value="USD">USD ($)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {packagesLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="h-8 w-8 animate-spin text-text-tertiary" />
-              </div>
-            ) : packages.length === 0 ? (
-              <EmptyState
-                icon={CreditCard}
-                title="No packages available"
-                description={
-                  subscriptionRequired
-                    ? 'Credit packs require an active subscription. Please subscribe first.'
-                    : 'Credit packages are currently unavailable. Please try again later.'
-                }
-              />
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {packages.map((pkg) => (
-                  <RetailCard key={pkg.id} className="p-6 relative flex flex-col">
-                    <div className="mb-5 flex-grow space-y-4">
-                      <div>
-                        <h3 className="text-lg font-bold mb-2 text-text-primary">{pkg.name}</h3>
-                        {pkg.description && (
-                          <p className="text-xs text-text-secondary mb-3">{pkg.description}</p>
-                        )}
-                      </div>
-                      <div className="flex items-baseline gap-2 mb-3">
-                        <span className="text-2xl font-bold text-text-primary">
-                          {pkg.price?.toFixed(2)} {pkg.currency || currency}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="h-5 w-5 text-accent" />
-                        <p className="text-base font-semibold text-text-primary">
-                          {pkg.credits?.toLocaleString() || 0} SMS credits
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => handlePurchase(pkg.id)}
-                      disabled={createPurchase.isPending}
-                      className="w-full mt-auto"
-                    >
-                      {createPurchase.isPending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <CreditCard className="mr-2 h-4 w-4" />
-                          Purchase
-                        </>
-                      )}
-                    </Button>
-                  </RetailCard>
-                ))}
-              </div>
-            )}
-          </RetailCard>
-        )}
-
-        {/* Transaction History */}
-        <RetailCard className="p-6">
-          <h2 className="text-2xl font-bold text-text-primary mb-6">Purchase History</h2>
-
-          {historyLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-text-tertiary" />
-            </div>
-          ) : history.length === 0 ? (
-            <EmptyState
-              icon={History}
-              title="No purchase history"
-              description="Your purchase history will appear here after subscription payments, credit pack purchases, or included credits are granted."
-            />
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-border">
-                  <thead className="bg-surface-light">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
-                        Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
-                        Credits
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
-                        Amount
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-text-secondary">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {history.map((transaction) => (
-                      <tr key={transaction.id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                          {format(new Date(transaction.createdAt), 'MMM d, yyyy HH:mm')}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                          <div className="flex flex-col">
-                            <span className="font-medium capitalize">
-                              {(transaction as any).title || transaction.type?.replace(/_/g, ' ') || 'Purchase'}
-                            </span>
-                            {(transaction as any).subtitle && (
-                              <span className="text-xs text-text-secondary mt-0.5">
-                                {(transaction as any).subtitle}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                          {(() => {
-                            const creditsAmount = (transaction as any).creditsGranted || (transaction as any).creditsAdded || transaction.credits;
-                            return creditsAmount ? (
-                              <span className="font-medium">
-                                +{Number(creditsAmount).toLocaleString()}
-                              </span>
-                            ) : (
-                              '—'
-                            );
-                          })()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                          {transaction.amount && transaction.amount > 0 ? (
-                            <>
-                              {transaction.amount.toFixed(2)} {transaction.currency || currency}
-                            </>
-                          ) : (
-                            <span className="text-text-secondary italic">Free</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <StatusBadge
-                              status={
-                                transaction.status === 'completed'
-                                  ? 'success'
-                                  : transaction.status === 'pending'
-                                    ? 'warning'
-                                    : 'danger'
-                              }
-                              label={transaction.status || 'unknown'}
-                            />
-                            {(transaction as any).linkUrl && (
-                              <a
-                                href={(transaction as any).linkUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-accent hover:underline text-xs"
-                              >
-                                View
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              {historyPagination.totalPages > 1 && (
-                <div className="mt-6 flex items-center justify-between">
-                  <div className="text-sm text-text-secondary">
-                    Showing {((historyPagination.page - 1) * historyPagination.pageSize) + 1} to{' '}
-                    {Math.min(historyPagination.page * historyPagination.pageSize, historyPagination.total)} of{' '}
-                    {historyPagination.total} transactions
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      disabled={!historyPagination.hasPrevPage || historyLoading}
-                    >
-                      Previous
-                    </Button>
-                    <div className="text-sm text-text-secondary">
-                      Page {historyPagination.page} of {historyPagination.totalPages}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => Math.min(historyPagination.totalPages, p + 1))}
-                      disabled={!historyPagination.hasNextPage || historyLoading}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </RetailCard>
+        {/* Invoices-first optimization: credit packs removed from default UI (top-up covers purchases). */}
+        {/* Invoices-first optimization: purchase history removed from default UI (Invoices section is the main history surface). */}
 
         {/* Billing Help & Guidance */}
         <RetailCard className="p-6">
@@ -1448,7 +1191,7 @@ export default function BillingPage() {
       fallback={
         <RetailPageLayout>
           <div className="space-y-6">
-            <RetailPageHeader
+            <AppPageHeader
               title="Billing"
               description="Manage your SMS credits and subscription"
             />

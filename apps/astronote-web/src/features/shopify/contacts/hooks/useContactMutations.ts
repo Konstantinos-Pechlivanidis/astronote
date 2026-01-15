@@ -6,6 +6,7 @@ import {
   type UpdateContactRequest,
   type ImportContactsRequest,
 } from '@/src/lib/shopify/api/contacts';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query mutation hooks for contacts
@@ -17,9 +18,8 @@ export function useCreateContact() {
   return useMutation({
     mutationFn: (data: CreateContactRequest) => contactsApi.create(data),
     onSuccess: () => {
-      // Invalidate contacts list and stats
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'stats'] });
+      // Invalidate contacts surfaces
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.contacts.root() });
       toast.success('Contact created successfully');
     },
     onError: (error: any) => {
@@ -36,10 +36,13 @@ export function useUpdateContact() {
     mutationFn: ({ id, data }: { id: string; data: UpdateContactRequest }) =>
       contactsApi.update(id, data),
     onSuccess: (data) => {
-      // Invalidate contacts list, detail, and stats
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'detail', data.id] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'stats'] });
+      // Invalidate contacts list/stats and refresh the specific detail view
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.contacts.root() });
+      if (data?.id) {
+        queryClient.invalidateQueries({
+          queryKey: shopifyQueryKeys.contacts.detail(String(data.id)),
+        });
+      }
       toast.success('Contact updated successfully');
     },
     onError: (error: any) => {
@@ -55,9 +58,7 @@ export function useDeleteContact() {
   return useMutation({
     mutationFn: (id: string) => contactsApi.delete(id),
     onSuccess: () => {
-      // Invalidate contacts list and stats
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.contacts.root() });
       toast.success('Contact deleted successfully');
     },
     onError: (error: any) => {
@@ -73,9 +74,7 @@ export function useImportContacts() {
   return useMutation({
     mutationFn: (data: ImportContactsRequest) => contactsApi.import(data),
     onSuccess: (result) => {
-      // Invalidate contacts list and stats
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'contacts', 'stats'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.contacts.root() });
 
       const message = `Successfully imported ${result.created} contacts, updated ${result.updated}, skipped ${result.skipped}`;
       toast.success(message);

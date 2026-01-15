@@ -152,12 +152,18 @@ function checkPageHeaders() {
     
     const content = readFileSync(fullPath, 'utf-8');
     
-    if (!content.includes('RetailPageHeader')) {
-      warn(`${pagePath} does not use RetailPageHeader`);
+    // Accept direct Retail primitives OR shared wrappers.
+    // - `AppPageHeader` wraps `RetailPageHeader`
+    // - `PageLayout` wraps `RetailPageLayout` + `AppPageHeader`
+    const hasHeader = /RetailPageHeader|AppPageHeader|PageLayout/.test(content);
+    const hasLayout = /RetailPageLayout|PageLayout/.test(content);
+
+    if (!hasHeader) {
+      warn(`${pagePath} does not use RetailPageHeader/AppPageHeader/PageLayout`);
     }
-    
-    if (!content.includes('RetailPageLayout')) {
-      error(`${pagePath} does not use RetailPageLayout`);
+
+    if (!hasLayout) {
+      error(`${pagePath} does not use RetailPageLayout/PageLayout`);
     }
   });
   

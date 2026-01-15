@@ -6,7 +6,7 @@ import { useContacts } from '@/src/features/shopify/contacts/hooks/useContacts';
 import { useContactStats } from '@/src/features/shopify/contacts/hooks/useContactStats';
 import { useDeleteContact } from '@/src/features/shopify/contacts/hooks/useContactMutations';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
-import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailDataTable } from '@/src/components/retail/RetailDataTable';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
@@ -282,7 +282,7 @@ export default function ContactsPage() {
   return (
     <RetailPageLayout>
       <div className="space-y-6">
-        <RetailPageHeader
+        <AppPageHeader
           title="Contacts"
           description="Manage your customer contacts"
           actions={

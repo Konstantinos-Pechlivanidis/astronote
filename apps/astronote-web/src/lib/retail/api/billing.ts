@@ -1,5 +1,6 @@
 import api from './axios';
 import { endpoints } from './endpoints';
+import { BillingSummarySchema, validateRetailResponse } from './schemas';
 
 export interface SubscriptionSummary {
   id?: number
@@ -180,6 +181,7 @@ export const billingApi = {
    */
   getSummary: async () => {
     const res = await api.get<BillingSummaryResponse>(endpoints.billing.summary);
+    res.data = validateRetailResponse(BillingSummarySchema, res.data, 'billing.summary') as any;
     return {
       ...res,
       data: normalizeSummaryResponse(res.data),

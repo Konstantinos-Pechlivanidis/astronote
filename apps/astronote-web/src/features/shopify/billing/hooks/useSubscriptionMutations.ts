@@ -9,6 +9,7 @@ import {
   type UpdateSubscriptionRequest,
   type SwitchIntervalRequest,
 } from '@/src/lib/shopifyBillingApi';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for subscribing to a plan
@@ -69,11 +70,11 @@ export function useUpdateSubscription() {
       }
 
       // Invalidate subscription status and billing summary
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'billing-history'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.balance() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.invoicesRoot() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.historyRoot() });
       toast.success('Subscription updated successfully');
     },
     onError: (error: any) => {
@@ -96,9 +97,8 @@ export function useCancelSubscription() {
     },
     onSuccess: () => {
       // Invalidate queries to refresh UI with updated status
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
       toast.success('Subscription will cancel at the end of the current billing period. You will retain access until then.');
     },
     onError: (error: any) => {
@@ -158,11 +158,10 @@ export function useSwitchInterval() {
       }
 
       // Invalidate subscription status and billing summary to refresh UI
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'billing-history'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.invoicesRoot() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.historyRoot() });
 
       // Show appropriate message based on whether change is immediate or scheduled
       if (data.scheduled && data.effectiveAt) {
@@ -193,13 +192,11 @@ export function useReconcileSubscription() {
     },
     onSuccess: () => {
       // Invalidate all subscription-related queries to refresh UI
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'balance'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'history'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'billing-history'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.balance() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.invoicesRoot() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.historyRoot() });
       toast.success('Subscription status refreshed from Stripe');
     },
     onError: (error: any) => {
@@ -222,9 +219,8 @@ export function useChangeScheduledSubscription() {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
       toast.success('Scheduled change updated');
     },
     onError: (error: any) => {
@@ -247,9 +243,8 @@ export function useCancelScheduledSubscription() {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
       toast.success('Scheduled change cancelled');
     },
     onError: (error: any) => {
@@ -273,9 +268,8 @@ export function useResumeSubscription() {
     },
     onSuccess: () => {
       // Invalidate queries to refresh UI with updated status
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'packages'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
       toast.success('Subscription resumed successfully');
     },
     onError: (error: any) => {
@@ -299,9 +293,11 @@ export function useFinalizeSubscription() {
     },
     onSuccess: () => {
       // Invalidate subscription status and billing summary
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'subscriptions', 'status'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'summary'] });
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'billing', 'balance'] });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.balance() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.invoicesRoot() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.historyRoot() });
     },
     onError: (error: any) => {
       const apiError = error as BillingApiError;

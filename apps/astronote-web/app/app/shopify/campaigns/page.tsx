@@ -8,10 +8,11 @@ import { useCampaignStats } from '@/src/features/shopify/campaigns/hooks/useCamp
 import { useDeleteCampaign, useEnqueueCampaign } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
 import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
-import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
+import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailDataTable } from '@/src/components/retail/RetailDataTable';
 import { CampaignStatusBadge } from '@/src/components/shopify/CampaignStatusBadge';
+import { RetailLoadingSkeleton } from '@/src/components/retail/RetailLoadingSkeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -27,15 +28,7 @@ const UI_ALL = '__all__';
  * Campaign Skeleton Component
  */
 function CampaignSkeleton() {
-  return (
-    <RetailCard>
-      <div className="space-y-4">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-16 animate-pulse rounded bg-surface-light"></div>
-        ))}
-      </div>
-    </RetailCard>
-  );
+  return <RetailLoadingSkeleton asTable tableColumns={6} rows={6} />;
 }
 
 /**
@@ -335,7 +328,7 @@ export default function CampaignsPage() {
   return (
     <RetailPageLayout>
       <div className="space-y-6">
-        <RetailPageHeader
+        <AppPageHeader
           title="Campaigns"
           description="Create and manage your SMS campaigns"
           actions={

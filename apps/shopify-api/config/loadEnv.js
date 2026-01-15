@@ -23,7 +23,8 @@ function loadEnv() {
   dotenv.config({ path: resolve(monorepoRoot, '.env') });
 
   // 2. App .env (app-specific)
-  dotenv.config({ path: resolve(appRoot, '.env') });
+  // IMPORTANT: Override root values so the app-specific env wins (prevents accidental cross-app DB usage)
+  dotenv.config({ path: resolve(appRoot, '.env'), override: true });
 
   // 3. App .env.local (local overrides, gitignored)
   dotenv.config({
