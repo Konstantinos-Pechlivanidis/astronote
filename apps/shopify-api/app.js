@@ -58,6 +58,46 @@ const app = express();
 // Trust proxy for accurate IP addresses
 app.set('trust proxy', 1);
 
+function parseAllowlist() {
+  // Support both CORS_ALLOWLIST (canonical) and ALLOWED_ORIGINS (fallback)
+  const raw =
+    process.env.CORS_ALLOWLIST ||
+    process.env.ALLOWED_ORIGINS ||
+    '';
+
+  const fromEnv = raw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  // Always include FRONTEND_URL (if set) to avoid config drift.
+  const frontendUrl =
+    process.env.FRONTEND_URL ||
+    process.env.FRONTEND_BASE_URL ||
+    process.env.WEB_APP_URL;
+
+  const normalizedFrontendOrigin = (() => {
+    if (!frontendUrl) return null;
+    try {
+      const u = new URL(frontendUrl);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return null;
+    }
+  })();
+
+  const base = [
+    'https://admin.shopify.com',
+    'https://astronote-shopify-frontend.onrender.com',
+    'https://astronote.onrender.com',
+    ...fromEnv,
+    ...(normalizedFrontendOrigin ? [normalizedFrontendOrigin] : []),
+  ];
+
+  // Deduplicate
+  return Array.from(new Set(base));
+}
+
 // Security middleware
 app.use(
   helmet({
@@ -81,6 +121,67 @@ app.use(requestId);
 app.use(performanceMonitor);
 app.use(securityMonitor);
 app.use(metricsMiddleware);
+
+// ------------------------------------------------------------
+// CORS (must be before auth + before strict request validators)
+// ------------------------------------------------------------
+const corsAllowlist = parseAllowlist();
+const corsCredentials =
+  process.env.CORS_CREDENTIALS === 'true' ||
+  process.env.CORS_WITH_CREDENTIALS === 'true';
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+
+    // Allow all myshopify.com subdomains (for storefront theme extensions)
+    const isShopifyStorefront = origin.match(/^https:\/\/[a-zA-Z0-9-]+\.myshopify\.com$/);
+
+    // Allow Shopify admin domains (for embedded apps)
+    const isShopifyAdmin = origin === 'https://admin.shopify.com';
+
+    if (corsAllowlist.includes(origin) || isShopifyStorefront || isShopifyAdmin) {
+      return callback(null, true);
+    }
+
+    logger.warn(`CORS blocked origin: ${origin}`);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  // Auth strategy uses Bearer token by default. Only enable credentials if explicitly configured.
+  credentials: corsCredentials,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Idempotency-Key',
+    'X-API-Key',
+    'X-Request-ID',
+    'API-Version',
+    'X-Shopify-Shop-Domain',
+    'X-Shopify-Shop',
+    'X-Shopify-Shop-Name',
+    'X-Store-ID',
+    'X-Client-Version',
+    'X-Client-Platform',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+  ],
+  exposedHeaders: [
+    'X-Request-ID',
+    'X-Rate-Limit-Remaining',
+    'X-Rate-Limit-Reset',
+  ],
+  maxAge: 86400, // 24 hours for preflight cache
+  optionsSuccessStatus: 204,
+};
+
+// Explicitly handle preflight for all routes before any auth/store middleware.
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
+
+// Now apply request sanitization/validation (will not run for preflight)
 app.use(sanitizeRequest);
 app.use(validateContentType);
 app.use(validateRequestSize(5 * 1024 * 1024)); // 5MB limit
@@ -89,70 +190,6 @@ app.use(validateRequestSize(5 * 1024 * 1024)); // 5MB limit
 app.use(apiVersioning);
 app.use(backwardCompatibility);
 app.use(versionedResponse);
-
-// CORS configuration
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, Postman, etc.)
-      if (!origin) return callback(null, true);
-
-      // Support both CORS_ALLOWLIST (canonical) and ALLOWED_ORIGINS (fallback)
-      const corsList = process.env.CORS_ALLOWLIST || process.env.ALLOWED_ORIGINS;
-      const allowedOrigins = [
-        'https://admin.shopify.com',
-        'https://astronote-shopify-frontend.onrender.com',
-        'https://astronote.onrender.com', // Web frontend production domain
-        ...(corsList
-          ? corsList.split(',').map(s => s.trim())
-          : []),
-      ];
-
-      // Allow all myshopify.com subdomains (for storefront theme extensions)
-      const isShopifyStorefront = origin.match(
-        /^https:\/\/[a-zA-Z0-9-]+\.myshopify\.com$/,
-      );
-
-      // Allow Shopify admin domains (for embedded apps)
-      const isShopifyAdmin = origin.match(/^https:\/\/admin\.shopify\.com$/);
-
-      if (
-        allowedOrigins.includes(origin) ||
-        isShopifyStorefront ||
-        isShopifyAdmin
-      ) {
-        callback(null, true);
-      } else {
-        logger.warn(`CORS blocked origin: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-API-Key',
-      'X-Request-ID',
-      'API-Version',
-      'X-Shopify-Shop-Domain',
-      'X-Shopify-Shop',
-      'X-Shopify-Shop-Name',
-      'X-Store-ID',
-      'X-Client-Version',
-      'X-Client-Platform',
-      'X-Requested-With',
-      'Accept',
-      'Origin',
-    ],
-    exposedHeaders: [
-      'X-Request-ID',
-      'X-Rate-Limit-Remaining',
-      'X-Rate-Limit-Reset',
-    ],
-    maxAge: 86400, // 24 hours for preflight cache
-  }),
-);
 
 // Body parsing with error handling
 app.use(

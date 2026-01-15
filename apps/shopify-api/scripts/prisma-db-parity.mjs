@@ -47,6 +47,68 @@ function parseModelFields(schemaText, modelName) {
   return fields;
 }
 
+function parseEnumNames(schemaText) {
+  const enums = new Set();
+  const enumRegex = /^\s*enum\s+(\w+)\s*\{/gm;
+  let m;
+  while ((m = enumRegex.exec(schemaText)) !== null) {
+    enums.add(m[1]);
+  }
+  return enums;
+}
+
+function isScalarFieldType(type, enumNames) {
+  const base = type.endsWith('?') ? type.slice(0, -1) : type;
+  if (enumNames.has(base)) return true;
+  return (
+    base === 'String' ||
+    base === 'Int' ||
+    base === 'Boolean' ||
+    base === 'DateTime' ||
+    base === 'Json' ||
+    base === 'Float'
+  );
+}
+
+function sqlForMissingColumn({ table, column, prismaType, enumNames }) {
+  const isOptional = prismaType.endsWith('?');
+  const base = isOptional ? prismaType.slice(0, -1) : prismaType;
+
+  // For enums, suggest TEXT as a safe default unless you explicitly want to create/convert enums.
+  // (Enum/text operator mismatches are handled explicitly in focus checks.)
+  if (enumNames.has(base)) {
+    const nullability = isOptional ? '' : ' NOT NULL';
+    const def = isOptional ? '' : ` DEFAULT '${base}'`;
+    return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" TEXT${nullability}${def};`;
+  }
+
+  if (base === 'String') {
+    if (isOptional) return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" TEXT;`;
+    return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" TEXT NOT NULL DEFAULT '';`;
+  }
+  if (base === 'Int') {
+    if (isOptional) return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" INTEGER;`;
+    return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" INTEGER NOT NULL DEFAULT 0;`;
+  }
+  if (base === 'Boolean') {
+    if (isOptional) return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" BOOLEAN;`;
+    return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" BOOLEAN NOT NULL DEFAULT false;`;
+  }
+  if (base === 'DateTime') {
+    if (isOptional) return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" TIMESTAMP(3);`;
+    return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;`;
+  }
+  if (base === 'Json') {
+    if (isOptional) return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" JSONB;`;
+    return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" JSONB NOT NULL DEFAULT '{}'::jsonb;`;
+  }
+  if (base === 'Float') {
+    if (isOptional) return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" DOUBLE PRECISION;`;
+    return `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "${column}" DOUBLE PRECISION NOT NULL DEFAULT 0;`;
+  }
+  return null;
+}
+
 async function getTableColumns(tableName) {
   const rows = await prisma.$queryRawUnsafe(
     `
@@ -86,6 +148,7 @@ function mdRow(cells) {
 
 async function main() {
   const schema = fs.readFileSync(schemaPath, 'utf8');
+  const enumNames = parseEnumNames(schema);
 
   const checks = [
     {
@@ -119,6 +182,71 @@ async function main() {
   const findings = [];
   let hasMissing = false;
   let hasTypeMismatch = false;
+
+  // ------------------------------------------------------------
+  // FULL SWEEP: Stop repeated "column does not exist" crashes.
+  // ------------------------------------------------------------
+  const sweepModels = [
+    { model: 'Shop', table: 'Shop' },
+    { model: 'Contact', table: 'Contact' },
+    { model: 'Campaign', table: 'Campaign' },
+    { model: 'CampaignRecipient', table: 'CampaignRecipient' },
+    { model: 'CampaignMetrics', table: 'CampaignMetrics' },
+    { model: 'MessageLog', table: 'MessageLog' },
+    { model: 'Subscription', table: 'Subscription' },
+    { model: 'InvoiceRecord', table: 'InvoiceRecord' },
+    { model: 'BillingTransaction', table: 'BillingTransaction' },
+    { model: 'CreditTransaction', table: 'CreditTransaction' },
+    { model: 'Wallet', table: 'Wallet' },
+    { model: 'WebhookEvent', table: 'WebhookEvent' },
+  ];
+
+  const sweepFindings = [];
+  let hasSweepMissing = false;
+
+  for (const t of sweepModels) {
+    const modelFields = parseModelFields(schema, t.model);
+    if (!modelFields) {
+      sweepFindings.push({
+        ...t,
+        missingColumns: [],
+        suggestedSql: [],
+        note: 'Prisma model not found in schema (skipped)',
+      });
+      continue;
+    }
+
+    const { rows, byName } = await getTableColumns(t.table);
+    if (!rows.length) {
+      hasSweepMissing = true;
+      sweepFindings.push({
+        ...t,
+        missingColumns: ['(table missing or no columns found)'],
+        suggestedSql: [`-- Table "${t.table}" missing: create via migrations / deploy baseline.`],
+      });
+      continue;
+    }
+
+    const missingColumns = [];
+    const suggestedSql = [];
+
+    for (const f of modelFields) {
+      if (!isScalarFieldType(f.type, enumNames)) continue;
+      if (!byName.has(f.name)) {
+        missingColumns.push(f.name);
+        const sql = sqlForMissingColumn({
+          table: t.table,
+          column: f.name,
+          prismaType: f.type,
+          enumNames,
+        });
+        if (sql) suggestedSql.push(sql);
+      }
+    }
+
+    if (missingColumns.length) hasSweepMissing = true;
+    sweepFindings.push({ ...t, missingColumns, suggestedSql });
+  }
 
   for (const check of checks) {
     const modelFields = parseModelFields(schema, check.model);
@@ -175,6 +303,34 @@ async function main() {
   lines.push('');
   lines.push(`Schema: \`${schemaPath}\``);
   lines.push('');
+  lines.push('## Full sweep (missing Prisma scalar fields in DB)');
+  lines.push('Tables checked:');
+  for (const t of sweepModels) {
+    lines.push(`- \`${t.table}\``);
+  }
+  lines.push('');
+
+  for (const f of sweepFindings) {
+    lines.push(`### ${f.model} → "${f.table}"`);
+    if (f.note) {
+      lines.push(`- Note: ${f.note}`);
+      lines.push('');
+      continue;
+    }
+    if (!f.missingColumns.length) {
+      lines.push('- Missing: none ✅');
+      lines.push('');
+      continue;
+    }
+    lines.push(`- Missing: **${f.missingColumns.join(', ')}**`);
+    lines.push('');
+    lines.push('Suggested SQL (for a safe additive migration bundle):');
+    lines.push('```sql');
+    for (const s of f.suggestedSql) lines.push(s);
+    lines.push('```');
+    lines.push('');
+  }
+
   lines.push('## Focus checks');
   lines.push('- `BillingTransaction.packageType` exists and is text-like');
   lines.push('- `MessageLog.direction` is stored as Postgres enum `MessageDirection` (matches Prisma enum)');
@@ -215,9 +371,9 @@ async function main() {
   fs.writeFileSync(outPath, lines.join('\n'), 'utf8');
   console.log(`Wrote ${outPath}`);
 
-  if (hasMissing || hasTypeMismatch) {
+  if (hasSweepMissing || hasMissing || hasTypeMismatch) {
     console.error(
-      `Parity check failed: missing=${hasMissing} typeMismatch=${hasTypeMismatch}`,
+      `Parity check failed: sweepMissing=${hasSweepMissing} missing=${hasMissing} typeMismatch=${hasTypeMismatch}`,
     );
     process.exit(1);
   }
