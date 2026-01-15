@@ -25,6 +25,8 @@ const mockPlanCatalog = {
   getPriceId: jest.fn(),
   resolvePlanFromPriceId: jest.fn(),
   getPlanChangeType: jest.fn(),
+  CATALOG_MODES: { RETAIL_SIMPLE: 'retail-simple', MATRIX: 'matrix' },
+  getCatalogMode: jest.fn(() => 'retail-simple'),
   listSupportedSkus: jest.fn(() => [
     { planCode: 'starter', interval: 'month', currency: 'EUR', priceId: 'price_starter_month_eur' },
     { planCode: 'pro', interval: 'year', currency: 'EUR', priceId: 'price_pro_year_eur' },

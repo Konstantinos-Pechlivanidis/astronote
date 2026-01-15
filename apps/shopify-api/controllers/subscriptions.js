@@ -26,7 +26,13 @@ import {
   decideChangeMode,
   isValidScheduledChange,
 } from '../services/subscription-change-policy.js';
-import { getPriceId, listSupportedSkus, isUserSelectableSku } from '../services/plan-catalog.js';
+import {
+  getPriceId,
+  listSupportedSkus,
+  isUserSelectableSku,
+  getCatalogMode,
+  CATALOG_MODES,
+} from '../services/plan-catalog.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
 import { getBillingProfile } from '../services/billing-profile.js';
@@ -97,6 +103,76 @@ function validateSkuOrSendError(res, planType, requestedInterval, currency = 'EU
   }
 
   return { ok: true, resolvedInterval: normalized, priceId };
+}
+
+function impliedIntervalForRetailSimple(planType) {
+  const p = String(planType || '').toLowerCase();
+  if (p === 'starter') return 'month';
+  if (p === 'pro') return 'year';
+  return null;
+}
+
+function sendInvalidIntervalForPlan(res, { planType, interval, currency }) {
+  const implied = impliedIntervalForRetailSimple(planType);
+  const suggested = implied ? { planType, interval: implied, currency } : null;
+  return sendError(
+    res,
+    400,
+    'INVALID_INTERVAL_FOR_PLAN',
+    implied
+      ? `Invalid interval "${interval}" for plan "${planType}". In Billing v2, "${planType}" implies "${implied}".`
+      : `Invalid interval "${interval}" for plan "${planType}".`,
+    {
+      received: { planType, interval, currency },
+      suggested,
+      supportedSkus: listSupportedSkus(currency),
+    },
+  );
+}
+
+function normalizeTargetSkuRetailSimple({ planType, interval }, currentSku, currency) {
+  const hasPlan = !!planType;
+  const hasInterval = !!interval;
+  const normalizedPlan = hasPlan ? String(planType).toLowerCase() : null;
+  const normalizedInterval = hasInterval ? normalizeInterval(interval) : null;
+
+  if (hasPlan && normalizedPlan !== 'starter' && normalizedPlan !== 'pro') {
+    return { ok: false, error: { code: 'INVALID_PLAN_TYPE', message: `Invalid planType: ${planType}` } };
+  }
+  if (hasInterval && !normalizedInterval) {
+    return { ok: false, error: { code: 'VALIDATION_ERROR', message: `Invalid interval: ${interval}. Allowed: month, year` } };
+  }
+
+  // Only interval provided => map directly to plan
+  if (!hasPlan && normalizedInterval) {
+    const mappedPlan = normalizedInterval === 'month' ? 'starter' : 'pro';
+    return { ok: true, planType: mappedPlan, interval: normalizedInterval };
+  }
+
+  // Only plan provided => implied interval
+  if (normalizedPlan && !hasInterval) {
+    const implied = impliedIntervalForRetailSimple(normalizedPlan);
+    return { ok: true, planType: normalizedPlan, interval: implied };
+  }
+
+  // Both provided => enforce starter/month or pro/year
+  if (normalizedPlan && normalizedInterval) {
+    const implied = impliedIntervalForRetailSimple(normalizedPlan);
+    if (implied && normalizedInterval !== implied) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_INTERVAL_FOR_PLAN',
+          message: `Invalid interval "${normalizedInterval}" for plan "${normalizedPlan}"`,
+          suggested: { planType: normalizedPlan, interval: implied, currency },
+        },
+      };
+    }
+    return { ok: true, planType: normalizedPlan, interval: normalizedInterval };
+  }
+
+  // Neither provided => no-op using current
+  return { ok: true, planType: currentSku.planType, interval: currentSku.interval };
 }
 
 /**
@@ -431,9 +507,68 @@ export async function switchInterval(req, res, next) {
       );
     }
 
-    // If planType is provided, use update endpoint logic
+    const catalogMode = getCatalogMode();
+    const currency = (subscription.currency || 'EUR').toUpperCase();
+
+    const currentPlan = String(subscription.planCode || subscription.planType || '').toLowerCase();
+    const currentInterval = subscription.interval
+      ? String(subscription.interval).toLowerCase()
+      : impliedIntervalForRetailSimple(currentPlan);
+    const currentSku = { planType: currentPlan, interval: currentInterval };
+
+    // retail-simple mode: enforce 2-SKU mapping + deterministic validation BEFORE any price lookup
+    if (catalogMode === CATALOG_MODES.RETAIL_SIMPLE) {
+      const normalized = normalizeTargetSkuRetailSimple(
+        { planType: targetPlanCode, interval: targetInterval },
+        currentSku,
+        currency,
+      );
+      if (!normalized.ok) {
+        if (normalized.error.code === 'INVALID_INTERVAL_FOR_PLAN') {
+          return sendInvalidIntervalForPlan(res, {
+            planType: targetPlanCode,
+            interval: targetInterval,
+            currency,
+          });
+        }
+        return sendError(res, 400, normalized.error.code, normalized.error.message, {
+          received: { planType: targetPlanCode, interval: targetInterval, currency },
+          supportedSkus: listSupportedSkus(currency),
+        });
+      }
+
+      // No-op if target equals current
+      if (normalized.interval === currentInterval && normalized.planType === currentPlan) {
+        const updatedStatus = await getSubscriptionStatusWithStripeSync(shopId);
+        const subscriptionDto = {
+          ...updatedStatus,
+          allowedActions: computeAllowedActions(updatedStatus),
+          availableOptions: listSupportedSkus(updatedStatus?.currency || currency),
+        };
+        return sendSuccess(
+          res,
+          {
+            planType: normalized.planType,
+            planCode: normalized.planType,
+            interval: normalized.interval,
+            currency,
+            changeMode: 'none',
+            scheduled: false,
+            subscription: subscriptionDto,
+          },
+          'Subscription already on requested option',
+        );
+      }
+
+      // Delegate to update() with normalized plan+interval so we never attempt unsupported SKU priceId lookups.
+      req.body.planType = normalized.planType;
+      req.body.interval = normalized.interval;
+      req.body.currency = currency;
+      return update(req, res, next);
+    }
+
+    // matrix mode: If planType is provided, use update endpoint logic
     if (targetPlanCode) {
-      // Update will handle the change logic (including Pro Yearly downgrade exception)
       return update(req, res, next);
     }
 
@@ -451,7 +586,7 @@ export async function switchInterval(req, res, next) {
           `Invalid interval: ${targetInterval}. Allowed: month, year`,
         );
       }
-      const currency = (subscription.currency || 'EUR').toUpperCase();
+      // (matrix mode only) currency already resolved above.
 
       let inferredPlan = currentPlan;
       if (normalizedTarget === 'year' && currentPlan === 'starter') {
@@ -600,9 +735,26 @@ export async function update(req, res, next) {
       );
     }
 
+    const catalogMode = getCatalogMode();
+    const impliedInterval = impliedIntervalForRetailSimple(targetPlanCode);
+    const normalizedTargetInterval = targetInterval ? normalizeInterval(targetInterval) : null;
+
+    // Retail-simple: enforce implied intervals deterministically (starter=>month, pro=>year).
+    if (catalogMode === CATALOG_MODES.RETAIL_SIMPLE) {
+      if (targetInterval && normalizedTargetInterval && impliedInterval && normalizedTargetInterval !== impliedInterval) {
+        return sendInvalidIntervalForPlan(res, {
+          planType: targetPlanCode,
+          interval: normalizedTargetInterval,
+          currency: requestedCurrencyParam ? String(requestedCurrencyParam).toUpperCase() : (subscription.currency || 'EUR').toUpperCase(),
+        });
+      }
+    }
+
     // Default interval for plan updates (UX default).
-    // We validate the SKU *after* resolving currency (below).
-    const resolvedInterval = targetInterval || (targetPlanCode === 'starter' ? 'month' : 'year');
+    const resolvedInterval =
+      catalogMode === CATALOG_MODES.RETAIL_SIMPLE && impliedInterval
+        ? impliedInterval
+        : (normalizedTargetInterval || (targetPlanCode === 'starter' ? 'month' : 'year'));
 
     // Check if already on the requested plan and interval
     if (subscription.planCode === targetPlanCode && (!targetInterval || subscription.interval === resolvedInterval)) {

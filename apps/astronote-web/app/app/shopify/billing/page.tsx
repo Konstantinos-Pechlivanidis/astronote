@@ -42,7 +42,6 @@ import {
   Check,
   ExternalLink,
   Loader2,
-  RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -666,15 +665,44 @@ function BillingPageContent() {
                 )}
                 {uiState.pendingChange && (
                   <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                    <div className="flex items-start gap-3">
-                      <AlertCircle className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium text-blue-500">
-                          Scheduled change to {uiState.pendingChange.planCode} ({uiState.pendingChange.interval}ly)
-                        </p>
-                        <p className="text-xs text-text-secondary mt-1">
-                          Effective on {formatDateSafe(uiState.pendingChange.effectiveAt)}
-                        </p>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium text-blue-500">
+                            Scheduled change to {uiState.pendingChange.planCode} ({uiState.pendingChange.interval}ly)
+                          </p>
+                          <p className="text-xs text-text-secondary mt-1">
+                            Effective on {formatDateSafe(uiState.pendingChange.effectiveAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={cancelScheduledSubscription.isPending}
+                          onClick={() =>
+                            handleAction({
+                              id: 'cancelScheduledChange',
+                              label: 'Cancel Scheduled Change',
+                              intent: 'secondary',
+                              variant: 'outline',
+                              requiresConfirmation: true,
+                              confirmationCopy: 'Cancel the scheduled plan change?',
+                            })
+                          }
+                        >
+                          {cancelScheduledSubscription.isPending ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Cancelling...
+                            </>
+                          ) : (
+                            'Cancel'
+                          )}
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -695,54 +723,91 @@ function BillingPageContent() {
                   </div>
                 )}
 
-                {/* Action Buttons - Responsive Grid */}
+                {/* Simplified Actions (2-SKU Billing) */}
                 <div className="flex flex-col sm:flex-row flex-wrap gap-3">
-                  {availableActions.map((action) => {
-                    const disabled = isActionDisabled(action.id, uiState).disabled;
-                    const isLoading =
-                      (action.id === 'cancelAtPeriodEnd' && cancelSubscription.isPending) ||
-                      (action.id === 'resumeSubscription' && resumeSubscription.isPending) ||
-                      (action.id === 'switchInterval' && switchInterval.isPending) ||
-                      (action.id === 'updatePaymentMethod' && getPortal.isPending) ||
-                      (action.id === 'refreshFromStripe' && reconcileSubscription.isPending) ||
-                      (action.id === 'subscribe' && subscribe.isPending);
+                  <Button
+                    type="button"
+                    onClick={openChangePlanDialog}
+                    disabled={!availableActions.some((a) => a.id === 'changePlan')}
+                  >
+                    Upgrade / Change plan
+                  </Button>
 
-                    return (
-                      <Button
-                        key={action.id}
-                        type="button"
-                        onClick={() => handleAction(action)}
-                        disabled={disabled || isLoading}
-                        variant={
-                          action.variant === 'link' || action.variant === 'destructive'
-                            ? 'ghost'
-                            : action.variant === 'default'
-                              ? 'default'
-                              : 'outline'
-                        }
-                        className={
-                          action.intent === 'danger'
-                            ? 'text-red-400 hover:text-red-500'
-                            : action.intent === 'primary'
-                              ? ''
-                              : ''
-                        }
-                      >
-                        {isLoading ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            {action.id === 'updatePaymentMethod' && <ExternalLink className="mr-2 h-4 w-4" />}
-                            {action.id === 'refreshFromStripe' && <RefreshCw className="mr-2 h-4 w-4" />}
-                            {action.label}
-                          </>
-                        )}
-                      </Button>
-                    );
-                  })}
+                  {isSubscriptionActive && uiState.cancelAtPeriodEnd ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        handleAction({
+                          id: 'resumeSubscription',
+                          label: 'Resume Subscription',
+                          intent: 'secondary',
+                          variant: 'outline',
+                          requiresConfirmation: false,
+                        })
+                      }
+                      disabled={resumeSubscription.isPending}
+                    >
+                      {resumeSubscription.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Resuming...
+                        </>
+                      ) : (
+                        'Resume'
+                      )}
+                    </Button>
+                  ) : isSubscriptionActive ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-red-400 hover:text-red-500"
+                      onClick={() =>
+                        handleAction({
+                          id: 'cancelAtPeriodEnd',
+                          label: 'Cancel Subscription',
+                          intent: 'danger',
+                          variant: 'outline',
+                          requiresConfirmation: true,
+                          confirmationCopy:
+                            uiState.effectiveDates.renewalDate
+                              ? `You'll keep access until ${new Date(uiState.effectiveDates.renewalDate).toLocaleDateString()}. You can resume anytime before then.`
+                              : "You'll keep access until the end of your billing period. You can resume anytime before then.",
+                        })
+                      }
+                      disabled={cancelSubscription.isPending}
+                    >
+                      {cancelSubscription.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        'Cancel'
+                      )}
+                    </Button>
+                  ) : null}
+
+                  {availableActions.some((a) => a.id === 'updatePaymentMethod') && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleManageSubscription}
+                      disabled={getPortal.isPending}
+                    >
+                      {getPortal.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Opening...
+                        </>
+                      ) : (
+                        <>
+                          <ExternalLink className="mr-2 h-4 w-4" />
+                          Manage payment method
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
