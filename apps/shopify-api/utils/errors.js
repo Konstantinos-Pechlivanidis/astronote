@@ -73,6 +73,53 @@ export class QueueError extends AppError {
   }
 }
 
+function isPrismaClientError(error) {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    typeof error.code === 'string' &&
+    /^P\d{4}$/.test(error.code)
+  );
+}
+
+function safePrismaMeta(meta) {
+  if (!meta || typeof meta !== 'object') return undefined;
+  const target = meta.target;
+  if (!target) return undefined;
+  if (Array.isArray(target)) return { target: target.map(String) };
+  return { target: String(target) };
+}
+
+/**
+ * Convert an internal exception into a safe, actionable payload for API responses.
+ * - Includes Prisma error code + target (for P2002) when available.
+ * - Includes requestId + step attribution (if provided).
+ *
+ * IMPORTANT: Do not include stacks or raw SQL here.
+ */
+export function toPublicError(error, { requestId, step } = {}) {
+  const out = {
+    requestId: requestId || undefined,
+    step: step || error?.step || undefined,
+  };
+
+  if (isPrismaClientError(error)) {
+    return {
+      ...out,
+      prismaCode: error.code,
+      prismaMeta: safePrismaMeta(error.meta),
+      name: error.name || 'PrismaError',
+      message: (error.message || '').slice(0, 300),
+    };
+  }
+
+  return {
+    ...out,
+    name: error?.name || 'Error',
+    message: (error?.message || 'Unknown error').slice(0, 300),
+  };
+}
+
 // Error response formatter
 export const formatErrorResponse = (error, req = {}) => {
   const isDevelopment = process.env.NODE_ENV === 'development';

@@ -869,7 +869,12 @@ export async function prepareCampaign(storeId, campaignId) {
  * @param {string} campaignId - Campaign ID
  * @returns {Promise<Object>} Enqueue result
  */
-export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = null) {
+export async function enqueueCampaign(
+  storeId,
+  campaignId,
+  _idempotencyKey = null,
+  options = {},
+) {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'campaigns.js:747',message:'enqueueCampaign ENTRY',data:{storeId,campaignId,processId:process.pid,requestId:`req_${Date.now()}`},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
   // #endregion
@@ -881,6 +886,8 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
   });
 
   let creditReservation;
+  const requestId = options?.requestId;
+  let step = 'init';
 
   // Subscription gate (early) to avoid heavy work when inactive
   const { isSubscriptionActive } = await import('./subscription.js');
@@ -907,6 +914,7 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
   // Use a transaction with updateMany and WHERE condition for atomic operation
   let statusTransitionResult;
   try {
+    step = 'update_campaign_status';
     statusTransitionResult = await prisma.$transaction(async tx => {
       // Get current campaign status
       const campaign = await tx.campaign.findUnique({
@@ -1024,18 +1032,28 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
       maxWait: 5000,
     });
   } catch (txError) {
+    txError.step = step;
     logger.error(
       {
         storeId,
         campaignId,
+        requestId,
+        step,
         error: txError.message,
+        code: txError.code,
+        meta: txError.meta,
+        stack: txError.stack,
       },
       'Failed to atomically update campaign status',
     );
+    const { toPublicError } = await import('../utils/errors.js');
     return {
       ok: false,
       reason: 'transaction_failed',
       enqueuedJobs: 0,
+      message: 'transaction_failed',
+      details: toPublicError(txError, { requestId, step }),
+      error: txError,
     };
   }
 
@@ -1045,6 +1063,7 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
   }
 
   // 1) Fetch full campaign data and build audience OUTSIDE transaction (heavy work)
+  step = 'load_campaign';
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId, shopId: storeId },
     select: {
@@ -1064,10 +1083,12 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
   // Build audience OUTSIDE transaction (this can be slow with many contacts)
   let contacts = [];
   try {
+    step = 'resolve_audience';
     contacts = await resolveRecipients(storeId, campaign.audience);
   } catch (error) {
+    error.step = 'resolve_audience';
     logger.error(
-      { storeId, campaignId, error: error.message },
+      { storeId, campaignId, requestId, step: 'resolve_audience', error: error.message, stack: error.stack },
       'Failed to resolve recipients',
     );
 
@@ -1090,7 +1111,15 @@ export async function enqueueCampaign(storeId, campaignId, _idempotencyKey = nul
       where: { id: campaign.id, shopId: storeId },
       data: { status: 'failed', updatedAt: new Date() },
     });
-    return { ok: false, reason: 'audience_resolution_failed', enqueuedJobs: 0 };
+    const { toPublicError } = await import('../utils/errors.js');
+    return {
+      ok: false,
+      reason: 'audience_resolution_failed',
+      enqueuedJobs: 0,
+      message: 'audience_resolution_failed',
+      details: toPublicError(error, { requestId, step: 'resolve_audience' }),
+      error,
+    };
   }
 
   if (!contacts.length) {

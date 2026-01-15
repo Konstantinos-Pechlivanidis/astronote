@@ -210,6 +210,8 @@ export async function enqueue(req, res, next) {
     const storeId = getStoreId(req);
     const { id } = req.params;
     const logger = (await import('../utils/logger.js')).logger;
+    const requestId = req.id || req.headers['x-request-id'] || 'unknown';
+    const { toPublicError } = await import('../utils/errors.js');
 
     // P0: Check idempotency key (endpoint-level idempotency)
     const idempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
@@ -230,11 +232,16 @@ export async function enqueue(req, res, next) {
       storeId,
       campaignId: id,
       timestamp: new Date().toISOString(),
-      requestId: req.id || req.headers['x-request-id'] || 'unknown',
+      requestId,
       hasIdempotencyKey: !!idempotencyKey,
     });
 
-    const result = await campaignsService.enqueueCampaign(storeId, id, idempotencyKey);
+    const result = await campaignsService.enqueueCampaign(
+      storeId,
+      id,
+      idempotencyKey,
+      { requestId },
+    );
 
     // Record idempotency result if key provided
     if (idempotencyKey && result.ok) {
@@ -317,13 +324,21 @@ export async function enqueue(req, res, next) {
           ok: false,
           message: 'SMS queue is temporarily unavailable. Please try again later.',
           code: 'QUEUE_UNAVAILABLE',
+          details: { requestId },
         });
       }
       return res.status(400).json({
         ok: false,
         message: result.message || result.reason || 'Campaign cannot be enqueued',
         code: 'ENQUEUE_FAILED',
-        details: result.details || {},
+        details: {
+          requestId,
+          ...(result.details || {}),
+          // Ensure prisma fields are present when we have an error object
+          ...(result.error
+            ? toPublicError(result.error, { requestId, step: result.details?.step })
+            : {}),
+        },
       });
     }
 
