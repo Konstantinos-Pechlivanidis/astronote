@@ -11,7 +11,10 @@ import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 /**
  * React Query hook for listing campaigns
  */
-export function useCampaigns(params?: CampaignListParams) {
+export function useCampaigns(
+  params?: CampaignListParams,
+  options?: { refetchInterval?: number | false },
+) {
   const hasToken =
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
@@ -23,10 +26,13 @@ export function useCampaigns(params?: CampaignListParams) {
     },
     enabled: hasToken,
     placeholderData: keepPreviousData,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 5 * 1000, // 5 seconds (list should reflect sends quickly)
     gcTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: options?.refetchInterval ?? false,
+    refetchIntervalInBackground: false,
   });
 }
 

@@ -10,7 +10,7 @@ import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 /**
  * React Query hook for campaign stats summary
  */
-export function useCampaignStats() {
+export function useCampaignStats(options?: { refetchInterval?: number | false }) {
   const hasToken =
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
@@ -21,10 +21,13 @@ export function useCampaignStats() {
       return response;
     },
     enabled: hasToken,
-    staleTime: 60 * 1000, // 60 seconds
+    staleTime: 5 * 1000, // 5 seconds (stats should reflect sends quickly)
     gcTime: 10 * 60 * 1000, // 10 minutes
     retry: 1,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: options?.refetchInterval ?? false,
+    refetchIntervalInBackground: false,
   });
 }
 

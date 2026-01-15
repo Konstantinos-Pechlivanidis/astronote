@@ -6,6 +6,10 @@
  * - Allows invalidating "families" of queries by using stable prefix roots
  */
 export const shopifyQueryKeys = {
+  dashboard: {
+    root: () => ['shopify', 'dashboard'] as const,
+    kpis: () => ['shopify', 'dashboard', 'kpis'] as const,
+  },
   contacts: {
     root: () => ['shopify', 'contacts'] as const,
     list: (params: unknown = {}) =>

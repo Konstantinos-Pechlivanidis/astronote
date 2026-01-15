@@ -1,7 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { dashboardApi, type DashboardKPIs, type BillingBalance } from '@/src/lib/shopify/api/dashboard';
+import { dashboardApi, type DashboardKPIs } from '@/src/lib/shopify/api/dashboard';
+import { billingApi } from '@/src/lib/shopifyBillingApi';
+import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 
 /**
  * React Query hook for Shopify Dashboard KPIs
@@ -14,42 +16,46 @@ export function useDashboardKPIs() {
 
   // Fetch dashboard KPIs
   const dashboardQuery = useQuery({
-    queryKey: ['shopify', 'dashboard', 'kpis'],
+    queryKey: shopifyQueryKeys.dashboard.kpis(),
     queryFn: async () => {
       const data = await dashboardApi.getKPIs();
       return data;
     },
     enabled: hasToken,
-    staleTime: 60 * 1000, // 60 seconds
+    staleTime: 10 * 1000, // 10 seconds (dashboard should feel live)
     gcTime: 10 * 60 * 1000, // 10 minutes
     retry: 1,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
     placeholderData: (previousData) => previousData,
   });
 
-  // Fetch billing balance (source of truth for credits)
-  const balanceQuery = useQuery({
-    queryKey: ['shopify', 'billing', 'balance'],
+  // Fetch billing summary (source of truth for wallet + included allowance)
+  const summaryQuery = useQuery({
+    queryKey: shopifyQueryKeys.billing.summary(),
     queryFn: async () => {
-      const data = await dashboardApi.getBalance();
-      return data;
+      return await billingApi.getSummary();
     },
     enabled: hasToken,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 10 * 1000, // 10 seconds
     gcTime: 10 * 60 * 1000, // 10 minutes
     retry: 1,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
     placeholderData: (previousData) => previousData,
   });
 
   // Normalize data for UI
   const dashboard = dashboardQuery.data || ({} as DashboardKPIs);
-  const balance = balanceQuery.data || ({} as BillingBalance);
+  const summary = summaryQuery.data || null;
 
-  // Credits from billing balance (source of truth) or fallback to dashboard
-  const credits = balance.credits ?? dashboard.credits ?? 0;
+  // "Credits" shown on dashboard should reflect total available sending capacity:
+  // included allowance remaining + wallet credits balance.
+  const credits =
+    (summary?.allowance?.remainingThisPeriod ?? 0) +
+    (summary?.credits?.balance ?? 0) ||
+    dashboard.credits ||
+    0;
 
   return {
     // Data
@@ -58,24 +64,24 @@ export function useDashboardKPIs() {
     totalContacts: dashboard.totalContacts ?? 0,
     totalMessagesSent: dashboard.totalMessagesSent ?? 0,
     activeAutomations: dashboard.activeAutomations ?? 0,
-    currency: balance.currency ?? 'EUR',
+    currency: summary?.credits?.currency ?? 'EUR',
 
     // Loading states
-    isLoading: dashboardQuery.isLoading || balanceQuery.isLoading,
-    isInitialLoad: (dashboardQuery.isLoading && !dashboardQuery.data) || (balanceQuery.isLoading && !balanceQuery.data),
+    isLoading: dashboardQuery.isLoading || summaryQuery.isLoading,
+    isInitialLoad: (dashboardQuery.isLoading && !dashboardQuery.data) || (summaryQuery.isLoading && !summaryQuery.data),
 
     // Error states
-    error: dashboardQuery.error || balanceQuery.error,
+    error: dashboardQuery.error || summaryQuery.error,
     dashboardError: dashboardQuery.error,
-    balanceError: balanceQuery.error,
+    balanceError: summaryQuery.error,
 
     // Refetch functions
     refetch: () => {
       dashboardQuery.refetch();
-      balanceQuery.refetch();
+      summaryQuery.refetch();
     },
     refetchDashboard: dashboardQuery.refetch,
-    refetchBalance: balanceQuery.refetch,
+    refetchBalance: summaryQuery.refetch,
   };
 }
 

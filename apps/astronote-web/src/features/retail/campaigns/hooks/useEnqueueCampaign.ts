@@ -107,6 +107,10 @@ export function useEnqueueCampaign() {
       // Also invalidate other related queries
       queryClient.invalidateQueries({ queryKey: ['retail', 'campaigns', 'list'] });
       queryClient.invalidateQueries({ queryKey: ['retail', 'campaigns', 'status', id] });
+      // Keep dashboard + billing in sync (credits/allowance + KPIs)
+      queryClient.invalidateQueries({ queryKey: ['retail-kpis'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
 
       const summary = enqueuedJobs !== null
         ? `${queued} messages (${enqueuedJobs} jobs enqueued)`

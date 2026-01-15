@@ -1,5 +1,6 @@
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
+import { getBalance as getWalletBalance } from './wallet.js';
 
 /**
  * Dashboard Service
@@ -28,7 +29,7 @@ export async function getDashboard(storeId) {
   try {
     shop = await prisma.shop.findUnique({
       where: { id: storeId },
-      select: { id: true, credits: true, currency: true },
+      select: { id: true, currency: true },
     });
   } catch (error) {
     logger.error('Database error fetching shop for dashboard', {
@@ -53,6 +54,7 @@ export async function getDashboard(storeId) {
   let totalCampaigns = 0;
   let totalContacts = 0;
   let totalMessagesSent = 0;
+  let walletCredits = 0;
 
   try {
     const results = await Promise.allSettled([
@@ -65,6 +67,7 @@ export async function getDashboard(storeId) {
       prisma.messageLog.count({
         where: { shopId: shop.id, direction: 'outbound' },
       }),
+      getWalletBalance(shop.id),
     ]);
 
     // Extract results with fallback to 0 on error
@@ -72,6 +75,7 @@ export async function getDashboard(storeId) {
     totalContacts = results[1].status === 'fulfilled' ? results[1].value : 0;
     totalMessagesSent =
       results[2].status === 'fulfilled' ? results[2].value : 0;
+    walletCredits = results[3].status === 'fulfilled' ? results[3].value : 0;
 
     // Log any errors
     results.forEach((result, index) => {
@@ -94,7 +98,7 @@ export async function getDashboard(storeId) {
 
   logger.info('Dashboard data fetched successfully', {
     storeId,
-    credits: shop.credits || 0,
+    credits: walletCredits || 0,
     totalCampaigns,
     totalContacts,
     totalMessagesSent,
@@ -104,7 +108,7 @@ export async function getDashboard(storeId) {
   const reports = await getReportsData(shop.id);
 
   return {
-    credits: shop.credits || 0,
+    credits: walletCredits || 0,
     totalCampaigns: totalCampaigns || 0,
     totalContacts: totalContacts || 0,
     totalMessagesSent: totalMessagesSent || 0,

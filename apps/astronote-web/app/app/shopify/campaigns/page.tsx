@@ -131,6 +131,7 @@ export default function CampaignsPage() {
   const [statusFilter, setStatusFilter] = useState<string>(UI_ALL);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [sendTarget, setSendTarget] = useState<{ id: string; name: string } | null>(null);
+  const [activePoll, setActivePoll] = useState(false);
   const pageSize = 20;
 
   // Fetch campaigns
@@ -146,10 +147,14 @@ export default function CampaignsPage() {
     search: search || undefined,
     sortBy: 'createdAt',
     sortOrder: 'desc',
+  }, {
+    refetchInterval: activePoll ? 2 * 1000 : false,
   });
 
   // Fetch stats
-  const { data: statsData, isLoading: statsLoading } = useCampaignStats();
+  const { data: statsData, isLoading: statsLoading } = useCampaignStats({
+    refetchInterval: activePoll ? 2 * 1000 : false,
+  });
   const { data: subscriptionData } = useSubscriptionStatus();
 
   // Mutations
@@ -166,6 +171,13 @@ export default function CampaignsPage() {
     hasPrevPage: false,
   }, [campaignsData?.pagination]);
   const isSubscriptionActive = subscriptionData?.status === 'active' || subscriptionData?.active === true;
+
+  // Enable aggressive polling only while any campaign is actively sending/scheduled.
+  useEffect(() => {
+    const hasActive = campaigns.some((c) => c.status === 'sending' || c.status === 'scheduled');
+    if (hasActive !== activePoll) setActivePoll(hasActive);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaigns]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;

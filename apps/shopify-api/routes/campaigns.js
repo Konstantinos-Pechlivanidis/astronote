@@ -12,7 +12,6 @@ import {
   campaignSendRateLimit,
 } from '../middlewares/rateLimits.js';
 import {
-  campaignsListCache,
   invalidateCampaignsCache,
 } from '../middlewares/cache.js';
 
@@ -25,12 +24,11 @@ r.use(campaignsRateLimit);
 r.get(
   '/',
   validateQuery(listCampaignsQuerySchema),
-  campaignsListCache,
   ctrl.list,
 );
 
 // GET /campaigns/stats/summary - Get campaign statistics
-r.get('/stats/summary', campaignsListCache, ctrl.stats);
+r.get('/stats/summary', ctrl.stats);
 
 // GET /campaigns/queue/stats - Get queue statistics (waiting, active, completed, failed)
 r.get('/queue/stats', ctrl.getQueueStats);

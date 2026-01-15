@@ -55,6 +55,10 @@ function CreditsCard() {
       const res = await billingApi.getBalance();
       return res.data;
     },
+    staleTime: 10 * 1000, // 10 seconds
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    placeholderData: (previousData) => previousData,
   });
 
   if (isLoading) {
@@ -156,8 +160,11 @@ export default function RetailDashboardPage() {
       return res.data;
     },
     enabled: hasToken, // Only run query if token exists
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 10 * 1000, // 10 seconds
     retry: 1, // Retry once on failure
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    placeholderData: (previousData) => previousData,
   });
 
   // Show error state but don't block the page - allow navigation

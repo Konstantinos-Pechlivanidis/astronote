@@ -90,6 +90,7 @@ export default function CampaignsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [activePoll, setActivePoll] = useState(false);
   const pageSize = 20;
 
   const { data, isLoading, error, refetch } = useCampaigns({
@@ -97,9 +98,18 @@ export default function CampaignsPage() {
     pageSize,
     q: search,
     status: statusFilter === 'all' ? null : statusFilter,
+  }, {
+    refetchInterval: activePoll ? 2 * 1000 : false,
   });
 
   const campaigns = data?.items || [];
+
+  // Enable polling while any campaign is sending/scheduled to avoid “stale until refresh”.
+  useEffect(() => {
+    const hasActive = campaigns.some((c: any) => c.status === 'sending' || c.status === 'scheduled');
+    if (hasActive !== activePoll) setActivePoll(hasActive);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaigns]);
 
   const columns = [
     {

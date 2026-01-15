@@ -23,12 +23,20 @@ export default function RetailDashboardPage() {
       return response.data;
     },
     retry: false, // Don't retry if endpoint doesn't exist
+    staleTime: 10 * 1000, // 10 seconds
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    placeholderData: (previousData) => previousData,
   });
 
   // Get balance
   const { data: balance, isLoading: balanceLoading } = useQuery({
     queryKey: ['retail-balance'],
     queryFn: () => retailClient.getBalance(),
+    staleTime: 10 * 1000, // 10 seconds
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    placeholderData: (previousData) => previousData,
   });
 
   return (

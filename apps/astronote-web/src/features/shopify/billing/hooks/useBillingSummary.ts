@@ -11,8 +11,8 @@ export function useBillingSummary() {
     queryFn: () => billingApi.getSummary(),
     staleTime: 1 * 60 * 1000, // 1 minute
     gcTime: 5 * 60 * 1000, // 5 minutes
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
     placeholderData: (previousData) => previousData,
   });
 }

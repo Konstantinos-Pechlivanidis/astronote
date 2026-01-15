@@ -1,7 +1,10 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { campaignsApi, type CampaignListParams, type CampaignListResponse } from '@/src/lib/retail/api/campaigns';
 
-export function useCampaigns(params?: CampaignListParams) {
+export function useCampaigns(
+  params?: CampaignListParams,
+  options?: { refetchInterval?: number | false },
+) {
   const queryParams = {
     page: params?.page || 1,
     pageSize: params?.pageSize || 20,
@@ -17,7 +20,11 @@ export function useCampaigns(params?: CampaignListParams) {
       return res.data;
     },
     placeholderData: keepPreviousData,
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 5 * 1000, // 5 seconds (list should reflect sends quickly)
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: options?.refetchInterval ?? false,
+    refetchIntervalInBackground: false,
   });
 }
 
