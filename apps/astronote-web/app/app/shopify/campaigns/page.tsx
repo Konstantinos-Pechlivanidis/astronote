@@ -35,11 +35,13 @@ function CampaignSkeleton() {
  * Stats Cards Component
  */
 function StatsCards({ stats }: { stats: any }) {
-  const statsData = stats?.stats || {};
+  // Backend returns the stats object directly (Shopify axios extracts `response.data.data`).
+  // Keep backward compatibility with any older shape that nested under `stats`.
+  const statsData = stats?.byStatus ? stats : (stats?.stats || {});
   const byStatus = statsData.byStatus || {};
 
   const statItems = [
-    { label: 'Total', value: statsData.total || 0, color: 'text-text-primary' },
+    { label: 'Total', value: statsData.totalCampaigns ?? statsData.total ?? 0, color: 'text-text-primary' },
     { label: 'Draft', value: byStatus.draft || 0, color: 'text-text-secondary' },
     { label: 'Scheduled', value: byStatus.scheduled || 0, color: 'text-blue-400' },
     { label: 'Sending', value: byStatus.sending || 0, color: 'text-yellow-400' },

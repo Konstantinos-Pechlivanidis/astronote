@@ -75,17 +75,24 @@ export interface CampaignListResponse {
 }
 
 export interface CampaignStatsSummary {
-  stats: {
-    total: number;
-    byStatus: {
-      draft?: number;
-      scheduled?: number;
-      sending?: number;
-      sent?: number;
-      failed?: number;
-      cancelled?: number;
-    };
+  total: number;
+  totalCampaigns?: number;
+  byStatus: {
+    draft?: number;
+    scheduled?: number;
+    sending?: number;
+    paused?: number;
+    completed?: number;
+    sent?: number; // legacy alias for completed
+    failed?: number;
+    cancelled?: number;
   };
+  // Backward compatibility (older frontend revisions expected a nested `stats` object)
+  stats?: {
+    total: number;
+    byStatus: Record<string, number>;
+  };
+  recentCampaigns?: unknown[];
 }
 
 export interface CampaignMetrics {

@@ -114,7 +114,7 @@ function BillingPageContent() {
     billingProfile?.currency ||
     balanceData?.currency ||
     'EUR';
-  const balance = summary?.credits?.balance || balanceData?.credits || balanceData?.balance || 0;
+  const walletBalance = summary?.credits?.balance || balanceData?.credits || balanceData?.balance || 0;
   const currency = summary?.credits?.currency || balanceData?.currency || billingCurrency || selectedCurrency || 'EUR';
   const currencySymbol = currency === 'USD' ? '$' : '€';
   const showEurPricing = currency === 'EUR';
@@ -151,6 +151,8 @@ function BillingPageContent() {
   const cancelAtPeriodEnd = (subscription as any).cancelAtPeriodEnd || false;
   const lastBillingError = (subscription as any).lastBillingError || null;
   const allowance = summary?.allowance || null;
+  const allowanceRemaining = allowance?.remainingThisPeriod || 0;
+  const availableToSend = (walletBalance || 0) + (allowanceRemaining || 0);
   const invoices = invoicesData?.invoices || [];
   const invoicesPagination = invoicesData?.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false };
   const topupPrice = topupPriceData;
@@ -377,7 +379,7 @@ function BillingPageContent() {
     }
   };
 
-  const isLowBalance = balance < 100;
+  const isLowBalance = availableToSend < 100;
 
   return (
     <RetailPageLayout>
@@ -414,19 +416,24 @@ function BillingPageContent() {
                 </div>
                 <div>
                   <div className="text-sm font-medium text-text-secondary mb-1 uppercase tracking-wide">
-                    Current Balance
+                    Available to send
                   </div>
                   <div className={`text-4xl sm:text-5xl font-bold ${isLowBalance ? 'text-red-500' : 'text-accent'}`}>
-                    {balance.toLocaleString()}
+                    {availableToSend.toLocaleString()}
                   </div>
-                  <div className="text-base text-text-secondary mt-1">SMS credits</div>
+                  <div className="text-base text-text-secondary mt-1">Free allowance + wallet credits</div>
+                  <div className="mt-2 text-sm text-text-tertiary">
+                    Free remaining: <span className="text-text-secondary">{allowanceRemaining.toLocaleString()}</span>
+                    {' · '}
+                    Wallet credits: <span className="text-text-secondary">{walletBalance.toLocaleString()}</span>
+                  </div>
                 </div>
               </div>
               {isLowBalance && (
                 <div className="flex items-center gap-3 mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
                   <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
                   <p className="text-sm text-red-500 font-medium">
-                    Low balance. Consider purchasing more credits to continue sending messages.
+                    Low available credits. Consider purchasing more credits to continue sending messages.
                   </p>
                 </div>
               )}
