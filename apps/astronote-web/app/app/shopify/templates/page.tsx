@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTemplates } from '@/src/features/shopify/templates/hooks/useTemplates';
 import { useTemplateCategories } from '@/src/features/shopify/templates/hooks/useTemplateCategories';
 import { useTrackTemplateUsage } from '@/src/features/shopify/templates/hooks/useTrackTemplateUsage';
@@ -13,10 +13,12 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState } from '@/src/components/retail/EmptyState';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
-import { FileText, Search, ChevronLeft, ChevronRight, AlertCircle, Eye, X, Star, BarChart3, Users } from 'lucide-react';
+import { FileText, Search, AlertCircle, Eye, X, Star, BarChart3, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { Template } from '@/src/lib/shopify/api/templates';
 import { getTemplateName, getTemplateContent, sanitizeCategory, sanitizeTemplateId } from '@/src/lib/shopify/api/templates';
+import { Pagination } from '@/src/components/app/Pagination';
+import { getIntParam, setQueryParams } from '@/src/lib/url/query';
 
 // Sentinel value for "All" filter (must be non-empty for Radix Select)
 const UI_ALL = '__all__';
@@ -27,13 +29,18 @@ const UI_ALL = '__all__';
  */
 export default function TemplatesPage() {
   const router = useRouter();
-  const [categoryFilter, setCategoryFilter] = useState(UI_ALL);
-  const [searchQuery, setSearchQuery] = useState('');
+  const searchParams = useSearchParams();
+  const [categoryFilter, setCategoryFilter] = useState<string>(searchParams.get('category') || UI_ALL);
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(getIntParam(searchParams.get('page'), 1));
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
-  const [favoritesFilter, setFavoritesFilter] = useState(false);
-  const pageSize = 12;
+  const [favoritesFilter, setFavoritesFilter] = useState(searchParams.get('favorites') === '1');
+  const [pageSize, setPageSize] = useState(getIntParam(searchParams.get('pageSize'), 12));
+
+  const updateUrl = (updates: Record<string, string | number | null | undefined>) => {
+    router.replace(setQueryParams(searchParams, updates), { scroll: false });
+  };
 
   // Load favorites from localStorage
   const [favorites, setFavorites] = useState<Set<string>>(() => {
@@ -48,8 +55,10 @@ export default function TemplatesPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
+      updateUrl({ q: searchQuery || null, page: 1 });
     }, 300);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   // eShop type state (can be derived from shop settings or selected by user)
@@ -145,6 +154,7 @@ export default function TemplatesPage() {
   const handleCategoryChange = (value: string) => {
     setCategoryFilter(value);
     setCurrentPage(1);
+    updateUrl({ category: value === UI_ALL ? null : value, page: 1 });
   };
 
   const handleSearchChange = (value: string) => {
@@ -235,6 +245,7 @@ export default function TemplatesPage() {
               onClick={() => {
                 setFavoritesFilter(!favoritesFilter);
                 setCurrentPage(1);
+                updateUrl({ favorites: !favoritesFilter ? 1 : null, page: 1 });
               }}
             >
               <Star className={`mr-2 h-4 w-4 ${favoritesFilter ? 'fill-current' : ''}`} />
@@ -423,38 +434,22 @@ export default function TemplatesPage() {
           </div>
 
           {/* Pagination */}
-          {pagination.totalPages > 1 && (
-            <div className="mt-6 flex items-center justify-between">
-              <div className="text-sm text-text-secondary">
-                Showing {((pagination.page - 1) * pagination.pageSize) + 1} to{' '}
-                {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
-                {pagination.total} templates
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={!pagination.hasPrevPage || templatesLoading}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <div className="text-sm text-text-secondary">
-                  Page {pagination.page} of {pagination.totalPages}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
-                  disabled={!pagination.hasNextPage || templatesLoading}
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
+          <div className="mt-6">
+            <Pagination
+              pagination={pagination}
+              onPageChange={(p) => {
+                setCurrentPage(p);
+                updateUrl({ page: p });
+              }}
+              onPageSizeChange={(ps) => {
+                setPageSize(ps);
+                setCurrentPage(1);
+                updateUrl({ pageSize: ps, page: 1 });
+              }}
+              pageSizeOptions={[12, 24, 48]}
+              disabled={templatesLoading}
+            />
+          </div>
         </>
       )}
 

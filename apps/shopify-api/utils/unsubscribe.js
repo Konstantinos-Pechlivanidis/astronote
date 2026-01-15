@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { logger } from './logger.js';
+import prisma from '../services/prisma.js';
+import { buildShortUrl, createShortLink } from '../services/shortLinks.js';
 
 /**
  * Generate an unsubscribe token for a contact
@@ -161,11 +163,44 @@ export async function appendUnsubscribeLink(
     req,
   );
 
-  // IMPORTANT: Do NOT shorten the unsubscribe URL
-  // The custom URL shortener creates URLs like /s/{shortCode} but there's no route to handle them
-  // This would cause 404 errors when users try to unsubscribe
-  // The unsubscribe URL is already signed and secure, so we use it directly
-  const unsubscribeText = `\n\nUnsubscribe: ${unsubscribeUrl}`;
+  // Create a system-owned short link token that redirects to the long, signed unsubscribe URL.
+  // This keeps the SMS short, avoids exposing the signed token, and stores the mapping in DB.
+  // Expire the short link slightly after the unsubscribe token window (30 days).
+  const expiresAt = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000);
+  let shortUrl = unsubscribeUrl;
+  try {
+    // Prefer reusing an existing unsubscribe short link for this contact to keep URLs stable
+    // across multiple campaigns (best-effort; if JSON filtering isn't supported, we fallback).
+    const existing = await prisma.shortLink.findFirst({
+      where: {
+        shopId,
+        contactId,
+        expiresAt: { gt: new Date() },
+        meta: { path: ['type'], equals: 'unsubscribe' },
+      },
+      select: { token: true },
+    }).catch(() => null);
+
+    if (existing?.token) {
+      shortUrl = buildShortUrl(existing.token);
+    } else {
+      const shortLink = await createShortLink({
+        destinationUrl: unsubscribeUrl,
+        shopId,
+        contactId,
+        expiresAt,
+        meta: { type: 'unsubscribe' },
+      });
+      shortUrl = shortLink.shortUrl;
+    }
+  } catch (e) {
+    logger.warn(
+      { err: e?.message || String(e), shopId, contactId },
+      'Failed to create short unsubscribe link; falling back to long URL',
+    );
+  }
+
+  const unsubscribeText = `\n\nUnsubscribe: ${shortUrl}`;
 
   // Check if message + unsubscribe link exceeds SMS limits
   // Standard SMS: 160 characters, Concatenated SMS: 1600 characters

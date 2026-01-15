@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCampaigns } from '@/src/features/shopify/campaigns/hooks/useCampaigns';
 import { useCampaignStats } from '@/src/features/shopify/campaigns/hooks/useCampaignStats';
 import { useDeleteCampaign, useEnqueueCampaign } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
@@ -13,13 +13,15 @@ import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailDataTable } from '@/src/components/retail/RetailDataTable';
 import { CampaignStatusBadge } from '@/src/components/shopify/CampaignStatusBadge';
 import { RetailLoadingSkeleton } from '@/src/components/retail/RetailLoadingSkeleton';
+import { Pagination } from '@/src/components/app/Pagination';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
-import { Megaphone, Plus, Search, Send, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Megaphone, Plus, Search, Send, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Campaign } from '@/src/lib/shopify/api/campaigns';
+import { getIntParam, setQueryParams } from '@/src/lib/url/query';
 
 // Sentinel value for "All" filter (must be non-empty for Radix Select)
 const UI_ALL = '__all__';
@@ -77,6 +79,10 @@ function CampaignsToolbar({
 }) {
   const [localSearch, setLocalSearch] = useState(search);
 
+  useEffect(() => {
+    setLocalSearch(search);
+  }, [search]);
+
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -128,13 +134,18 @@ function CampaignsToolbar({
  */
 export default function CampaignsPage() {
   const router = useRouter();
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>(UI_ALL);
+  const searchParams = useSearchParams();
+  const page = getIntParam(searchParams.get('page'), 1);
+  const pageSize = getIntParam(searchParams.get('pageSize'), 20);
+  const search = searchParams.get('q') || '';
+  const statusFilter = searchParams.get('status') || UI_ALL;
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [sendTarget, setSendTarget] = useState<{ id: string; name: string } | null>(null);
   const [activePoll, setActivePoll] = useState(false);
-  const pageSize = 20;
+
+  const updateUrl = (updates: Record<string, string | number | null | undefined>) => {
+    router.replace(setQueryParams(searchParams, updates), { scroll: false });
+  };
 
   // Fetch campaigns
   const {
@@ -372,12 +383,9 @@ export default function CampaignsPage() {
         <div>
           <CampaignsToolbar
             search={search}
-            onSearchChange={setSearch}
+            onSearchChange={(value) => updateUrl({ q: value || null, page: 1 })}
             statusFilter={statusFilter}
-            onStatusFilterChange={(value) => {
-            // Store sentinel value in state (UI needs non-empty value)
-              setStatusFilter(value);
-            }}
+            onStatusFilterChange={(value) => updateUrl({ status: value === UI_ALL ? null : value, page: 1 })}
           />
         </div>
 
@@ -416,36 +424,12 @@ export default function CampaignsPage() {
           </div>
         )}
 
-        {/* Pagination */}
-        {campaigns.length > 0 && (
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-text-secondary">
-            Showing {(pagination.page - 1) * pagination.pageSize + 1} to{' '}
-              {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
-              {pagination.total} campaigns
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={!pagination.hasPrevPage}
-                variant="outline"
-                size="sm"
-              >
-                <ChevronLeft className="mr-1 h-4 w-4" />
-              Previous
-              </Button>
-              <Button
-                onClick={() => setPage((p) => p + 1)}
-                disabled={!pagination.hasNextPage}
-                variant="outline"
-                size="sm"
-              >
-              Next
-                <ChevronRight className="ml-1 h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <Pagination
+          pagination={pagination}
+          onPageChange={(p) => updateUrl({ page: p })}
+          onPageSizeChange={(ps) => updateUrl({ pageSize: ps, page: 1 })}
+          disabled={campaignsLoading}
+        />
 
         {/* Delete Confirmation Dialog */}
         <ConfirmDialog

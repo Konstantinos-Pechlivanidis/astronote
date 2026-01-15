@@ -2,11 +2,27 @@ import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
 import { ValidationError } from '../utils/errors.js';
 import crypto from 'crypto';
+import { getFrontendBaseUrlSync } from '../utils/frontendUrl.js';
 
 /**
  * Short Link Service
  * Handles creation and management of short links for URL shortening
  */
+
+export function getShortLinkBaseUrl() {
+  return (
+    process.env.URL_SHORTENER_BASE_URL ||
+    process.env.FRONTEND_URL ||
+    getFrontendBaseUrlSync() ||
+    process.env.HOST ||
+    'https://astronote.onrender.com'
+  );
+}
+
+export function buildShortUrl(token) {
+  const baseUrl = getShortLinkBaseUrl();
+  return `${baseUrl.replace(/\/+$/, '')}/r/${token}`;
+}
 
 /**
  * Generate a unique token for short links
@@ -140,11 +156,7 @@ export async function createShortLink({
   });
 
   // Generate short URL
-  const baseUrl =
-    process.env.URL_SHORTENER_BASE_URL ||
-    process.env.HOST ||
-    'https://astronote-shopify.onrender.com';
-  const shortUrl = `${baseUrl.replace(/\/+$/, '')}/r/${token}`;
+  const shortUrl = buildShortUrl(token);
 
   logger.info('Short link created', {
     token,

@@ -3,6 +3,7 @@
 import { useMemo, useRef, useEffect } from 'react';
 import { IPhoneFrame } from './IPhoneFrame';
 import { ChevronLeft } from 'lucide-react';
+import { getSmsSegments } from '@/src/lib/sms/smsSegments';
 
 export interface SmsInPhonePreviewProps {
   variant?: 'retail' | 'shopify';
@@ -24,13 +25,8 @@ export function SmsInPhonePreview({
   showCounts = true,
   size = 'md',
 }: SmsInPhonePreviewProps) {
-  // Calculate SMS segments (simple 160-char segmentation)
-  const smsSegments = useMemo(() => {
-    if (!message) return 0;
-    return Math.ceil(message.length / 160);
-  }, [message]);
-
-  const characterCount = message.length;
+  const sms = useMemo(() => getSmsSegments(message || ''), [message]);
+  const characterCount = (message || '').length;
 
   // Extract URLs from message for link preview
   const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -212,18 +208,30 @@ export function SmsInPhonePreview({
                     : 'text-text-primary'
               }`}
             >
-              {characterCount}/160
+              {characterCount}
             </span>
+          </div>
+          <span className="text-text-tertiary">•</span>
+          <div className="flex items-center gap-2">
+            <span className="text-text-secondary">Encoding:</span>
+            <span className="font-medium text-text-primary">{sms.encoding.toUpperCase()}</span>
           </div>
           <span className="text-text-tertiary">•</span>
           <div className="flex items-center gap-2">
             <span className="text-text-secondary">Segments:</span>
             <span
               className={`font-medium ${
-                smsSegments > 1 ? 'text-orange-500' : 'text-text-primary'
+                sms.segments > 1 ? 'text-orange-500' : 'text-text-primary'
               }`}
             >
-              {smsSegments} {smsSegments === 1 ? 'part' : 'parts'}
+              {sms.segments} {sms.segments === 1 ? 'part' : 'parts'}
+            </span>
+          </div>
+          <span className="text-text-tertiary">•</span>
+          <div className="flex items-center gap-2">
+            <span className="text-text-secondary">Units:</span>
+            <span className="font-medium text-text-primary">
+              {sms.units}/{sms.perSegment}
             </span>
           </div>
         </div>

@@ -149,10 +149,9 @@ export async function handleBulkSMS(job) {
         });
 
         // Append unsubscribe link AFTER shortening
-        // CRITICAL: The unsubscribe URL must NOT be shortened because:
-        // 1. The custom shortener creates /s/{shortCode} URLs that have no route handler
-        // 2. The unsubscribe URL is already signed and secure
-        // 3. We add it after shortening to ensure it's never processed by shortenUrlsInText
+        // We add it after shortening to ensure it's never processed by shortenUrlsInText.
+        // The unsubscribe helper will generate the long, signed unsubscribe URL, then wrap it
+        // in a system-owned DB-backed short link (/r/:token) for SMS length + compliance.
         // Note: No req available in queue job context, pass null
         const messageWithUnsubscribe = await appendUnsubscribeLink(
           messageText,

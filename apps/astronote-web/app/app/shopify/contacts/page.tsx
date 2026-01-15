@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useContacts } from '@/src/features/shopify/contacts/hooks/useContacts';
 import { useContactStats } from '@/src/features/shopify/contacts/hooks/useContactStats';
 import { useDeleteContact } from '@/src/features/shopify/contacts/hooks/useContactMutations';
@@ -10,6 +11,7 @@ import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailDataTable } from '@/src/components/retail/RetailDataTable';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
+import { Pagination } from '@/src/components/app/Pagination';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,6 +19,7 @@ import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { EmptyState } from '@/src/components/retail/EmptyState';
 import { Users, Upload, Search, Trash2, AlertCircle, Download, CheckSquare, Square } from 'lucide-react';
 import type { Contact } from '@/src/lib/shopify/api/contacts';
+import { getIntParam, setQueryParams } from '@/src/lib/url/query';
 
 // Sentinel value for "All" filter (must be non-empty for Radix Select)
 const UI_ALL = '__all__';
@@ -25,23 +28,36 @@ const UI_ALL = '__all__';
  * Contacts List Page
  */
 export default function ContactsPage() {
-  const [page, setPage] = useState(1);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [consentFilter, setConsentFilter] = useState<string>(UI_ALL);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const page = getIntParam(searchParams.get('page'), 1);
+  const pageSize = getIntParam(searchParams.get('pageSize'), 20);
+  const consentFilter = searchParams.get('consent') || UI_ALL;
+
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
-
-  const pageSize = 20;
 
   // Debounce search query
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
 
   useEffect(() => {
+    setSearchQuery(searchParams.get('q') || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const updateUrl = (updates: Record<string, string | number | null | undefined>) => {
+    router.replace(setQueryParams(searchParams, updates), { scroll: false });
+  };
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchQuery);
+      updateUrl({ q: searchQuery || null, page: 1 });
     }, 300);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   // Fetch contacts
@@ -366,15 +382,14 @@ export default function ContactsPage() {
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
-                    setPage(1); // Reset to page 1 on search
                   }}
                   className="pl-10"
                 />
               </div>
-              <Select value={consentFilter} onValueChange={(value) => {
-                setConsentFilter(value);
-                setPage(1); // Reset to page 1 on filter change
-              }}>
+              <Select
+                value={consentFilter}
+                onValueChange={(value) => updateUrl({ consent: value === UI_ALL ? null : value, page: 1 })}
+              >
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="All Consent" />
                 </SelectTrigger>
@@ -439,7 +454,7 @@ export default function ContactsPage() {
               ) : (
                 <Button variant="outline" onClick={() => {
                   setSearchQuery('');
-                  setConsentFilter('');
+                  updateUrl({ q: null, consent: null, page: 1 });
                 }}>
                 Clear Filters
                 </Button>
@@ -492,37 +507,14 @@ export default function ContactsPage() {
               />
             </RetailCard>
 
-            {/* Pagination */}
-            {pagination.totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-between">
-                <div className="text-sm text-text-secondary">
-                Showing {((pagination.page - 1) * pagination.pageSize) + 1} to{' '}
-                  {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
-                  {pagination.total} contacts
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={!pagination.hasPrevPage || contactsLoading}
-                  >
-                  Previous
-                  </Button>
-                  <div className="text-sm text-text-secondary">
-                  Page {pagination.page} of {pagination.totalPages}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
-                    disabled={!pagination.hasNextPage || contactsLoading}
-                  >
-                  Next
-                  </Button>
-                </div>
-              </div>
-            )}
+            <div className="mt-6">
+              <Pagination
+                pagination={pagination}
+                onPageChange={(p) => updateUrl({ page: p })}
+                onPageSizeChange={(ps) => updateUrl({ pageSize: ps, page: 1 })}
+                disabled={contactsLoading}
+              />
+            </div>
           </>
         )}
 

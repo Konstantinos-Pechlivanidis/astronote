@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
@@ -18,6 +18,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, Send, Clock } from 'lucide-react';
 import type { ScheduleType } from '@/src/lib/shopify/api/campaigns';
+import { APP_URL } from '@/src/lib/shopify/config';
+import { getSmsSegments } from '@/src/lib/sms/smsSegments';
 
 // Sentinel value for "No discount" (must be non-empty for Radix Select)
 const UI_NONE = '__none__';
@@ -30,6 +32,7 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const createCampaign = useCreateCampaign();
   const { data: subscriptionData } = useSubscriptionStatus();
+  const messageRef = useRef<HTMLTextAreaElement | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -144,9 +147,42 @@ export default function NewCampaignPage() {
     }
   };
 
-  // Calculate SMS parts
-  const smsParts = Math.ceil(formData.message.length / 160);
-  const smsCount = formData.message.length > 0 ? smsParts : 0;
+  const unsubscribePreviewUrl = useMemo(() => {
+    const base = (APP_URL || '').replace(/\/+$/, '');
+    return `${base}/r/xxxxxxxxxx`;
+  }, []);
+
+  const previewMessage = useMemo(() => {
+    // Best-effort preview: show a realistic render of tokens and the unsubscribe link.
+    // Real sends use backend rendering and a system-owned short link token.
+    const sampleDiscount = discountsData?.discounts?.find((d) => d.id === formData.discountId)?.code || 'SAVE10';
+    const replaced = (formData.message || '')
+      .replaceAll('{{firstName}}', 'Alex')
+      .replaceAll('{{lastName}}', 'Smith')
+      .replaceAll('{{discountCode}}', sampleDiscount);
+
+    const suffix = `\n\nUnsubscribe: ${unsubscribePreviewUrl}`;
+    return replaced + suffix;
+  }, [formData.message, formData.discountId, discountsData?.discounts, unsubscribePreviewUrl]);
+
+  const sms = useMemo(() => getSmsSegments(previewMessage), [previewMessage]);
+
+  const insertToken = (token: string) => {
+    const el = messageRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? formData.message.length;
+    const end = el.selectionEnd ?? formData.message.length;
+    const before = formData.message.slice(0, start);
+    const after = formData.message.slice(end);
+    const next = `${before}${token}${after}`;
+    setFormData({ ...formData, message: next });
+    // Restore cursor after inserted token
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
 
   return (
     <RetailPageLayout>
@@ -206,6 +242,7 @@ export default function NewCampaignPage() {
                     rows={8}
                     maxLength={1600}
                     className={errors.message ? 'border-red-400' : ''}
+                    ref={messageRef}
                   />
                   {errors.message && (
                     <p className="mt-1 text-sm text-red-400">{errors.message}</p>
@@ -215,9 +252,23 @@ export default function NewCampaignPage() {
                       {formData.message.length}/1600 characters
                     </span>
                     <span>
-                      {smsCount} SMS part{smsCount !== 1 ? 's' : ''}
+                      {sms.segments} SMS part{sms.segments !== 1 ? 's' : ''} • {sms.encoding.toUpperCase()}
                     </span>
                   </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => insertToken('{{firstName}}')}>
+                      Insert {'{{firstName}}'}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => insertToken('{{lastName}}')}>
+                      Insert {'{{lastName}}'}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => insertToken('{{discountCode}}')}>
+                      Insert {'{{discountCode}}'}
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-xs text-text-tertiary">
+                    We automatically add an opt-out line at send time: <span className="font-medium">Unsubscribe: {unsubscribePreviewUrl}</span>
+                  </p>
                 </div>
 
                 {/* Audience Selection */}
@@ -432,7 +483,7 @@ export default function NewCampaignPage() {
                 <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
                 <div className="flex justify-center lg:justify-start">
                   <SmsInPhonePreview
-                    message={formData.message}
+                    message={previewMessage}
                     senderName="Astronote"
                     variant="shopify"
                     size="md"
@@ -464,6 +515,54 @@ export default function NewCampaignPage() {
                     </div>
                   </div>
                 </div>
+              </RetailCard>
+
+              {/* SMS Help */}
+              <RetailCard className="p-6">
+                <details className="group">
+                  <summary className="cursor-pointer list-none select-none">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-text-primary">SMS Help</h3>
+                      <span className="text-sm text-text-secondary group-open:hidden">Show</span>
+                      <span className="text-sm text-text-secondary hidden group-open:inline">Hide</span>
+                    </div>
+                    <p className="mt-1 text-sm text-text-secondary">
+                      Tokens, discounts, opt-out compliance, and character counting.
+                    </p>
+                  </summary>
+                  <div className="mt-4 space-y-4 text-sm text-text-secondary">
+                    <div>
+                      <div className="font-medium text-text-primary mb-1">Personalization tokens</div>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li><span className="font-mono">{'{{firstName}}'}</span>, <span className="font-mono">{'{{lastName}}'}</span>: replaced from the contact profile.</li>
+                        <li><span className="font-mono">{'{{discountCode}}'}</span>: replaced with your selected Shopify discount code.</li>
+                        <li>If a field is missing, it’s replaced with an empty string.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-medium text-text-primary mb-1">Discounts</div>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li>Select a discount, then insert <span className="font-mono">{'{{discountCode}}'}</span> where you want it to appear.</li>
+                        <li>If you don’t include the token, the code won’t appear in the message.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-medium text-text-primary mb-1">Unsubscribe compliance</div>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li>We automatically append an opt-out line to every outbound SMS.</li>
+                        <li>The link is a short URL on our domain (`/r/:token`) that redirects to the unsubscribe page.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-medium text-text-primary mb-1">Character counting</div>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li>Plain text uses <span className="font-medium">GSM-7</span> (more characters per segment).</li>
+                        <li>Emojis and many non-Latin characters switch to <span className="font-medium">UCS-2</span> (fewer characters per segment).</li>
+                        <li>Segments determine cost; the preview shows encoding + segments for your final message (including unsubscribe line).</li>
+                      </ul>
+                    </div>
+                  </div>
+                </details>
               </RetailCard>
             </div>
           </div>

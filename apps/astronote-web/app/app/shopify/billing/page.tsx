@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { useBillingBalance } from '@/src/features/shopify/billing/hooks/useBillingBalance';
 import { useBillingSummary } from '@/src/features/shopify/billing/hooks/useBillingSummary';
@@ -30,6 +30,7 @@ import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState } from '@/src/components/retail/EmptyState';
 import {
   CreditCard,
@@ -52,21 +53,28 @@ import {
   type BillingAction,
   type BillingUIState,
 } from '@/src/features/shopify/billing/utils/billingActionMatrix';
+import { getIntParam, setQueryParams } from '@/src/lib/url/query';
 
 /**
  * Billing Page Content
  */
 function BillingPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedCurrency, setSelectedCurrency] = useState<string>('EUR');
   const [topupCredits, setTopupCredits] = useState<string>('');
-  const [invoicePage, setInvoicePage] = useState(1);
-  const pageSize = 20;
+  const invoicePage = getIntParam(searchParams.get('invoicePage'), 1);
+  const pageSize = getIntParam(searchParams.get('invoicePageSize'), 20);
+  const updateUrl = (updates: Record<string, string | number | null | undefined>) => {
+    router.replace(setQueryParams(searchParams, updates), { scroll: false });
+  };
+  const setInvoicePage = (p: number) => updateUrl({ invoicePage: p });
+  const setInvoicePageSize = (ps: number) => updateUrl({ invoicePageSize: ps, invoicePage: 1 });
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     action: BillingAction | null;
     onConfirm: () => void;
-      }>({ open: false, action: null, onConfirm: () => {} });
+      }>(() => ({ open: false, action: null, onConfirm: () => {} }));
 
   // Fetch data
   const { data: balanceData } = useBillingBalance();
@@ -1132,32 +1140,52 @@ function BillingPageContent() {
               </div>
 
               {invoicesPagination.totalPages > 1 && (
-                <div className="mt-6 flex items-center justify-between">
+                <div className="mt-6">
                   <div className="text-sm text-text-secondary">
                     Showing {((invoicesPagination.page - 1) * invoicesPagination.pageSize) + 1} to{' '}
                     {Math.min(invoicesPagination.page * invoicesPagination.pageSize, invoicesPagination.total)} of{' '}
                     {invoicesPagination.total} invoices
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setInvoicePage((p) => Math.max(1, p - 1))}
-                      disabled={!invoicesPagination.hasPrevPage || invoicesLoading}
-                    >
-                      Previous
-                    </Button>
-                    <div className="text-sm text-text-secondary">
-                      Page {invoicesPagination.page} of {invoicesPagination.totalPages}
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-text-secondary">Rows</span>
+                      <Select
+                        value={String(pageSize)}
+                        onValueChange={(v: string) => setInvoicePageSize(Number(v))}
+                      >
+                        <SelectTrigger className="h-8 w-[90px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10</SelectItem>
+                          <SelectItem value="25">25</SelectItem>
+                          <SelectItem value="50">50</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setInvoicePage((p) => Math.min(invoicesPagination.totalPages, p + 1))}
-                      disabled={!invoicesPagination.hasNextPage || invoicesLoading}
-                    >
-                      Next
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setInvoicePage(Math.max(1, invoicesPagination.page - 1))}
+                        disabled={!invoicesPagination.hasPrevPage || invoicesLoading}
+                      >
+                        Previous
+                      </Button>
+                      <div className="text-sm text-text-secondary">
+                        Page {invoicesPagination.page} of {invoicesPagination.totalPages}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setInvoicePage(Math.min(invoicesPagination.totalPages, invoicesPagination.page + 1))
+                        }
+                        disabled={!invoicesPagination.hasNextPage || invoicesLoading}
+                      >
+                        Next
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
