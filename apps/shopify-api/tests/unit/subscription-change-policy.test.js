@@ -27,6 +27,15 @@ describe('subscription-change-policy decideChangeMode', () => {
     ).toBe('checkout');
   });
 
+  it('returns scheduled for year → month changes (downgrade)', () => {
+    expect(
+      decideChangeMode(
+        { planCode: 'starter', interval: 'year' },
+        { planCode: 'starter', interval: 'month' },
+      ),
+    ).toBe('scheduled');
+  });
+
   it('returns immediate for upgrades that do not change month → year', () => {
     expect(
       decideChangeMode(

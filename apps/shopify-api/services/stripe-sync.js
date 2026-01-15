@@ -389,6 +389,7 @@ export async function getSubscriptionStatusWithStripeSync(shopId) {
   // Derive canonical fields from Stripe
   const canonicalFields = await deriveCanonicalFields(stripeSubscription);
   if (!canonicalFields) {
+    const stripePriceId = stripeSubscription.items?.data?.[0]?.price?.id || null;
     // Could not derive, return DB state
     const status = subscriptionRecord?.status || shop.subscriptionStatus || SubscriptionStatus.inactive;
     const currentPlanCode = subscriptionRecord?.planCode || shop.planType || null;
@@ -432,6 +433,11 @@ export async function getSubscriptionStatusWithStripeSync(shopId) {
       sourceOfTruth: subscriptionRecord?.sourceOfTruth || 'db_fallback',
       derivedFrom: 'db_fallback',
       mismatchDetected: false,
+      catalogResolution: {
+        ok: false,
+        reason: 'unmapped_stripe_price',
+        stripePriceId,
+      },
     };
   }
 

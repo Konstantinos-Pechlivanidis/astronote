@@ -80,6 +80,12 @@ export interface SubscriptionStatus {
   lastSyncedAt?: string | null;
   sourceOfTruth?: string | null;
   allowedActions?: string[]; // Server-computed allowed actions (optional, frontend can compute if missing)
+  availableOptions?: Array<{
+    planCode: SubscriptionPlanType;
+    interval: 'month' | 'year';
+    currency: 'EUR' | 'USD';
+    priceId: string;
+  }>;
 }
 
 export interface BillingSummary {

@@ -25,7 +25,11 @@ const mockPlanCatalog = {
   getPriceId: jest.fn(),
   resolvePlanFromPriceId: jest.fn(),
   getPlanChangeType: jest.fn(),
-  getImpliedInterval: (planCode) => (String(planCode).toLowerCase() === 'starter' ? 'month' : 'year'),
+  listSupportedSkus: jest.fn(() => [
+    { planCode: 'starter', interval: 'month', currency: 'EUR', priceId: 'price_starter_month_eur' },
+    { planCode: 'starter', interval: 'year', currency: 'EUR', priceId: 'price_starter_year_eur' },
+    { planCode: 'pro', interval: 'year', currency: 'EUR', priceId: 'price_pro_year_eur' },
+  ]),
 };
 
 // Mock stripe-sync

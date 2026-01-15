@@ -33,6 +33,13 @@ export function decideChangeMode(current, target) {
     return 'scheduled';
   }
 
+  // Yearly → Monthly is a downgrade in billing frequency and should be scheduled at period end.
+  // This covers Starter Yearly → Starter Monthly as well.
+  const isYearToMonth = currentInterval === 'year' && targetInterval === 'month';
+  if (isYearToMonth) {
+    return 'scheduled';
+  }
+
   const isMonthToYear = currentInterval === 'month' && targetInterval === 'year';
   if (isMonthToYear) {
     return 'checkout';

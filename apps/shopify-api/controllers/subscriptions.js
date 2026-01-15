@@ -24,7 +24,7 @@ import {
   decideChangeMode,
   isValidScheduledChange,
 } from '../services/subscription-change-policy.js';
-import { getImpliedInterval } from '../services/plan-catalog.js';
+import { getPriceId, listSupportedSkus } from '../services/plan-catalog.js';
 import prisma from '../services/prisma.js';
 import Stripe from 'stripe';
 import { getBillingProfile } from '../services/billing-profile.js';
@@ -43,15 +43,10 @@ function normalizeInterval(value) {
   return ['month', 'year'].includes(str) ? str : null;
 }
 
-function enforceImpliedIntervalOrSendError(res, planType, requestedInterval) {
-  const implied = getImpliedInterval(planType);
-  if (!implied) {
-    sendError(res, 400, 'INVALID_PLAN_TYPE', `Invalid plan type: ${planType}`);
+function validateSkuOrSendError(res, planType, requestedInterval, currency = 'EUR') {
+  if (!planType) {
+    sendError(res, 400, 'INVALID_PLAN_TYPE', 'Missing planType');
     return { ok: false };
-  }
-
-  if (requestedInterval == null) {
-    return { ok: true, resolvedInterval: implied };
   }
 
   const normalized = normalizeInterval(requestedInterval);
@@ -65,18 +60,25 @@ function enforceImpliedIntervalOrSendError(res, planType, requestedInterval) {
     return { ok: false };
   }
 
-  if (normalized !== implied) {
+  const resolvedCurrency = String(currency || 'EUR').toUpperCase();
+  const priceId = getPriceId(planType, normalized, resolvedCurrency);
+  if (!priceId) {
     sendError(
       res,
       400,
-      'INVALID_INTERVAL_FOR_PLAN',
-      'Invalid interval for plan. starter=month, pro=year',
-      { planType, interval: normalized, impliedInterval: implied },
+      'UNSUPPORTED_PLAN_INTERVAL',
+      `Unsupported subscription option: ${planType}/${normalized}/${resolvedCurrency}`,
+      {
+        planType,
+        interval: normalized,
+        currency: resolvedCurrency,
+        supportedSkus: listSupportedSkus(resolvedCurrency),
+      },
     );
     return { ok: false };
   }
 
-  return { ok: true, resolvedInterval: normalized };
+  return { ok: true, resolvedInterval: normalized, priceId };
 }
 
 /**
@@ -95,6 +97,7 @@ export async function getStatus(req, res, next) {
 
     // Compute allowed actions (backend-driven action matrix)
     const allowedActions = computeAllowedActions(subscription);
+    const availableOptions = listSupportedSkus(subscription?.currency || 'EUR');
 
     return sendSuccess(
       res,
@@ -102,6 +105,7 @@ export async function getStatus(req, res, next) {
         ...subscription,
         plan, // Include plan config
         allowedActions, // Server-computed allowed actions (prevents frontend/backend drift)
+        availableOptions, // Server-computed available subscription SKUs
       },
       'Subscription status retrieved',
     );
@@ -211,13 +215,6 @@ export async function subscribe(req, res, next) {
       );
     }
 
-    // Simplified policy: starter=month, pro=year (interval may be omitted; if provided must match).
-    const intervalCheck = enforceImpliedIntervalOrSendError(res, planType, interval);
-    if (!intervalCheck.ok) {
-      return;
-    }
-    const resolvedInterval = intervalCheck.resolvedInterval;
-
     // Get currency from request or shop settings (aligned with Retail)
     const validCurrencies = ['EUR', 'USD'];
     let currency = 'EUR';
@@ -239,6 +236,13 @@ export async function subscribe(req, res, next) {
       ) {
         currency = shop.currency.toUpperCase();
       }
+    }
+
+    // Default interval for subscribe (UX default), but validate that the SKU exists.
+    const resolvedInterval = interval || (planType === 'starter' ? 'month' : 'year');
+    const intervalCheck = validateSkuOrSendError(res, planType, resolvedInterval, currency);
+    if (!intervalCheck.ok) {
+      return;
     }
 
     const { getFrontendBaseUrlSync } = await import('../utils/frontendUrl.js');
@@ -415,12 +419,9 @@ export async function switchInterval(req, res, next) {
       return update(req, res, next);
     }
 
-    // If only interval switch (same plan, different interval)
+    // If only interval switch (same plan, different interval) or inferred plan change
     if (targetInterval) {
-      // Simplified policy: interval is implied by plan (starter=month, pro=year).
-      // Do not allow switching to an unsupported interval.
       const currentPlan = subscription.planCode || subscription.planType;
-      const implied = getImpliedInterval(currentPlan);
       normalizedTarget = normalizeInterval(targetInterval);
       if (!normalizedTarget) {
         return sendError(
@@ -430,14 +431,19 @@ export async function switchInterval(req, res, next) {
           `Invalid interval: ${targetInterval}. Allowed: month, year`,
         );
       }
-      if (implied && normalizedTarget !== implied) {
-        return sendError(
-          res,
-          400,
-          'INVALID_INTERVAL_FOR_PLAN',
-          'Invalid interval for plan. starter=month, pro=year',
-          { planType: currentPlan, interval: normalizedTarget, impliedInterval: implied },
-        );
+      const currency = (subscription.currency || 'EUR').toUpperCase();
+
+      // If caller omitted planType, we try to keep the same plan if the SKU exists.
+      // If same-plan target interval doesn't exist and switching to yearly, we allow upgrade to Pro yearly if available.
+      let inferredPlan = currentPlan;
+      if (!getPriceId(inferredPlan, normalizedTarget, currency)) {
+        if (normalizedTarget === 'year' && getPriceId('pro', 'year', currency)) {
+          inferredPlan = 'pro';
+        }
+      }
+      const skuCheck = validateSkuOrSendError(res, inferredPlan, normalizedTarget, currency);
+      if (!skuCheck.ok) {
+        return;
       }
 
       // If requested interval equals current interval, treat as no-op.
@@ -446,6 +452,7 @@ export async function switchInterval(req, res, next) {
         const subscriptionDto = {
           ...updatedStatus,
           allowedActions: computeAllowedActions(updatedStatus),
+          availableOptions: listSupportedSkus(updatedStatus?.currency || currency),
         };
         return sendSuccess(
           res,
@@ -466,7 +473,7 @@ export async function switchInterval(req, res, next) {
           interval: subscription.interval,
         },
         {
-          planCode: subscription.planCode || subscription.planType,
+          planCode: inferredPlan,
           interval: normalizedTarget,
         },
       );
@@ -487,6 +494,7 @@ export async function switchInterval(req, res, next) {
         const subscriptionDto = {
           ...updatedStatus,
           allowedActions: computeAllowedActions(updatedStatus),
+          availableOptions: listSupportedSkus(updatedStatus?.currency || currency),
         };
 
         return sendSuccess(
@@ -519,6 +527,7 @@ export async function switchInterval(req, res, next) {
     const subscriptionDto = {
       ...updatedStatus,
       allowedActions: computeAllowedActions(updatedStatus),
+      availableOptions: listSupportedSkus(updatedStatus?.currency || 'EUR'),
     };
     return sendSuccess(
       res,
@@ -562,13 +571,9 @@ export async function update(req, res, next) {
       );
     }
 
-    // Simplified policy: starter=month, pro=year (interval may be omitted; if provided must match).
-    // For plan updates we always resolve to the target plan implied interval.
-    const intervalCheck = enforceImpliedIntervalOrSendError(res, targetPlanCode, targetInterval);
-    if (!intervalCheck.ok) {
-      return;
-    }
-    const resolvedInterval = intervalCheck.resolvedInterval;
+    // Default interval for plan updates (UX default).
+    // We validate the SKU *after* resolving currency (below).
+    const resolvedInterval = targetInterval || (targetPlanCode === 'starter' ? 'month' : 'year');
 
     // Check if already on the requested plan and interval
     if (subscription.planCode === targetPlanCode && (!targetInterval || subscription.interval === resolvedInterval)) {
@@ -658,6 +663,12 @@ export async function update(req, res, next) {
       }
     }
 
+    // Validate the target SKU exists for the resolved currency.
+    const intervalCheck = validateSkuOrSendError(res, targetPlanCode, resolvedInterval, currency);
+    if (!intervalCheck.ok) {
+      return;
+    }
+
     // Determine change behavior
     const changeMode = decideChangeMode(
       {
@@ -677,6 +688,7 @@ export async function update(req, res, next) {
       const subscriptionDto = {
         ...updatedStatus,
         allowedActions: computeAllowedActions(updatedStatus),
+        availableOptions: listSupportedSkus(updatedStatus?.currency || currency),
       };
       const { getCustomerPortalUrl } = await import('../services/stripe.js');
       const { getFrontendBaseUrlSync } = await import('../utils/frontendUrl.js');
@@ -770,6 +782,7 @@ export async function update(req, res, next) {
     const subscriptionDto = {
       ...updatedStatus,
       allowedActions: computeAllowedActions(updatedStatus),
+      availableOptions: listSupportedSkus(updatedStatus?.currency || currency),
     };
 
     logger.info(
@@ -1392,7 +1405,7 @@ export async function verifySession(req, res, next) {
 // Test-only exports (no runtime behavior change)
 export const __test = {
   normalizeInterval,
-  enforceImpliedIntervalOrSendError,
+  validateSkuOrSendError,
 };
 
 /**

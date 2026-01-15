@@ -38,6 +38,7 @@ describe('Subscription checkout controller', () => {
     jest.clearAllMocks();
     jest.resetModules();
     process.env.FRONTEND_URL = 'https://example.com';
+    process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR = 'price_starter_month_eur';
     jest.unstable_mockModule('../../services/stripe.js', () => stripeMock);
     jest.unstable_mockModule('../../services/subscription.js', () => subscriptionMock);
     jest.unstable_mockModule('../../services/billing-profile.js', () => billingProfileMock);

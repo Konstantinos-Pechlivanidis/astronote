@@ -32,17 +32,19 @@ export const CURRENCIES = {
 };
 
 /**
- * Implied intervals for Retail-parity simplified mode:
- * - starter => month
- * - pro => year
+ * Shopify Subscription SKUs (supported)
+ * - starter: month (EUR, USD)
+ * - starter: year (EUR, USD)
+ * - pro: year (EUR, USD)
  *
- * Shopify still supports the legacy "matrix" mode (starter/pro × month/year × EUR/USD)
- * if those env vars are present.
+ * Notes:
+ * - We keep legacy env vars for backward compatibility, but they do NOT enable Starter Yearly.
  */
-export const IMPLIED_INTERVAL_BY_PLAN = {
-  starter: 'month',
-  pro: 'year',
-};
+export const SUPPORTED_SUBSCRIPTION_SKUS = [
+  { planCode: 'starter', interval: 'month' },
+  { planCode: 'starter', interval: 'year' },
+  { planCode: 'pro', interval: 'year' },
+];
 
 /**
  * Plan ranking (for upgrade/downgrade logic)
@@ -148,9 +150,27 @@ function flattenSimplifiedEnvVars() {
   return vars;
 }
 
-export function getImpliedInterval(planCode) {
-  const normalizedPlanCode = String(planCode || '').toLowerCase();
-  return IMPLIED_INTERVAL_BY_PLAN[normalizedPlanCode] || null;
+export function isSupportedSku(planCode, interval) {
+  const p = String(planCode || '').toLowerCase();
+  const i = String(interval || '').toLowerCase();
+  return SUPPORTED_SUBSCRIPTION_SKUS.some((s) => s.planCode === p && s.interval === i);
+}
+
+export function listSupportedSkus(currency = null) {
+  const normalizedCurrency = currency ? String(currency).toUpperCase() : null;
+  const out = [];
+  for (const sku of SUPPORTED_SUBSCRIPTION_SKUS) {
+    const planCode = sku.planCode;
+    const interval = sku.interval;
+    for (const cur of Object.values(CURRENCIES)) {
+      if (normalizedCurrency && cur !== normalizedCurrency) continue;
+      const priceId = getPriceId(planCode, interval, cur);
+      if (priceId) {
+        out.push({ planCode, interval, currency: cur, priceId });
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -188,31 +208,7 @@ export function getPriceId(planCode, interval, currency = 'EUR') {
     return null;
   }
 
-  const simplifiedEnvVars = flattenSimplifiedEnvVars();
-  const allSimplifiedPresent = simplifiedEnvVars.every((k) => !!process.env[k]);
-
-  // Prefer simplified (Retail-parity) if fully configured.
-  // In simplified mode, interval must match implied interval (starter=month, pro=year).
-  if (allSimplifiedPresent) {
-    const implied = getImpliedInterval(normalizedPlanCode);
-    if (!implied) {
-      return null;
-    }
-    if (normalizedInterval !== implied) {
-      logger.warn('Interval not supported for plan in simplified mode', {
-        planCode: normalizedPlanCode,
-        interval: normalizedInterval,
-        impliedInterval: implied,
-        currency: normalizedCurrency,
-      });
-      return null;
-    }
-    const legacyEnvVar = LEGACY_ENV_VAR_MAP[normalizedPlanCode]?.[normalizedCurrency];
-    const priceId = legacyEnvVar ? process.env[legacyEnvVar] : null;
-    return priceId || null;
-  }
-
-  // Otherwise try matrix (Billing v2) env vars
+  // Preferred: interval-specific env vars (SKU-driven)
   const envVarName =
     PLAN_CATALOG_CONFIG[normalizedPlanCode]?.[normalizedInterval]?.[normalizedCurrency];
   if (envVarName) {
@@ -230,6 +226,15 @@ export function getPriceId(planCode, interval, currency = 'EUR') {
   }
 
   // Fallback to legacy format for backward compatibility
+  // Legacy implies: starter=month, pro=year. It does NOT support starter=year.
+  if (
+    !(
+      (normalizedPlanCode === 'starter' && normalizedInterval === 'month') ||
+      (normalizedPlanCode === 'pro' && normalizedInterval === 'year')
+    )
+  ) {
+    return null;
+  }
   const legacyEnvVar = LEGACY_ENV_VAR_MAP[normalizedPlanCode]?.[normalizedCurrency];
   if (legacyEnvVar) {
     const priceId = process.env[legacyEnvVar];
@@ -315,34 +320,51 @@ export function resolvePlanFromPriceId(priceId) {
  * @returns {Object} { valid: boolean, missing: string[] }
  */
 export function validateCatalog() {
-  const simplifiedEnvVars = flattenSimplifiedEnvVars();
-  const matrixEnvVars = flattenMatrixEnvVars();
+  // We consider the catalog "valid" if at least the baseline legacy pair exists for both currencies
+  // OR if the new supported-SKU vars exist.
+  //
+  // This prevents breaking existing subscriptions while allowing Starter Yearly where configured.
 
-  const anySimplified = simplifiedEnvVars.some((k) => !!process.env[k]);
-  const anyMatrix = matrixEnvVars.some((k) => !!process.env[k]);
+  const requiredSkuEnvVars = [
+    'STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR',
+    'STRIPE_PRICE_ID_SUB_STARTER_MONTH_USD',
+    'STRIPE_PRICE_ID_SUB_STARTER_YEAR_EUR',
+    'STRIPE_PRICE_ID_SUB_STARTER_YEAR_USD',
+    'STRIPE_PRICE_ID_SUB_PRO_YEAR_EUR',
+    'STRIPE_PRICE_ID_SUB_PRO_YEAR_USD',
+  ];
 
-  // Dual-mode validation:
-  // - If simplified is present at all (or nothing is configured), require the full 4-var simplified set.
-  // - Else if only matrix is present, require the full 8-var matrix set.
-  // This keeps BC for existing matrix-only installs while making simplified the default.
-  const mode =
-    anySimplified && anyMatrix
-      ? 'mixed'
-      : anySimplified
-        ? 'simplified'
-        : anyMatrix
-          ? 'matrix'
-          : 'simplified';
+  const legacyEnvVars = flattenSimplifiedEnvVars(); // 4 vars: STARTER/PRO × EUR/USD
+  const matrixEnvVars = flattenMatrixEnvVars(); // 8 vars: STARTER/PRO × MONTH/YEAR × EUR/USD
 
-  const requiredVars = mode === 'matrix' ? matrixEnvVars : simplifiedEnvVars;
+  const hasAnyRequiredSku = requiredSkuEnvVars.some((k) => !!process.env[k]);
+  const hasAnyLegacy = legacyEnvVars.some((k) => !!process.env[k]);
+  const hasAnyMatrix = matrixEnvVars.some((k) => !!process.env[k]);
+  const hasFullMatrix = matrixEnvVars.every((k) => !!process.env[k]);
+
+  // Mode selection:
+  // - If full matrix is configured, treat as matrix (backward compatible Billing v2 installs).
+  // - Else if the supported-SKU vars appear, validate those (Starter month/year + Pro year).
+  // - Else validate legacy 4-var set (Starter/Pro by currency only).
+  const mode = hasFullMatrix ? 'matrix' : hasAnyRequiredSku ? 'supported_skus' : 'legacy';
+
+  const requiredVars =
+    mode === 'supported_skus'
+      ? requiredSkuEnvVars
+      : mode === 'matrix'
+        ? matrixEnvVars
+        : legacyEnvVars;
+
   const missingEnvVars = requiredVars.filter((k) => !process.env[k]);
 
   return {
     valid: missingEnvVars.length === 0,
     mode,
     missingEnvVars,
-    // Backward-compatible alias used by older error messages/tests
     missing: missingEnvVars,
+    supportedSkus: listSupportedSkus(),
+    hasAnyLegacy,
+    hasAnyMatrix,
   };
 }
 
@@ -388,8 +410,9 @@ export default {
   PLAN_CODES,
   INTERVALS,
   CURRENCIES,
-  IMPLIED_INTERVAL_BY_PLAN,
-  getImpliedInterval,
+  SUPPORTED_SUBSCRIPTION_SKUS,
+  isSupportedSku,
+  listSupportedSkus,
   getPriceId,
   resolvePlanFromPriceId,
   validateCatalog,

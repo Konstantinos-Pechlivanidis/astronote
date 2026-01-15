@@ -140,7 +140,7 @@ describe('Plan Catalog', () => {
   });
 
   describe('validateCatalog', () => {
-    it('returns valid in simplified mode when the 4 Retail-parity vars are configured', () => {
+    it('returns valid in legacy mode when the 4 legacy vars are configured', () => {
       process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR = 'price_starter_eur';
       process.env.STRIPE_PRICE_ID_SUB_STARTER_USD = 'price_starter_usd';
       process.env.STRIPE_PRICE_ID_SUB_PRO_EUR = 'price_pro_eur';
@@ -148,11 +148,11 @@ describe('Plan Catalog', () => {
 
       const result = validateCatalog();
       expect(result.valid).toBe(true);
-      expect(result.mode).toBe('simplified');
+      expect(result.mode).toBe('legacy');
       expect(result.missing).toHaveLength(0);
     });
 
-    it('returns invalid in simplified mode if any one of the 4 vars is missing', () => {
+    it('returns invalid in legacy mode if any one of the 4 vars is missing', () => {
       process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR = 'price_starter_eur';
       process.env.STRIPE_PRICE_ID_SUB_STARTER_USD = 'price_starter_usd';
       process.env.STRIPE_PRICE_ID_SUB_PRO_EUR = 'price_pro_eur';
@@ -160,8 +160,22 @@ describe('Plan Catalog', () => {
 
       const result = validateCatalog();
       expect(result.valid).toBe(false);
-      expect(result.mode).toBe('simplified');
+      expect(result.mode).toBe('legacy');
       expect(result.missingEnvVars).toContain('STRIPE_PRICE_ID_SUB_PRO_USD');
+    });
+
+    it('returns valid in supported_skus mode when Starter month/year + Pro year are configured', () => {
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR = 'price_1';
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_USD = 'price_2';
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_YEAR_EUR = 'price_3';
+      process.env.STRIPE_PRICE_ID_SUB_STARTER_YEAR_USD = 'price_4';
+      process.env.STRIPE_PRICE_ID_SUB_PRO_YEAR_EUR = 'price_7';
+      process.env.STRIPE_PRICE_ID_SUB_PRO_YEAR_USD = 'price_8';
+
+      const result = validateCatalog();
+      expect(result.valid).toBe(true);
+      expect(result.mode).toBe('supported_skus');
+      expect(result.missing).toHaveLength(0);
     });
 
     it('returns valid when all priceIds are configured', () => {

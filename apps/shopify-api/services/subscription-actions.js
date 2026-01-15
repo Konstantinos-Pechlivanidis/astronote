@@ -4,6 +4,8 @@
  * This ensures frontend and backend agree on what actions are available
  */
 
+import { listSupportedSkus } from './plan-catalog.js';
+
 /**
  * Compute allowed actions for a subscription state
  * @param {Object} subscription - Subscription status DTO
@@ -54,14 +56,26 @@ export function computeAllowedActions(subscription) {
     }
 
     // Normal active state - all actions available
-    return [
+    const actions = [
       'changePlan',
-      'switchInterval',
       'cancelAtPeriodEnd',
       'updatePaymentMethod',
       'viewInvoices',
       'refreshFromStripe',
     ];
+
+    // Only allow "switchInterval" when the catalog actually supports an alternate interval
+    // for the current plan in the current currency. (Prevents invalid "starter→year" or "pro→month" UX.)
+    const planCode = subscription.planCode || subscription.planType;
+    const currency = (subscription.currency || 'EUR').toUpperCase();
+    const supported = listSupportedSkus(currency).filter((s) => s.planCode === planCode);
+    const hasMonth = supported.some((s) => s.interval === 'month');
+    const hasYear = supported.some((s) => s.interval === 'year');
+    if (hasMonth && hasYear) {
+      actions.splice(1, 0, 'switchInterval');
+    }
+
+    return actions;
   }
 
   // Incomplete/Incomplete Expired

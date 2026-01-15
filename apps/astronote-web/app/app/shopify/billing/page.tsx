@@ -247,12 +247,16 @@ function BillingPageContent() {
   const uiState: BillingUIState = deriveUIState(subscription);
   // Use backend allowedActions if provided (prevents drift), otherwise compute locally
   const availableActions = getAvailableActions(uiState, subscription?.allowedActions);
+  const availableSubscriptionOptions = subscription?.availableOptions || [];
+  const starterYearAvailable = availableSubscriptionOptions.some(
+    (o) => o.planCode === 'starter' && o.interval === 'year' && o.currency === currency,
+  );
 
-  const handleSubscribe = async (planType: 'starter' | 'pro') => {
+  const handleSubscribe = async (planType: 'starter' | 'pro', interval?: 'month' | 'year') => {
     try {
-      // Explicitly set interval: starter = monthly, pro = yearly
-      const interval = planType === 'starter' ? 'month' : 'year';
-      await subscribe.mutateAsync({ planType, interval, currency });
+      // Default interval (UX default) if not explicitly provided
+      const resolvedInterval = interval || (planType === 'starter' ? 'month' : 'year');
+      await subscribe.mutateAsync({ planType, interval: resolvedInterval, currency });
     } catch (error) {
       // Error handled by mutation hook
     }
@@ -315,7 +319,7 @@ function BillingPageContent() {
     switch (action.id) {
     case 'subscribe':
       if (targetPlanCode) {
-        handleSubscribe(targetPlanCode);
+        handleSubscribe(targetPlanCode, targetInterval);
       }
       break;
     case 'changePlan':
@@ -700,6 +704,24 @@ function BillingPageContent() {
                   >
                     {getPlanActionLabel(uiState, 'starter', 'month')}
                   </Button>
+
+                  {starterYearAvailable && (
+                    <>
+                      <div className="text-xs text-text-tertiary italic">
+                        Switching to yearly requires payment now and takes effect immediately after checkout.
+                      </div>
+                      <Button
+                        onClick={() => handleAction({ id: 'subscribe', label: 'Subscribe (Yearly)', intent: 'primary', variant: 'outline' }, 'starter', 'year')}
+                        disabled={subscribe.isPending || (isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'year')}
+                        className="w-full"
+                        variant={isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'year' ? 'outline' : 'outline'}
+                      >
+                        {isSubscriptionActive && subscriptionPlan === 'starter' && subscriptionInterval === 'year'
+                          ? 'Current plan'
+                          : 'Switch to Starter (Yearly)'}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </RetailCard>
               <RetailCard className="p-6 border-2 border-accent relative">
@@ -956,7 +978,7 @@ function BillingPageContent() {
                     <strong className="text-text-primary">Downgrades:</strong> Most downgrades take effect immediately. However, if you&apos;re on the Pro Yearly plan and downgrade, the change is scheduled for the end of your yearly term to ensure you get full value.
                   </p>
                   <p>
-                    <strong className="text-text-primary">Switching intervals:</strong> When you switch from monthly to yearly billing (or vice versa), the change takes effect immediately. Stripe automatically calculates any proration based on your current usage.
+                    <strong className="text-text-primary">Switching intervals:</strong> Switching from monthly → yearly requires payment now and takes effect immediately after checkout. Switching from yearly → monthly is a downgrade and takes effect at the end of your current billing period.
                   </p>
                 </div>
               </details>

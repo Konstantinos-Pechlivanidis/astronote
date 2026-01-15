@@ -160,6 +160,7 @@ export function useSwitchInterval() {
       // Invalidate subscription status and billing summary to refresh UI
       queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.subscriptions.status() });
       queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.balance() });
       queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.invoicesRoot() });
       queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.historyRoot() });
 
