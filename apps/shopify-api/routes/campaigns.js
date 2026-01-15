@@ -13,7 +13,6 @@ import {
 } from '../middlewares/rateLimits.js';
 import {
   campaignsListCache,
-  campaignMetricsCache,
   invalidateCampaignsCache,
 } from '../middlewares/cache.js';
 
@@ -96,16 +95,17 @@ r.post(
 );
 
 // GET /campaigns/:id/metrics - Get campaign metrics
-r.get('/:id/metrics', campaignMetricsCache, ctrl.metrics);
+// NOTE: metrics/status/progress are live surfaces. Caching here causes “no refresh” symptoms in UI.
+r.get('/:id/metrics', ctrl.metrics);
 
 // GET /campaigns/:id/status - Get campaign status with Phase 2.2 metrics
-r.get('/:id/status', campaignMetricsCache, ctrl.status);
+r.get('/:id/status', ctrl.status);
 
 // GET /campaigns/:id/preview - Get campaign preview (recipient count, estimated cost)
 r.get('/:id/preview', ctrl.getCampaignPreview);
 
 // GET /campaigns/:id/progress - Get campaign progress (sent, failed, pending, percentage)
-r.get('/:id/progress', campaignMetricsCache, ctrl.getCampaignProgress);
+r.get('/:id/progress', ctrl.getCampaignProgress);
 
 // GET /campaigns/:id/failed-recipients - Get failed recipients for a campaign
 r.get('/:id/failed-recipients', ctrl.getFailedRecipients);

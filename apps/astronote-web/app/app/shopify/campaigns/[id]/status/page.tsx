@@ -26,7 +26,7 @@ export default function CampaignStatusPage() {
   const isActive = campaign?.status === 'sending' || campaign?.status === 'scheduled';
   const { data: statusData, isLoading: statusLoading } = useCampaignStatus(id, {
     enabled: isActive,
-    refetchInterval: isActive ? 30 * 1000 : false, // Auto-refresh every 30s
+    refetchInterval: isActive ? 2 * 1000 : false, // Fast poll while active
   });
 
   const { data: progressData, isLoading: progressLoading } = useCampaignProgress(id);

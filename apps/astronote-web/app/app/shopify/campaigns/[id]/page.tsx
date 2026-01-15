@@ -19,6 +19,7 @@ import {
   useScheduleCampaign,
 } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
 import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
+import { useBillingBalance } from '@/src/features/shopify/billing/hooks/useBillingBalance';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
@@ -71,11 +72,17 @@ export default function CampaignDetailPage() {
   const isActive = campaign?.status === 'sending' || campaign?.status === 'scheduled';
   const { data: statusData } = useCampaignStatus(id, {
     enabled: isActive,
-    refetchInterval: isActive ? 30 * 1000 : false, // Auto-refresh every 30s if active
+    refetchInterval: isActive ? 2 * 1000 : false, // Fast poll while active
   });
 
   // Fetch progress (auto-refresh if sending/scheduled)
   const { data: progressData } = useCampaignProgress(id);
+
+  // Credits/balance should refresh quickly while campaign is active (debit happens during send path)
+  useBillingBalance({
+    enabled: isActive,
+    refetchInterval: isActive ? 5 * 1000 : false,
+  });
 
   // Fetch preview (only when modal is open)
   const { data: previewData, isLoading: previewLoading } = useCampaignPreview(

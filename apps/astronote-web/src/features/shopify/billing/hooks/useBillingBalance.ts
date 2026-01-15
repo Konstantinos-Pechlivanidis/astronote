@@ -5,7 +5,12 @@ import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
 /**
  * React Query hook for billing balance
  */
-export function useBillingBalance() {
+export function useBillingBalance(options: {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+  refetchOnWindowFocus?: boolean;
+  refetchOnMount?: boolean;
+} = {}) {
   return useQuery({
     queryKey: shopifyQueryKeys.billing.balance(),
     queryFn: () => billingApi.getBalance(),
@@ -14,5 +19,6 @@ export function useBillingBalance() {
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     placeholderData: (previousData) => previousData,
+    ...options,
   });
 }

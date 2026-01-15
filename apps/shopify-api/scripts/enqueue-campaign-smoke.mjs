@@ -21,7 +21,8 @@ const BASE_URL =
   `http://localhost:${process.env.PORT || 8080}`;
 
 function randSuffix() {
-  return `${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+  // Must be safe for shop domain: [a-zA-Z0-9-]+
+  return `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
 async function ensureShop({ shopDomain }) {
@@ -38,6 +39,10 @@ async function ensureShop({ shopDomain }) {
       currency: 'EUR',
       status: 'active',
       subscriptionStatus: 'active',
+      // Ensure enqueue credit checks pass (uses includedSmsPerPeriod + usedSmsThisPeriod)
+      includedSmsPerPeriod: 10000,
+      usedSmsThisPeriod: 0,
+      subscriptionInterval: 'month',
       settings: {
         create: {
           currency: 'EUR',

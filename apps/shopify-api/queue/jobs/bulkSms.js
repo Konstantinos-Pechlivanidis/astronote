@@ -237,7 +237,9 @@ export async function handleBulkSMS(job) {
     }
 
     // Send bulk SMS only for recipients that are still pending
+    const mittoStart = Date.now();
     const result = await sendBulkSMSWithCredits(filteredBulkMessages);
+    const mittoMs = Date.now() - mittoStart;
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:230',message:'sendBulkSMSWithCredits result',data:{campaignId,jobId:job.id,totalResults:result.results?.length,sentCount:result.results?.filter(r => r.sent).length,failedCount:result.results?.filter(r => !r.sent).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
     // #endregion
@@ -278,6 +280,7 @@ export async function handleBulkSMS(job) {
                 messageLogs.push({
                   shopId,
                   phoneE164: recipient.phoneE164,
+                  provider: 'mitto',
                   direction: 'outbound',
                   status: 'sent',
                   providerMsgId: res.messageId,
@@ -331,6 +334,10 @@ export async function handleBulkSMS(job) {
           }
         }
 
+        if (messageLogs.length > 0) {
+          await tx.messageLog.createMany({ data: messageLogs });
+        }
+
         return {
           successfulIds,
           failedIds,
@@ -359,6 +366,7 @@ export async function handleBulkSMS(job) {
       failed: failedIds.length,
       total: result.results.length,
       duration,
+      mittoMs,
       jobId: job.id,
       retryAttempt: job.attemptsMade || 0,
     }, 'Bulk SMS batch job completed');
@@ -373,33 +381,40 @@ export async function handleBulkSMS(job) {
     // Queue delivery status update jobs for successful sends
     if (bulkId && successfulIds.length > 0) {
       try {
-        // First check after 30 seconds
+        // Short ladder for quick feedback in UI: 10s, 30s, 60s
+        await deliveryStatusQueue.add(
+          'update-campaign-status',
+          { campaignId },
+          {
+            delay: 10000, // 10 seconds
+            jobId: `status-update-${campaignId}-10s-${Date.now()}`,
+            removeOnComplete: true,
+            attempts: 2,
+            backoff: { type: 'fixed', delay: 5000 },
+          },
+        );
+
         await deliveryStatusQueue.add(
           'update-campaign-status',
           { campaignId },
           {
             delay: 30000, // 30 seconds
             jobId: `status-update-${campaignId}-30s-${Date.now()}`,
+            removeOnComplete: true,
+            attempts: 2,
+            backoff: { type: 'fixed', delay: 5000 },
           },
         );
 
-        // Second check after 2 minutes
         await deliveryStatusQueue.add(
           'update-campaign-status',
           { campaignId },
           {
-            delay: 120000, // 2 minutes
-            jobId: `status-update-${campaignId}-2m-${Date.now()}`,
-          },
-        );
-
-        // Final check after 5 minutes
-        await deliveryStatusQueue.add(
-          'update-campaign-status',
-          { campaignId },
-          {
-            delay: 300000, // 5 minutes
-            jobId: `status-update-${campaignId}-5m-${Date.now()}`,
+            delay: 60000, // 60 seconds
+            jobId: `status-update-${campaignId}-60s-${Date.now()}`,
+            removeOnComplete: true,
+            attempts: 2,
+            backoff: { type: 'fixed', delay: 5000 },
           },
         );
 

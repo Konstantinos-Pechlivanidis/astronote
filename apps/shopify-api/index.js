@@ -32,6 +32,17 @@ try {
   process.exit(1);
 }
 
+// Boot diagnostics (safe, no secrets) — helps verify Render setup quickly.
+logger.info('Boot config', {
+  workerMode,
+  runScheduler: process.env.RUN_SCHEDULER || 'true (default)',
+  eventPollingEnabled: process.env.EVENT_POLLING_ENABLED || 'true (default)',
+  nodeEnv: process.env.NODE_ENV || 'development',
+  hasRedisHost: !!process.env.REDIS_HOST,
+  hasRedisPassword: !!process.env.REDIS_PASSWORD,
+  redisTls: process.env.REDIS_TLS === 'true',
+});
+
 // Import schedulers (they queue jobs, workers process them)
 import {
   startPeriodicStatusUpdates,

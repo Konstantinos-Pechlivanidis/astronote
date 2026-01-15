@@ -12,7 +12,6 @@ import {
 } from '../schemas/billing.schema.js';
 import { billingRateLimit } from '../middlewares/rateLimits.js';
 import {
-  billingBalanceCache,
   billingHistoryCache,
   invalidateBillingCache,
 } from '../middlewares/cache.js';
@@ -23,7 +22,8 @@ const r = express.Router();
 r.use(billingRateLimit);
 
 // GET /billing/balance - Get credit balance
-r.get('/balance', billingBalanceCache, ctrl.getBalance);
+// NOTE: do NOT cache balance aggressively; it must reflect near-real-time debits from campaign sends.
+r.get('/balance', ctrl.getBalance);
 
 // GET /billing/summary - Get billing summary (subscription + allowance + credits)
 r.get('/summary', ctrl.getSummary);

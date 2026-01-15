@@ -48,6 +48,7 @@ import unsubscribeRoutes from './routes/unsubscribe.js';
 import optInRoutes from './routes/opt-in.js';
 import shortLinkRoutes from './routes/shortLinks.js';
 import metricsRoutes from './routes/metrics.js';
+import debugRoutes from './routes/debug.js';
 // import { setDevShop } from './middlewares/dev-shop.js'; // Not used in current implementation
 import { resolveStore, requireStore } from './middlewares/store-resolution.js';
 
@@ -250,6 +251,7 @@ app.use('/subscriptions', resolveStore, requireStore, subscriptionRoutes);
 app.use('/settings', resolveStore, requireStore, settingsRoutes);
 app.use('/audiences', resolveStore, requireStore, audiencesRoutes);
 app.use('/shopify', resolveStore, requireStore, shopifyRoutes);
+app.use('/debug', resolveStore, requireStore, debugRoutes);
 
 // Public routes (no store context required)
 // Note: /templates/:id/track requires store context, so apply resolveStore

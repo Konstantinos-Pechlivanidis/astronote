@@ -104,6 +104,9 @@ export function useEnqueueCampaign() {
       queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.metrics(id) });
       queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.status(id) });
       queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.campaigns.progress(id) });
+      // Credits are consumed during campaign send; keep balance fresh.
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.balance() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
       queryClient.invalidateQueries({ queryKey: ['shopify', 'dashboard'] });
 
       toast.success('Campaign queued for sending');
