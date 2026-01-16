@@ -10,25 +10,115 @@ import {
   MessageStatus,
 } from '../../utils/prismaEnums.js';
 import { deliveryStatusQueue } from '../index.js';
+import { smsQueue } from '../index.js';
+import { cacheRedis } from '../../config/redis.js';
+import { redisSetExBestEffort, sha256Hex } from '../../utils/redisSafe.js';
 
 export async function handleMittoSend(job) {
   const { campaignId, shopId, phoneE164, message, sender } = job.data;
+  let providerSucceeded = false;
+  let providerMsgId = null;
+  const debug = process.env.SMS_SEND_DEBUG === '1';
 
   try {
+    if (debug) {
+      logger.info(
+        {
+          tag: 'PRE_SEND',
+          kind: 'single',
+          campaignId,
+          shopId,
+          phoneE164,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          providerCalled: false,
+        },
+        'PRE_SEND',
+      );
+    }
+
     // Skip credit consumption for campaign messages (credits already consumed at campaign level)
     // Individual SMS (non-campaign) will consume credits normally
     const isCampaignMessage = !!campaignId;
 
+    // Idempotency guard: if this campaign recipient already has a provider message id, do not resend.
+    if (campaignId && phoneE164) {
+      const existing = await prisma.campaignRecipient.findFirst({
+        where: { campaignId, phoneE164, mittoMessageId: { not: null } },
+        select: { id: true, mittoMessageId: true },
+      });
+      if (existing?.mittoMessageId) {
+        logger.warn(
+          { jobId: job.id, campaignId, phoneE164, msgId: existing.mittoMessageId },
+          'Skipping sendSMS: recipient already has mittoMessageId (idempotent skip)',
+        );
+        return { ok: true, msgId: existing.mittoMessageId, skipped: true };
+      }
+    }
+
     // Use new SMS service with updated API
-    const res = await sendSms({
-      to: phoneE164,
-      text: message,
-      senderOverride: sender,
-      shopId,
-      skipCreditCheck: isCampaignMessage, // Skip credit check for campaign messages
-    });
+    if (debug) {
+      logger.info(
+        {
+          tag: 'PRE_SEND',
+          kind: 'provider',
+          campaignId,
+          shopId,
+          phoneE164,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          providerCalled: true,
+        },
+        'PRE_SEND',
+      );
+    }
+    let res;
+    try {
+      res = await sendSms({
+        to: phoneE164,
+        text: message,
+        senderOverride: sender,
+        shopId,
+        skipCreditCheck: isCampaignMessage, // Skip credit check for campaign messages
+      });
+      providerSucceeded = true;
+    } catch (providerErr) {
+      // Provider call failed before we got definitive provider IDs; safe to retry.
+      logger.error(
+        { jobId: job.id, campaignId, shopId, phoneE164, err: providerErr?.message || String(providerErr) },
+        'Provider send failed (pre-success) — allowing retry',
+      );
+      throw providerErr;
+    }
 
     const msgId = res?.messageId || null;
+    providerMsgId = msgId;
+    if (debug) {
+      logger.info(
+        {
+          tag: 'POST_SEND',
+          campaignId,
+          shopId,
+          phoneE164,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          providerCalled: true,
+          providerMsgId: msgId,
+        },
+        'POST_SEND',
+      );
+    }
+
+    // Post-provider marker (best-effort): prevents resends if DB persist fails.
+    if (campaignId && phoneE164 && msgId) {
+      const ttlSeconds = Number(process.env.SMS_SENT_MARKER_TTL_SECONDS || 30 * 24 * 60 * 60);
+      await redisSetExBestEffort(
+        cacheRedis,
+        `sms:sent:campaignRecipient:${campaignId}:${sha256Hex(phoneE164).slice(0, 16)}`,
+        ttlSeconds,
+        String(msgId),
+      );
+    }
 
     // Update existing campaign recipient record (created during campaign send)
     // Find the recipient record for this campaign and phone
@@ -85,6 +175,22 @@ export async function handleMittoSend(job) {
         deliveryStatus: 'Queued',
       },
     });
+
+    if (debug) {
+      logger.info(
+        {
+          tag: 'POST_PERSIST',
+          campaignId,
+          shopId,
+          phoneE164,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          ok: true,
+          providerMsgId: msgId,
+        },
+        'POST_PERSIST',
+      );
+    }
 
     // Update campaign metrics
     await prisma.campaignMetrics.update({
@@ -162,6 +268,59 @@ export async function handleMittoSend(job) {
       error: errorMessage,
       errorType,
     });
+
+    // If provider was already called (or we have a provider msg id), never throw to retry.
+    // Retrying would cause duplicate sends. Schedule a persist repair instead.
+    if (providerSucceeded || providerMsgId) {
+      logger.error(
+        { jobId: job.id, campaignId, phoneE164, providerMsgId, err: errorMessage },
+        '[NO-RETRY] Failure after provider call in sendSMS — enqueue persist repair and return',
+      );
+      if (debug) {
+        logger.error(
+          {
+            tag: 'POST_PERSIST',
+            campaignId,
+            shopId,
+            phoneE164,
+            jobId: job.id,
+            attempt: job.attemptsMade || 0,
+            ok: false,
+            providerCalled: true,
+            providerMsgId,
+            err: errorMessage,
+          },
+          'POST_PERSIST',
+        );
+      }
+      try {
+        const repairKey = `sms:repair:single:${campaignId || 'na'}:${job.id}:${sha256Hex(String(Date.now())).slice(0, 8)}`;
+        const ttlSeconds = Number(process.env.SMS_REPAIR_TTL_SECONDS || 24 * 60 * 60);
+        const payload = {
+          kind: 'single',
+          campaignId,
+          shopId,
+          phoneE164,
+          providerMsgId,
+          sender,
+        };
+        await redisSetExBestEffort(cacheRedis, repairKey, ttlSeconds, JSON.stringify(payload));
+        await smsQueue.add(
+          'persistSmsResults',
+          { repairKey },
+          {
+            jobId: `persistSmsResults:${repairKey}`,
+            attempts: 10,
+            backoff: { type: 'exponential', delay: 5000 },
+            removeOnComplete: 200,
+            removeOnFail: 200,
+          },
+        );
+      } catch (repairErr) {
+        logger.error({ jobId: job.id, err: repairErr?.message || String(repairErr) }, 'Failed to enqueue single persist repair job');
+      }
+      return { ok: true, msgId: providerMsgId, postProviderFailure: true };
+    }
 
     // Update existing campaign recipient record with failure status
     const recipient = await prisma.campaignRecipient.findFirst({

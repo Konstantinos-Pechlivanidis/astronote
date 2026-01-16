@@ -22,6 +22,30 @@ const SHORTENER_BASE_URL =
   'https://astronote-retail-frontend.onrender.com';
 const BITLY_API_TOKEN = process.env.BITLY_API_TOKEN;
 const TINYURL_API_KEY = process.env.TINYURL_API_KEY;
+const URL_SHORTENER_TIMEOUT_MS = Number(process.env.URL_SHORTENER_TIMEOUT_MS || 1200);
+
+function withTimeout(promise, ms, label = 'operation') {
+  const timeoutMs = Number(ms);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return promise;
+  }
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
+}
+
+async function fetchWithTimeout(fetchFn, url, init = {}, timeoutMs = 1200) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchFn(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
 
 // Helper function to ensure base URL includes /retail path
 function normalizeBase(url) {
@@ -50,24 +74,28 @@ async function shortenCustom(originalUrl, opts = {}) {
     const shortUrl = `${baseUrl}/s/${shortCode}`;
 
     // Persist mapping
-    await prisma.shortLink.upsert({
-      where: { shortCode },
-      update: {
-        originalUrl,
-        targetUrl: opts.targetUrl || originalUrl,
-        kind: opts.kind || null,
-        ownerId: opts.ownerId || null,
-        campaignId: opts.campaignId || null,
-      },
-      create: {
-        shortCode,
-        originalUrl,
-        targetUrl: opts.targetUrl || originalUrl,
-        kind: opts.kind || null,
-        ownerId: opts.ownerId || null,
-        campaignId: opts.campaignId || null,
-      },
-    });
+    await withTimeout(
+      prisma.shortLink.upsert({
+        where: { shortCode },
+        update: {
+          originalUrl,
+          targetUrl: opts.targetUrl || originalUrl,
+          kind: opts.kind || null,
+          ownerId: opts.ownerId || null,
+          campaignId: opts.campaignId || null,
+        },
+        create: {
+          shortCode,
+          originalUrl,
+          targetUrl: opts.targetUrl || originalUrl,
+          kind: opts.kind || null,
+          ownerId: opts.ownerId || null,
+          campaignId: opts.campaignId || null,
+        },
+      }),
+      URL_SHORTENER_TIMEOUT_MS,
+      'prisma.shortLink.upsert',
+    );
 
     return shortUrl;
   } catch (error) {
@@ -90,14 +118,14 @@ async function shortenBitly(originalUrl) {
   try {
     // Use built-in fetch (Node.js 18+) or fallback to node-fetch
     const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
-    const response = await fetchFn('https://api-ssl.bitly.com/v4/shorten', {
+    const response = await fetchWithTimeout(fetchFn, 'https://api-ssl.bitly.com/v4/shorten', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${BITLY_API_TOKEN}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ long_url: originalUrl }),
-    });
+    }, URL_SHORTENER_TIMEOUT_MS);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -126,14 +154,14 @@ async function shortenTinyURL(originalUrl) {
   try {
     // Use built-in fetch (Node.js 18+) or fallback to node-fetch
     const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
-    const response = await fetchFn('https://api.tinyurl.com/create', {
+    const response = await fetchWithTimeout(fetchFn, 'https://api.tinyurl.com/create', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${TINYURL_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ url: originalUrl }),
-    });
+    }, URL_SHORTENER_TIMEOUT_MS);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -210,6 +238,11 @@ async function shortenUrlsInText(text) {
   const shortenPromises = urls.map(async (url) => {
     // Normalize URL (add https:// if missing)
     const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
+
+    // Never shorten unsubscribe URLs here; unsubscribe is handled explicitly elsewhere
+    if (normalizedUrl.includes('/unsubscribe/')) {
+      return { original: url, shortened: url };
+    }
 
     // Check cache first
     if (urlMap.has(normalizedUrl)) {

@@ -16,6 +16,27 @@ const SHORTENER_BASE_URL = process.env.URL_SHORTENER_BASE_URL || process.env.FRO
 const BITLY_API_TOKEN = process.env.BITLY_API_TOKEN;
 const TINYURL_API_KEY = process.env.TINYURL_API_KEY;
 
+function withTimeout(promise, ms, label = 'operation') {
+  const timeoutMs = Number(ms);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
+}
+
+async function fetchWithTimeout(url, init = {}, timeoutMs = 1200) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 /**
  * Generate a short code for custom URL shortener (legacy)
  * @param {string} originalUrl - Original URL to shorten
@@ -40,12 +61,17 @@ function generateShortCode(originalUrl) {
  */
 async function shortenBackend(originalUrl, options = {}) {
   try {
-    const shortLink = await createShortLink({
-      destinationUrl: originalUrl,
-      shopId: options.shopId || null,
-      campaignId: options.campaignId || null,
-      contactId: options.contactId || null,
-    });
+    const timeoutMs = Number(process.env.URL_SHORTENER_TIMEOUT_MS || 1200);
+    const shortLink = await withTimeout(
+      createShortLink({
+        destinationUrl: originalUrl,
+        shopId: options.shopId || null,
+        campaignId: options.campaignId || null,
+        contactId: options.contactId || null,
+      }),
+      timeoutMs,
+      'createShortLink(urlShortener)',
+    );
     return shortLink.shortUrl;
   } catch (error) {
     logger.warn({ err: error.message, originalUrl }, 'Failed to create backend short link, falling back');
@@ -82,14 +108,15 @@ async function shortenBitly(originalUrl) {
   }
 
   try {
-    const response = await fetch('https://api-ssl.bitly.com/v4/shorten', {
+    const timeoutMs = Number(process.env.URL_SHORTENER_TIMEOUT_MS || 1200);
+    const response = await fetchWithTimeout('https://api-ssl.bitly.com/v4/shorten', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${BITLY_API_TOKEN}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ long_url: originalUrl }),
-    });
+    }, timeoutMs);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -116,14 +143,15 @@ async function shortenTinyURL(originalUrl) {
   }
 
   try {
-    const response = await fetch('https://api.tinyurl.com/create', {
+    const timeoutMs = Number(process.env.URL_SHORTENER_TIMEOUT_MS || 1200);
+    const response = await fetchWithTimeout('https://api.tinyurl.com/create', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${TINYURL_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ url: originalUrl }),
-    });
+    }, timeoutMs);
 
     if (!response.ok) {
       const errorText = await response.text();

@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import { queueRedis } from '../config/redis.js';
 import { handleMittoSend } from './jobs/mittoSend.js';
 import { handleBulkSMS } from './jobs/bulkSms.js';
+import { handlePersistSmsResults } from './jobs/persistSmsResults.js';
 import {
   handleCampaignStatusUpdate,
   handleAllCampaignsStatusUpdate,
@@ -58,6 +59,9 @@ export const smsWorker = skipWorkers
       if (job.name === 'sendBulkSMS') {
         // Campaigns always use bulk SMS (sendBulkSMS job type)
         return await handleBulkSMS(job);
+      } else if (job.name === 'persistSmsResults') {
+        // Post-send persist repair job (NO provider calls)
+        return await handlePersistSmsResults(job);
       } else if (job.name === 'sendSMS' || !job.name) {
         // Individual jobs (sendSMS) are only for automations and test messages
         return await handleMittoSend(job);

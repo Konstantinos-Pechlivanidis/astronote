@@ -21,6 +21,8 @@ const { generateUnsubscribeToken } = require('../../api/src/services/token.servi
 const { shortenUrl, shortenUrlsInText } = require('../../api/src/services/urlShortener.service');
 const crypto = require('crypto');
 
+const DEBUG_SEND = process.env.SMS_SEND_DEBUG === '1';
+
 function formatRedisInfo(connection) {
   if (!connection) return {};
   const opts = connection.options || connection.opts || connection.connector?.options || {};
@@ -42,8 +44,64 @@ function normalizeBase(url) {
   return url.trim().replace(/\/$/, '');
 }
 
-async function finalizeMessageText(text, { offerUrl, unsubscribeUrl }) {
-  let output = await shortenUrlsInText(text || '');
+function sha256Hex(input) {
+  return crypto.createHash('sha256').update(String(input)).digest('hex');
+}
+
+async function getCache(key) {
+  try {
+    return await connection.get(key);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function setCacheEx(key, seconds, value) {
+  try {
+    await connection.set(key, String(value), 'EX', Number(seconds));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, ctx = null }) {
+  let output = text || '';
+  try {
+    if (DEBUG_SEND) {
+      logger.info(
+        {
+          tag: 'SHORTEN_START',
+          kind: 'message',
+          jobId: ctx?.jobId,
+          attempt: ctx?.attempt,
+          campaignId: ctx?.campaignId,
+          ownerId: ctx?.ownerId,
+          messageId: ctx?.messageId,
+        },
+        'SHORTEN_START',
+      );
+    }
+    output = await shortenUrlsInText(output);
+  } catch (e) {
+    if (DEBUG_SEND) {
+      logger.warn(
+        {
+          tag: 'SHORTEN_FAIL',
+          kind: 'message',
+          jobId: ctx?.jobId,
+          attempt: ctx?.attempt,
+          campaignId: ctx?.campaignId,
+          ownerId: ctx?.ownerId,
+          messageId: ctx?.messageId,
+          err: e?.message || String(e),
+        },
+        'SHORTEN_FAIL',
+      );
+    }
+    logger.warn({ err: e?.message || String(e) }, 'SHORTEN_FAIL (pre-send) — continuing with unshortened message');
+    output = text || '';
+  }
 
   // Remove any existing offer/unsubscribe blocks or short URLs
   const linePatterns = [
@@ -190,7 +248,23 @@ async function processIndividualJob(messageId, job) {
     });
     if (!msg) return;
 
+    let providerId = null;
     try {
+      if (DEBUG_SEND) {
+        logger.info(
+          {
+            tag: 'PRE_SEND',
+            kind: 'single',
+            jobId: job.id,
+            attempt: job.attemptsMade || 0,
+            campaignId: msg.campaign.id,
+            ownerId: msg.campaign.ownerId,
+            messageId: msg.id,
+            providerCalled: false,
+          },
+          'PRE_SEND',
+        );
+      }
       const subscriptionActive = await isSubscriptionActive(msg.campaign.ownerId);
       if (!subscriptionActive) {
         await prisma.campaignMessage.update({
@@ -208,7 +282,42 @@ async function processIndividualJob(messageId, job) {
       }
 
       // Ensure unsubscribe link and offer link are present (safety check - should already be added in enqueue)
-      let finalText = await shortenUrlsInText(msg.text); // Shorten any URLs in message
+      let finalText = msg.text || '';
+      try {
+        if (DEBUG_SEND) {
+          logger.info(
+            {
+              tag: 'SHORTEN_START',
+              kind: 'message',
+              jobId: job.id,
+              attempt: job.attemptsMade || 0,
+              campaignId: msg.campaign.id,
+              ownerId: msg.campaign.ownerId,
+              messageId: msg.id,
+            },
+            'SHORTEN_START',
+          );
+        }
+        finalText = await shortenUrlsInText(finalText); // Shorten any URLs in message
+      } catch (e) {
+        if (DEBUG_SEND) {
+          logger.warn(
+            {
+              tag: 'SHORTEN_FAIL',
+              kind: 'message',
+              jobId: job.id,
+              attempt: job.attemptsMade || 0,
+              campaignId: msg.campaign.id,
+              ownerId: msg.campaign.ownerId,
+              messageId: msg.id,
+              err: e?.message || String(e),
+            },
+            'SHORTEN_FAIL',
+          );
+        }
+        logger.warn({ messageId: msg.id, err: e?.message || String(e) }, 'SHORTEN_FAIL (pre-send) — continuing with unshortened message');
+        finalText = msg.text || '';
+      }
       let needsUnsubscribeLink = !finalText.includes('/unsubscribe/');
       let needsOfferLink = !finalText.includes('/o/');
 
@@ -217,7 +326,47 @@ async function processIndividualJob(messageId, job) {
         try {
           const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
           const unsubscribeUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-          const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
+          const ttlSeconds = Number(process.env.UNSUBSCRIBE_SHORT_CACHE_TTL_SECONDS || 30 * 24 * 60 * 60);
+          const cacheKey = `unsubscribe:short:${msg.campaign.ownerId || 'na'}:${sha256Hex(unsubscribeUrl).slice(0, 16)}`;
+          let shortenedUnsubscribeUrl = await getCache(cacheKey);
+          if (!shortenedUnsubscribeUrl) {
+            try {
+              if (DEBUG_SEND) {
+                logger.info(
+                  {
+                    tag: 'SHORTEN_START',
+                    kind: 'unsubscribe',
+                    jobId: job.id,
+                    attempt: job.attemptsMade || 0,
+                    campaignId: msg.campaign.id,
+                    ownerId: msg.campaign.ownerId,
+                    messageId: msg.id,
+                  },
+                  'SHORTEN_START',
+                );
+              }
+              shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
+              await setCacheEx(cacheKey, ttlSeconds, shortenedUnsubscribeUrl);
+            } catch (shortErr) {
+              if (DEBUG_SEND) {
+                logger.warn(
+                  {
+                    tag: 'SHORTEN_FAIL',
+                    kind: 'unsubscribe',
+                    jobId: job.id,
+                    attempt: job.attemptsMade || 0,
+                    campaignId: msg.campaign.id,
+                    ownerId: msg.campaign.ownerId,
+                    messageId: msg.id,
+                    err: shortErr?.message || String(shortErr),
+                  },
+                  'SHORTEN_FAIL',
+                );
+              }
+              logger.warn({ messageId: msg.id, err: shortErr?.message || String(shortErr) }, 'SHORTEN_FAIL (unsubscribe) — continuing with long URL');
+              shortenedUnsubscribeUrl = unsubscribeUrl;
+            }
+          }
           finalText += `\n\nTo unsubscribe, tap: ${shortenedUnsubscribeUrl}`;
           logger.warn({ messageId: msg.id }, 'Unsubscribe link was missing, appended before send');
         } catch (tokenErr) {
@@ -232,7 +381,42 @@ async function processIndividualJob(messageId, job) {
           const baseOfferUrl = process.env.OFFER_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
           const OFFER_BASE_URL = ensureRetailPath(baseOfferUrl);
           const offerUrl = `${OFFER_BASE_URL}/o/${msg.trackingId}`;
-          const shortenedOfferUrl = await shortenUrl(offerUrl);
+          let shortenedOfferUrl = offerUrl;
+          try {
+            if (DEBUG_SEND) {
+              logger.info(
+                {
+                  tag: 'SHORTEN_START',
+                  kind: 'offer',
+                  jobId: job.id,
+                  attempt: job.attemptsMade || 0,
+                  campaignId: msg.campaign.id,
+                  ownerId: msg.campaign.ownerId,
+                  messageId: msg.id,
+                },
+                'SHORTEN_START',
+              );
+            }
+            shortenedOfferUrl = await shortenUrl(offerUrl);
+          } catch (shortErr) {
+            if (DEBUG_SEND) {
+              logger.warn(
+                {
+                  tag: 'SHORTEN_FAIL',
+                  kind: 'offer',
+                  jobId: job.id,
+                  attempt: job.attemptsMade || 0,
+                  campaignId: msg.campaign.id,
+                  ownerId: msg.campaign.ownerId,
+                  messageId: msg.id,
+                  err: shortErr?.message || String(shortErr),
+                },
+                'SHORTEN_FAIL',
+              );
+            }
+            logger.warn({ messageId: msg.id, err: shortErr?.message || String(shortErr) }, 'SHORTEN_FAIL (offer) — continuing with long URL');
+            shortenedOfferUrl = offerUrl;
+          }
           finalText += `\n\nView offer: ${shortenedOfferUrl}`;
           logger.warn({ messageId: msg.id }, 'Offer link was missing, appended before send');
         } catch (err) {
@@ -241,6 +425,21 @@ async function processIndividualJob(messageId, job) {
         }
       }
 
+      if (DEBUG_SEND) {
+        logger.info(
+          {
+            tag: 'PRE_SEND',
+            kind: 'provider',
+            jobId: job.id,
+            attempt: job.attemptsMade || 0,
+            campaignId: msg.campaign.id,
+            ownerId: msg.campaign.ownerId,
+            messageId: msg.id,
+            providerCalled: true,
+          },
+          'PRE_SEND',
+        );
+      }
       const resp = await sendSingle({
         userId: msg.campaign.createdById,
         destination: msg.to,
@@ -248,7 +447,22 @@ async function processIndividualJob(messageId, job) {
       });
 
       // Response format: { messageId, trafficAccountId, rawResponse }
-      const providerId = resp?.messageId || null;
+      providerId = resp?.messageId || null;
+      if (DEBUG_SEND) {
+        logger.info(
+          {
+            tag: 'POST_SEND',
+            jobId: job.id,
+            attempt: job.attemptsMade || 0,
+            campaignId: msg.campaign.id,
+            ownerId: msg.campaign.ownerId,
+            messageId: msg.id,
+            providerCalled: true,
+            providerId,
+          },
+          'POST_SEND',
+        );
+      }
 
       let billingStatus = null;
       let billingError = null;
@@ -294,6 +508,21 @@ async function processIndividualJob(messageId, job) {
           billedAt: billedAt || undefined,
         }
       });
+      if (DEBUG_SEND) {
+        logger.info(
+          {
+            tag: 'POST_PERSIST',
+            jobId: job.id,
+            attempt: job.attemptsMade || 0,
+            campaignId: msg.campaign.id,
+            ownerId: msg.campaign.ownerId,
+            messageId: msg.id,
+            ok: true,
+            providerId,
+          },
+          'POST_PERSIST',
+        );
+      }
 
       // Update campaign aggregates (non-blocking)
       try {
@@ -304,6 +533,35 @@ async function processIndividualJob(messageId, job) {
       }
     } catch (e) {
       const retryable = isRetryable(e);
+      // If provider was already called and returned a providerMessageId, never throw to retry.
+      // Retrying would resend. Best-effort: log and exit.
+      if (typeof providerId !== 'undefined' && providerId) {
+        if (DEBUG_SEND) {
+          logger.error(
+            {
+              tag: 'POST_PERSIST',
+              jobId: job.id,
+              attempt: job.attemptsMade || 0,
+              campaignId: msg.campaign.id,
+              ownerId: msg.campaign.ownerId,
+              messageId: msg.id,
+              ok: false,
+              providerCalled: true,
+              providerId,
+              err: e?.message || String(e),
+            },
+            'POST_PERSIST',
+          );
+        }
+        logger.error({
+          messageId: msg.id,
+          campaignId: msg.campaign.id,
+          ownerId: msg.campaign.ownerId,
+          providerMessageId: providerId,
+          err: e.message
+        }, '[NO-RETRY] Individual SMS failed after provider send; skipping retry to prevent duplicate send');
+        return;
+      }
       logger.warn({ 
         messageId: msg.id, 
         campaignId: msg.campaign.id, 
@@ -340,7 +598,7 @@ async function processIndividualJob(messageId, job) {
  */
 async function processBatchJob(campaignId, ownerId, messageIds, job) {
   const claimToken = `job:${job.id}`;
-  let providerCalled = false;
+  let providerSucceeded = false;
   try {
 
     // Reuse existing claims for retries
@@ -421,6 +679,22 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       retryAttempt: job.attemptsMade || 0
     }, 'Processing batch job');
 
+    if (DEBUG_SEND) {
+      logger.info(
+        {
+          tag: 'PRE_SEND',
+          kind: 'bulk',
+          campaignId,
+          ownerId,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          providerCalled: false,
+          toSendCount: unsentMessages.length,
+        },
+        'PRE_SEND',
+      );
+    }
+
     // Prepare messages for bulk sending
     const bulkMessages = await Promise.all(unsentMessages.map(async (msg) => {
       // Finalize message text exactly once (remove duplicate links, append single offer/unsubscribe)
@@ -428,12 +702,99 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       const unsubscribeUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
       const offerUrl = msg.trackingId ? `${PUBLIC_RETAIL_BASE_URL}/o/${msg.trackingId}` : null;
 
-      const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
-      const shortenedOfferUrl = offerUrl ? await shortenUrl(offerUrl) : null;
+      // Unsubscribe shortening: best-effort with cache; must never throw
+      const ttlSeconds = Number(process.env.UNSUBSCRIBE_SHORT_CACHE_TTL_SECONDS || 30 * 24 * 60 * 60);
+      const cacheKey = `unsubscribe:short:${msg.campaign.ownerId || 'na'}:${sha256Hex(unsubscribeUrl).slice(0, 16)}`;
+      let shortenedUnsubscribeUrl = await getCache(cacheKey);
+      if (!shortenedUnsubscribeUrl) {
+        try {
+          if (DEBUG_SEND) {
+            logger.info(
+              {
+                tag: 'SHORTEN_START',
+                kind: 'unsubscribe',
+                jobId: job.id,
+                attempt: job.attemptsMade || 0,
+                campaignId,
+                ownerId,
+                messageId: msg.id,
+              },
+              'SHORTEN_START',
+            );
+          }
+          shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
+          await setCacheEx(cacheKey, ttlSeconds, shortenedUnsubscribeUrl);
+        } catch (e) {
+          if (DEBUG_SEND) {
+            logger.warn(
+              {
+                tag: 'SHORTEN_FAIL',
+                kind: 'unsubscribe',
+                jobId: job.id,
+                attempt: job.attemptsMade || 0,
+                campaignId,
+                ownerId,
+                messageId: msg.id,
+                err: e?.message || String(e),
+              },
+              'SHORTEN_FAIL',
+            );
+          }
+          logger.warn({ messageId: msg.id, err: e?.message || String(e) }, 'SHORTEN_FAIL (unsubscribe) — continuing with long URL');
+          shortenedUnsubscribeUrl = unsubscribeUrl;
+        }
+      }
+
+      // Offer shortening: best-effort; must never throw
+      let shortenedOfferUrl = offerUrl;
+      if (offerUrl) {
+        try {
+          if (DEBUG_SEND) {
+            logger.info(
+              {
+                tag: 'SHORTEN_START',
+                kind: 'offer',
+                jobId: job.id,
+                attempt: job.attemptsMade || 0,
+                campaignId,
+                ownerId,
+                messageId: msg.id,
+              },
+              'SHORTEN_START',
+            );
+          }
+          shortenedOfferUrl = await shortenUrl(offerUrl);
+        } catch (e) {
+          if (DEBUG_SEND) {
+            logger.warn(
+              {
+                tag: 'SHORTEN_FAIL',
+                kind: 'offer',
+                jobId: job.id,
+                attempt: job.attemptsMade || 0,
+                campaignId,
+                ownerId,
+                messageId: msg.id,
+                err: e?.message || String(e),
+              },
+              'SHORTEN_FAIL',
+            );
+          }
+          logger.warn({ messageId: msg.id, err: e?.message || String(e) }, 'SHORTEN_FAIL (offer) — continuing with long URL');
+          shortenedOfferUrl = offerUrl;
+        }
+      }
 
       const finalText = await finalizeMessageText(msg.text, {
         offerUrl: shortenedOfferUrl,
-        unsubscribeUrl: shortenedUnsubscribeUrl
+        unsubscribeUrl: shortenedUnsubscribeUrl,
+        ctx: {
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          campaignId,
+          ownerId,
+          messageId: msg.id,
+        },
       });
 
       return {
@@ -451,10 +812,56 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       };
     }));
 
-    const result = await (async () => {
-      providerCalled = true;
-      return sendBulkSMSWithCredits(bulkMessages);
-    })();
+    if (DEBUG_SEND) {
+      logger.info(
+        {
+          tag: 'PRE_SEND',
+          kind: 'provider',
+          campaignId,
+          ownerId,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          providerCalled: true,
+          sendCount: bulkMessages.length,
+        },
+        'PRE_SEND',
+      );
+    }
+
+    let result;
+    try {
+      result = await sendBulkSMSWithCredits(bulkMessages);
+      providerSucceeded = true;
+    } catch (providerErr) {
+      logger.error(
+        {
+          campaignId,
+          ownerId,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          err: providerErr?.message || String(providerErr),
+        },
+        'Provider bulk send failed (pre-success) — allowing retry',
+      );
+      throw providerErr;
+    }
+
+    if (DEBUG_SEND) {
+      logger.info(
+        {
+          tag: 'POST_SEND',
+          campaignId,
+          ownerId,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          providerCalled: true,
+          bulkId: result.bulkId,
+          sentCount: (result.results || []).filter(r => r.sent && r.messageId).length,
+          failedCount: (result.results || []).filter(r => !r.sent).length,
+        },
+        'POST_SEND',
+      );
+    }
 
     if (process.env.DEBUG_SEND_LOGS === '1') {
       logger.info({
@@ -516,6 +923,22 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
     }
 
     await Promise.all(updatePromises);
+    if (DEBUG_SEND) {
+      logger.info(
+        {
+          tag: 'POST_PERSIST',
+          campaignId,
+          ownerId,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          ok: true,
+          bulkId: result.bulkId,
+          successfulCount: successfulIds.length,
+          failedCount: failedIds.length,
+        },
+        'POST_PERSIST',
+      );
+    }
 
     // Debug: read back statuses for this batch to ensure they moved out of queued/processing
     try {
@@ -571,10 +994,10 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       messageIds,
       retryable, 
       err: e.message 
-    }, providerCalled ? '[NO-RETRY] Batch job failed after provider call' : 'Batch job failed');
+    }, providerSucceeded ? '[NO-RETRY] Batch job failed after provider call' : 'Batch job failed');
 
     // Mark all messages in batch based on retryability/provider call
-    if (retryable && !providerCalled) {
+    if (retryable && !providerSucceeded) {
       // Reset to queued so they can be re-claimed on retry
       await prisma.campaignMessage.updateMany({
         where: {
@@ -613,6 +1036,22 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       });
     }
 
+    if (providerSucceeded && DEBUG_SEND) {
+      logger.error(
+        {
+          tag: 'POST_PERSIST',
+          campaignId,
+          ownerId,
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+          ok: false,
+          providerCalled: true,
+          err: e?.message || String(e),
+        },
+        'POST_PERSIST',
+      );
+    }
+
     // Update campaign aggregates
     try {
       const { updateCampaignAggregates } = require('../../api/src/services/campaignAggregates.service');
@@ -621,7 +1060,7 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       logger.warn({ campaignId, err: aggErr.message }, 'Failed to update campaign aggregates');
     }
 
-    if (retryable && !providerCalled) throw e;
+    if (retryable && !providerSucceeded) throw e;
   }
 }
 

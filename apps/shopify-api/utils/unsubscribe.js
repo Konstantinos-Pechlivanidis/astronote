@@ -1,6 +1,19 @@
 import crypto from 'crypto';
 import { logger } from './logger.js';
 import { createOrGetShortLink } from '../services/shortLinks.js';
+import { cacheRedis } from '../config/redis.js';
+import { redisSetExBestEffort, sha256Hex } from './redisSafe.js';
+
+function withTimeout(promise, ms, label = 'operation') {
+  const timeoutMs = Number(ms);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
+}
 
 /**
  * Generate an unsubscribe token for a contact
@@ -157,6 +170,7 @@ export async function appendUnsubscribeLink(
 ) {
   const campaignId = options?.campaignId || null;
   const recipientId = options?.recipientId || null;
+  const shortlinkTimeoutMs = Number(process.env.SHORTLINK_TIMEOUT_MS || 1200);
 
   // Generate unsubscribe URL
   const unsubscribeUrl = await generateUnsubscribeUrl(
@@ -179,14 +193,18 @@ export async function appendUnsubscribeLink(
     // Otherwise shorten the existing long unsubscribe URL (best-effort).
     try {
       const expiresAt = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000);
-      const shortLink = await createOrGetShortLink({
-        destinationUrl: existingUrl,
-        shopId,
-        campaignId,
-        contactId,
-        expiresAt,
-        meta: { type: 'unsubscribe', recipientId },
-      });
+      const shortLink = await withTimeout(
+        createOrGetShortLink({
+          destinationUrl: existingUrl,
+          shopId,
+          campaignId,
+          contactId,
+          expiresAt,
+          meta: { type: 'unsubscribe', recipientId },
+        }),
+        shortlinkTimeoutMs,
+        'createOrGetShortLink(unsubscribe-existing)',
+      );
       return message.replace(existingUnsubRegex, `$1${shortLink.shortUrl}`);
     } catch (e) {
       // Fall back to original message
@@ -200,15 +218,27 @@ export async function appendUnsubscribeLink(
   const expiresAt = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000);
   let shortUrl = unsubscribeUrl;
   try {
-    const shortLink = await createOrGetShortLink({
-      destinationUrl: unsubscribeUrl,
-      shopId,
-      campaignId,
-      contactId,
-      expiresAt,
-      meta: { type: 'unsubscribe', recipientId },
-    });
-    shortUrl = shortLink.shortUrl;
+    const ttlSeconds = Number(process.env.UNSUBSCRIBE_SHORT_CACHE_TTL_SECONDS || 30 * 24 * 60 * 60);
+    const cacheKey = `unsubscribe:short:${shopId || 'na'}:${sha256Hex(unsubscribeUrl).slice(0, 16)}`;
+    const cached = await cacheRedis.get(cacheKey);
+    if (cached) {
+      shortUrl = cached;
+    } else {
+      const shortLink = await withTimeout(
+        createOrGetShortLink({
+          destinationUrl: unsubscribeUrl,
+          shopId,
+          campaignId,
+          contactId,
+          expiresAt,
+          meta: { type: 'unsubscribe', recipientId },
+        }),
+        shortlinkTimeoutMs,
+        'createOrGetShortLink(unsubscribe)',
+      );
+      shortUrl = shortLink.shortUrl;
+      await redisSetExBestEffort(cacheRedis, cacheKey, ttlSeconds, String(shortUrl));
+    }
   } catch (e) {
     logger.warn(
       { err: e?.message || String(e), shopId, contactId },
