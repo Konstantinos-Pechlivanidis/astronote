@@ -159,6 +159,7 @@ export async function handleBulkSMS(job) {
           shopId,
           recipient.phoneE164,
           null, // No req available in queue job context
+          { campaignId, recipientId: recipient.id },
         );
 
         return {

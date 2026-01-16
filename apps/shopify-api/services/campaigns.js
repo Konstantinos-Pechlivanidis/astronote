@@ -2064,6 +2064,7 @@ export async function getCampaignPreview(storeId, campaignId) {
       message: true,
       audience: true,
       status: true,
+      discountId: true,
     },
   });
 
@@ -2116,6 +2117,58 @@ export async function getCampaignPreview(storeId, campaignId) {
     : 0;
   const totalAvailable = remainingAllowance + availableBalance;
 
+  // 4.5 Best-effort message preview that matches the send pipeline (includes shortened unsubscribe).
+  // Uses the first resolved recipient as the preview contact.
+  let renderedMessage = null;
+  try {
+    if (contacts.length > 0) {
+      const previewContact = contacts[0];
+      const { replacePlaceholders } = await import('../utils/personalization.js');
+      const { shortenUrlsInText } = await import('../utils/urlShortener.js');
+      const { appendUnsubscribeLink } = await import('../utils/unsubscribe.js');
+
+      // Optional discount code (best-effort)
+      let discountCode = '';
+      if (campaign.discountId) {
+        try {
+          const { getDiscountCode } = await import('./shopify.js');
+          const shop = await prisma.shop.findUnique({
+            where: { id: storeId },
+            select: { shopDomain: true },
+          });
+          if (shop?.shopDomain) {
+            const discount = await getDiscountCode(shop.shopDomain, campaign.discountId);
+            discountCode = discount?.code || '';
+          }
+        } catch {
+          discountCode = '';
+        }
+      }
+
+      let messageText = campaign.message || '';
+      messageText = replacePlaceholders(messageText, {
+        firstName: previewContact.firstName || '',
+        lastName: previewContact.lastName || '',
+        discountCode,
+      });
+      messageText = await shortenUrlsInText(messageText, {
+        shopId: storeId,
+        campaignId,
+        contactId: previewContact.contactId,
+      });
+      renderedMessage = await appendUnsubscribeLink(
+        messageText,
+        previewContact.contactId,
+        storeId,
+        previewContact.phoneE164,
+        null,
+        { campaignId, recipientId: null },
+      );
+    }
+  } catch {
+    renderedMessage = null;
+  }
+
   // 5. Return preview data
   return {
     ok: true,
@@ -2127,6 +2180,7 @@ export async function getCampaignPreview(storeId, campaignId) {
     canSend: contacts.length > 0 && totalAvailable >= requiredCredits,
     insufficientCredits: totalAvailable < requiredCredits,
     missingCredits: Math.max(0, requiredCredits - totalAvailable),
+    renderedMessage,
   };
 }
 

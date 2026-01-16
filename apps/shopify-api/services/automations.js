@@ -1,7 +1,7 @@
 import prisma from './prisma.js';
 import { sendSms } from './mitto.js';
 import { logger } from '../utils/logger.js';
-import { generateUnsubscribeUrl } from '../utils/unsubscribe.js';
+import { appendUnsubscribeLink } from '../utils/unsubscribe.js';
 import { shortenUrlsInText } from '../utils/urlShortener.js';
 import { formatLineItems } from './shopify-graphql.js';
 
@@ -88,16 +88,16 @@ export async function triggerAutomation({
       contactId,
     });
 
-    // Append unsubscribe link (use full URL, not shortened)
-    // IMPORTANT: Do NOT shorten the unsubscribe URL - it would cause 404 errors
-    // Note: No req available in automation context, use sync version
-    const unsubscribeUrl = await generateUnsubscribeUrl(
+    // Append unsubscribe link (system-owned short link)
+    // Note: No req available in automation context
+    processedMessage = await appendUnsubscribeLink(
+      processedMessage,
       contact.id,
       shopId,
       contact.phoneE164,
-      null, // No req available in automation context
+      null,
+      { campaignId: null, recipientId: null },
     );
-    processedMessage += `\n\nUnsubscribe: ${unsubscribeUrl}`;
 
     // Get sender information
     const senderNumber =

@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import { logger } from './logger.js';
-import prisma from '../services/prisma.js';
-import { buildShortUrl, createShortLink } from '../services/shortLinks.js';
+import { createOrGetShortLink } from '../services/shortLinks.js';
 
 /**
  * Generate an unsubscribe token for a contact
@@ -154,7 +153,11 @@ export async function appendUnsubscribeLink(
   shopId,
   phoneE164,
   req = null,
+  options = null,
 ) {
+  const campaignId = options?.campaignId || null;
+  const recipientId = options?.recipientId || null;
+
   // Generate unsubscribe URL
   const unsubscribeUrl = await generateUnsubscribeUrl(
     contactId,
@@ -163,36 +166,49 @@ export async function appendUnsubscribeLink(
     req,
   );
 
+  // If message already contains an unsubscribe line, ensure the URL is short and return.
+  // Supports both previously appended long URLs and short URLs.
+  const existingUnsubRegex = /(\n\nUnsubscribe:\s*)(\S+)/i;
+  const existingMatch = typeof message === 'string' ? message.match(existingUnsubRegex) : null;
+  if (existingMatch && existingMatch[2]) {
+    const existingUrl = existingMatch[2];
+    // If already a system short URL, keep as-is.
+    if (existingUrl.includes('/s/') || existingUrl.includes('/r/')) {
+      return message;
+    }
+    // Otherwise shorten the existing long unsubscribe URL (best-effort).
+    try {
+      const expiresAt = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000);
+      const shortLink = await createOrGetShortLink({
+        destinationUrl: existingUrl,
+        shopId,
+        campaignId,
+        contactId,
+        expiresAt,
+        meta: { type: 'unsubscribe', recipientId },
+      });
+      return message.replace(existingUnsubRegex, `$1${shortLink.shortUrl}`);
+    } catch (e) {
+      // Fall back to original message
+      return message;
+    }
+  }
+
   // Create a system-owned short link token that redirects to the long, signed unsubscribe URL.
   // This keeps the SMS short, avoids exposing the signed token, and stores the mapping in DB.
   // Expire the short link slightly after the unsubscribe token window (30 days).
   const expiresAt = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000);
   let shortUrl = unsubscribeUrl;
   try {
-    // Prefer reusing an existing unsubscribe short link for this contact to keep URLs stable
-    // across multiple campaigns (best-effort; if JSON filtering isn't supported, we fallback).
-    const existing = await prisma.shortLink.findFirst({
-      where: {
-        shopId,
-        contactId,
-        expiresAt: { gt: new Date() },
-        meta: { path: ['type'], equals: 'unsubscribe' },
-      },
-      select: { token: true },
-    }).catch(() => null);
-
-    if (existing?.token) {
-      shortUrl = buildShortUrl(existing.token);
-    } else {
-      const shortLink = await createShortLink({
-        destinationUrl: unsubscribeUrl,
-        shopId,
-        contactId,
-        expiresAt,
-        meta: { type: 'unsubscribe' },
-      });
-      shortUrl = shortLink.shortUrl;
-    }
+    const shortLink = await createOrGetShortLink({
+      destinationUrl: unsubscribeUrl,
+      shopId,
+      campaignId,
+      contactId,
+      expiresAt,
+      meta: { type: 'unsubscribe', recipientId },
+    });
+    shortUrl = shortLink.shortUrl;
   } catch (e) {
     logger.warn(
       { err: e?.message || String(e), shopId, contactId },

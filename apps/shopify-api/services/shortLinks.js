@@ -11,6 +11,8 @@ import { getFrontendBaseUrlSync } from '../utils/frontendUrl.js';
 
 export function getShortLinkBaseUrl() {
   return (
+    process.env.SHORTLINK_BASE_URL ||
+    process.env.PUBLIC_BASE_URL ||
     process.env.URL_SHORTENER_BASE_URL ||
     process.env.FRONTEND_URL ||
     getFrontendBaseUrlSync() ||
@@ -21,7 +23,7 @@ export function getShortLinkBaseUrl() {
 
 export function buildShortUrl(token) {
   const baseUrl = getShortLinkBaseUrl();
-  return `${baseUrl.replace(/\/+$/, '')}/r/${token}`;
+  return `${baseUrl.replace(/\/+$/, '')}/s/${token}`;
 }
 
 /**
@@ -174,6 +176,59 @@ export async function createShortLink({
     createdAt: shortLink.createdAt,
     expiresAt: shortLink.expiresAt,
   };
+}
+
+/**
+ * Create or reuse a short link for the same destination URL (idempotent).
+ * Best-effort: reuses only non-expired links when expiresAt is set.
+ */
+export async function createOrGetShortLink({
+  destinationUrl,
+  shopId = null,
+  campaignId = null,
+  contactId = null,
+  expiresAt = null,
+  meta = null,
+}) {
+  // Validate destination URL
+  const validation = validateDestinationUrl(destinationUrl);
+  if (!validation.valid) {
+    throw new ValidationError(validation.error);
+  }
+
+  // Reuse existing if possible
+  const existing = await prisma.shortLink.findFirst({
+    where: {
+      shopId,
+      destinationUrl,
+      ...(expiresAt ? { expiresAt: { gt: new Date() } } : {}),
+    },
+    select: { id: true, token: true, destinationUrl: true, clicks: true, createdAt: true, expiresAt: true },
+  });
+
+  if (existing?.token) {
+    return {
+      id: existing.id,
+      token: existing.token,
+      shortUrl: buildShortUrl(existing.token),
+      destinationUrl: existing.destinationUrl,
+      clicks: existing.clicks,
+      createdAt: existing.createdAt,
+      expiresAt: existing.expiresAt,
+      reused: true,
+    };
+  }
+
+  const created = await createShortLink({
+    destinationUrl,
+    shopId,
+    campaignId,
+    contactId,
+    expiresAt,
+    meta,
+  });
+
+  return { ...created, reused: false };
 }
 
 /**

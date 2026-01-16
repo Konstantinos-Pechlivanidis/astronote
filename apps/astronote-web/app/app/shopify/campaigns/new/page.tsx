@@ -149,7 +149,7 @@ export default function NewCampaignPage() {
 
   const unsubscribePreviewUrl = useMemo(() => {
     const base = (APP_URL || '').replace(/\/+$/, '');
-    return `${base}/r/xxxxxxxxxx`;
+    return `${base}/s/xxxxxxxxxx`;
   }, []);
 
   const previewMessage = useMemo(() => {
@@ -267,7 +267,7 @@ export default function NewCampaignPage() {
                     </Button>
                   </div>
                   <p className="mt-2 text-xs text-text-tertiary">
-                    We automatically add an opt-out line at send time: <span className="font-medium">Unsubscribe: {unsubscribePreviewUrl}</span>
+                    Unsubscribe link will be appended automatically and shortened: <span className="font-medium">Unsubscribe: {unsubscribePreviewUrl}</span>
                   </p>
                 </div>
 
@@ -550,7 +550,7 @@ export default function NewCampaignPage() {
                       <div className="font-medium text-text-primary mb-1">Unsubscribe compliance</div>
                       <ul className="list-disc pl-5 space-y-1">
                         <li>We automatically append an opt-out line to every outbound SMS.</li>
-                        <li>The link is a short URL on our domain (`/r/:token`) that redirects to the unsubscribe page.</li>
+                        <li>The link is a short URL on our domain (`/s/:token`) that redirects to the unsubscribe page.</li>
                       </ul>
                     </div>
                     <div>

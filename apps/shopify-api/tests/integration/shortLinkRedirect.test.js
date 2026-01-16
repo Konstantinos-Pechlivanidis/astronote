@@ -38,7 +38,7 @@ describe('Short Link Redirect Endpoint', () => {
 
   it('should redirect to destination URL with 302', async () => {
     const response = await request(app)
-      .get(`/r/${shortLink.token}`)
+      .get(`/s/${shortLink.token}`)
       .expect(302);
 
     expect(response.headers.location).toBe('https://example.com/test');
@@ -46,7 +46,7 @@ describe('Short Link Redirect Endpoint', () => {
 
   it('should return 404 for non-existent token', async () => {
     const response = await request(app)
-      .get('/r/invalid-token-123')
+      .get('/s/invalid-token-123')
       .expect(302); // Redirects to frontend error page
 
     expect(response.headers.location).toContain('/error');
@@ -55,7 +55,7 @@ describe('Short Link Redirect Endpoint', () => {
   it('should increment click count on redirect', async () => {
     const initialClicks = shortLink.clicks;
 
-    await request(app).get(`/r/${shortLink.token}`).expect(302);
+    await request(app).get(`/s/${shortLink.token}`).expect(302);
 
     const updated = await prisma.shortLink.findUnique({
       where: { token: shortLink.token },
@@ -74,7 +74,7 @@ describe('Short Link Redirect Endpoint', () => {
     });
 
     const response = await request(app)
-      .get(`/r/${expiredLink.token}`)
+      .get(`/s/${expiredLink.token}`)
       .expect(410);
 
     expect(response.headers.location).toContain('/error');

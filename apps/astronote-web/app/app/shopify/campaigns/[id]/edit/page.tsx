@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCampaign } from '@/src/features/shopify/campaigns/hooks/useCampaign';
@@ -135,6 +135,22 @@ export default function EditCampaignPage() {
   // Calculate SMS parts
   const smsParts = Math.ceil(formData.message.length / 160);
   const smsCount = formData.message.length > 0 ? smsParts : 0;
+
+  const unsubscribePreviewUrl = useMemo(() => {
+    // Best-effort placeholder: backend will generate a real /s/:token link at send time.
+    const base = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+    return `${base}/s/xxxxxxxxxx`;
+  }, []);
+
+  const previewMessage = useMemo(() => {
+    const sampleDiscount =
+      discountsData?.discounts?.find((d) => d.id === formData.discountId)?.code || 'SAVE10';
+    const replaced = (formData.message || '')
+      .replaceAll('{{firstName}}', 'Jane')
+      .replaceAll('{{lastName}}', 'Doe')
+      .replaceAll('{{discountCode}}', sampleDiscount);
+    return `${replaced}\n\nUnsubscribe: ${unsubscribePreviewUrl}`;
+  }, [formData.message, formData.discountId, discountsData?.discounts, unsubscribePreviewUrl]);
 
   // Loading state
   if (campaignLoading) {
@@ -469,13 +485,16 @@ export default function EditCampaignPage() {
                 <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
                 <div className="flex justify-center lg:justify-start">
                   <SmsInPhonePreview
-                    message={formData.message}
+                    message={previewMessage}
                     senderName="Astronote"
                     variant="shopify"
                     size="md"
                     showCounts={true}
                   />
                 </div>
+                <p className="mt-3 text-xs text-text-tertiary">
+                  Unsubscribe link will be appended automatically and shortened: <span className="font-medium">Unsubscribe: {unsubscribePreviewUrl}</span>
+                </p>
               </RetailCard>
 
               {/* Additional Info */}

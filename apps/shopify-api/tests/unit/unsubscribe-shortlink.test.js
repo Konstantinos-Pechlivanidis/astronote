@@ -10,12 +10,12 @@ describe('Unsubscribe short link (unit)', () => {
 
   it('appendUnsubscribeLink appends a system-owned short link (/r/:token) when available', async () => {
     const createShortLinkMock = jest.fn().mockResolvedValue({
-      shortUrl: 'https://astronote.onrender.com/r/abc123defg',
+      shortUrl: 'https://astronote.onrender.com/s/abc123defg',
     });
 
     jest.unstable_mockModule('../../services/shortLinks.js', () => ({
-      createShortLink: createShortLinkMock,
-      buildShortUrl: (token) => `https://astronote.onrender.com/r/${token}`,
+      createOrGetShortLink: createShortLinkMock,
+      buildShortUrl: (token) => `https://astronote.onrender.com/s/${token}`,
     }));
 
     const { appendUnsubscribeLink } = await import('../../utils/unsubscribe.js');
@@ -28,7 +28,7 @@ describe('Unsubscribe short link (unit)', () => {
       null,
     );
 
-    expect(out).toContain('Unsubscribe: https://astronote.onrender.com/r/abc123defg');
+    expect(out).toContain('Unsubscribe: https://astronote.onrender.com/s/abc123defg');
     expect(out).not.toContain('/shopify/unsubscribe/');
     expect(createShortLinkMock).toHaveBeenCalled();
   });

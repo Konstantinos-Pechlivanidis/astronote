@@ -233,6 +233,7 @@ app.use('/api/mitto', resolveStore, requireStore, mittoStatusRoutes); // Mitto s
 app.use('/', coreRoutes); // health, webhooks, auth helpers
 app.use('/api/opt-in', optInRoutes); // Public opt-in endpoint (no auth)
 app.use('/r', shortLinkRoutes); // Short link redirects (public, no auth)
+app.use('/s', shortLinkRoutes); // Short link redirects (preferred alias)
 app.use('/metrics', metricsRoutes); // Prometheus metrics (P1)
 if (process.env.NODE_ENV !== 'production') app.use('/', docsRoutes); // Swagger UI (dev only)
 
