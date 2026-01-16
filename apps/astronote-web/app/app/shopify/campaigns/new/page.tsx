@@ -4,19 +4,20 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
-import { useCreateCampaign } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
+import { useCreateCampaign, useEnqueueCampaign } from '@/src/features/shopify/campaigns/hooks/useCampaignMutations';
 import { useSubscriptionStatus } from '@/src/features/shopify/billing/hooks/useSubscriptionStatus';
 import { useAudiences } from '@/src/features/shopify/audiences/hooks/useAudiences';
 import { useDiscounts } from '@/src/features/shopify/discounts/hooks/useDiscounts';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
+import { Logo } from '@/src/components/brand/Logo';
 import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Save, Send, Clock } from 'lucide-react';
+import { Save, Send, Clock, Loader2 } from 'lucide-react';
 import type { ScheduleType } from '@/src/lib/shopify/api/campaigns';
 import { APP_URL } from '@/src/lib/shopify/config';
 import { getSmsSegments } from '@/src/lib/sms/smsSegments';
@@ -31,8 +32,10 @@ const UI_NONE = '__none__';
 export default function NewCampaignPage() {
   const router = useRouter();
   const createCampaign = useCreateCampaign();
+  const enqueueCampaign = useEnqueueCampaign();
   const { data: subscriptionData } = useSubscriptionStatus();
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
+  const [submitAction, setSubmitAction] = useState<null | 'draft' | 'send' | 'schedule'>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -104,11 +107,16 @@ export default function NewCampaignPage() {
   };
 
   const handleSubmit = async (action: 'draft' | 'send' | 'schedule') => {
+    // Disable immediately on click to prevent double-submit.
+    setSubmitAction(action);
+
     if (!validate()) {
+      setSubmitAction(null);
       return;
     }
     if (action === 'send' && !isSubscriptionActive) {
       toast.error('Active subscription required to send campaigns');
+      setSubmitAction(null);
       return;
     }
 
@@ -135,15 +143,24 @@ export default function NewCampaignPage() {
 
       // If send action, enqueue the campaign
       if (action === 'send' && campaign.id) {
-        // The createCampaign hook will handle redirect
-        // But we need to enqueue it separately
-        // For now, just redirect to detail page - user can send from there
-        router.push(`/app/shopify/campaigns/${campaign.id}`);
+        await enqueueCampaign.mutateAsync(String(campaign.id));
+        router.push(`/app/shopify/campaigns/${campaign.id}/status`);
+        return;
+      }
+
+      if (action === 'schedule' && campaign.id) {
+        router.push(`/app/shopify/campaigns/${campaign.id}/status`);
+        return;
       } else {
         router.push(`/app/shopify/campaigns/${campaign.id}`);
       }
     } catch (error) {
       // Error handled by mutation hook
+      setSubmitAction(null);
+      return;
+    } finally {
+      // Keep disabled through network calls, then release if we didn't navigate away.
+      setSubmitAction(null);
     }
   };
 
@@ -188,7 +205,12 @@ export default function NewCampaignPage() {
     <RetailPageLayout>
       <div className="space-y-6">
         <AppPageHeader
-          title="Create Campaign"
+          title={
+            <span className="inline-flex items-center gap-3">
+              <Logo size="sm" />
+              <span>Create Campaign</span>
+            </span>
+          }
           description="Create a new SMS campaign"
           backHref="/app/shopify/campaigns"
         />
@@ -445,32 +467,54 @@ export default function NewCampaignPage() {
                     type="button"
                     variant="outline"
                     onClick={() => handleSubmit('draft')}
-                    disabled={createCampaign.isPending}
+                    disabled={submitAction !== null || createCampaign.isPending || enqueueCampaign.isPending}
                   >
-                    <Save className="mr-2 h-4 w-4" />
-                  Save as Draft
+                    {submitAction === 'draft' ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-2 h-4 w-4" />
+                    )}
+                    {submitAction === 'draft' ? 'Saving…' : 'Save as Draft'}
                   </Button>
                   {formData.scheduleType === 'scheduled' ? (
                     <Button
                       type="button"
                       onClick={() => handleSubmit('schedule')}
-                      disabled={createCampaign.isPending}
+                      disabled={submitAction !== null || createCampaign.isPending || enqueueCampaign.isPending}
                     >
-                      <Clock className="mr-2 h-4 w-4" />
-                    Schedule
+                      {submitAction === 'schedule' ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Clock className="mr-2 h-4 w-4" />
+                      )}
+                      {submitAction === 'schedule' ? 'Scheduling…' : 'Schedule'}
                     </Button>
                   ) : (
                     <Button
                       type="button"
                       onClick={() => handleSubmit('send')}
-                      disabled={!isSubscriptionActive || createCampaign.isPending}
+                      disabled={
+                        !isSubscriptionActive ||
+                        submitAction !== null ||
+                        createCampaign.isPending ||
+                        enqueueCampaign.isPending
+                      }
                       title={!isSubscriptionActive ? 'Active subscription required to send campaigns' : 'Create and send now'}
                     >
-                      <Send className="mr-2 h-4 w-4" />
-                    Create & Send Now
+                      {submitAction === 'send' || enqueueCampaign.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="mr-2 h-4 w-4" />
+                      )}
+                      {submitAction === 'send' || enqueueCampaign.isPending ? 'Sending…' : 'Create & Send Now'}
                     </Button>
                   )}
                 </div>
+
+                <p className="text-xs text-text-tertiary">
+                  Sending transitions: <span className="font-medium">Draft → Sending → Completed/Failed</span>. Once you
+                  click Send, we queue messages immediately and prevent double-sends.
+                </p>
               </form>
             </RetailCard>
           </div>

@@ -9,6 +9,7 @@ import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { AppPageHeader } from '@/src/components/app/AppPageHeader';
+import { Logo } from '@/src/components/brand/Logo';
 import { FileText, BarChart3, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { getTemplateName, getTemplateContent } from '@/src/lib/shopify/api/templates';
@@ -55,7 +56,15 @@ export default function TemplateDetailPage() {
     return (
       <RetailPageLayout>
         <div className="space-y-6">
-          <AppPageHeader title="Template Details" backHref="/app/shopify/templates" />
+          <AppPageHeader
+            title={
+              <span className="inline-flex items-center gap-3">
+                <Logo size="sm" />
+                <span>Template Details</span>
+              </span>
+            }
+            backHref="/app/shopify/templates"
+          />
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {[1, 2, 3, 4].map((i) => (
               <RetailCard key={i} className="p-6">
@@ -76,7 +85,15 @@ export default function TemplateDetailPage() {
     return (
       <RetailPageLayout>
         <div className="space-y-6">
-          <AppPageHeader title="Template Details" backHref="/app/shopify/templates" />
+          <AppPageHeader
+            title={
+              <span className="inline-flex items-center gap-3">
+                <Logo size="sm" />
+                <span>Template Details</span>
+              </span>
+            }
+            backHref="/app/shopify/templates"
+          />
           <RetailCard variant="danger" className="p-6">
             <div className="text-center py-8">
               <FileText className="mx-auto h-12 w-12 text-red-400 mb-4" />
@@ -100,7 +117,12 @@ export default function TemplateDetailPage() {
     <RetailPageLayout>
       <div className="space-y-6">
         <AppPageHeader
-          title={getTemplateName(template)}
+          title={
+            <span className="inline-flex items-center gap-3">
+              <Logo size="sm" />
+              <span>{getTemplateName(template)}</span>
+            </span>
+          }
           description={`Template: ${template.category || 'Uncategorized'}`}
           backHref="/app/shopify/templates"
           actions={

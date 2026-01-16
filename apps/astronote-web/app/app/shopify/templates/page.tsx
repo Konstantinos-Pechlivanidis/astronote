@@ -8,6 +8,7 @@ import { useTrackTemplateUsage } from '@/src/features/shopify/templates/hooks/us
 import { useEnsureDefaults } from '@/src/features/shopify/templates/hooks/useEnsureDefaults';
 import { PageLayout } from '@/src/components/app-shell/PageLayout';
 import { RetailCard } from '@/src/components/retail/RetailCard';
+import { Logo } from '@/src/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -192,7 +193,12 @@ export default function TemplatesPage() {
 
   return (
     <PageLayout
-      title="Templates"
+      title={
+        <span className="inline-flex items-center gap-3">
+          <Logo size="sm" />
+          <span>Templates</span>
+        </span>
+      }
       description="Browse SMS templates and use them to create campaigns"
       actions={
         <Button

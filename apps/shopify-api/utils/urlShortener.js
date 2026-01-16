@@ -1,6 +1,7 @@
 import { logger } from './logger.js';
 import crypto from 'crypto';
 import { createShortLink } from '../services/shortLinks.js';
+import { sha256Hex } from './redisSafe.js';
 
 /**
  * URL Shortening Service
@@ -71,6 +72,17 @@ async function shortenBackend(originalUrl, options = {}) {
       }),
       timeoutMs,
       'createShortLink(urlShortener)',
+    );
+    logger.info(
+      {
+        inputHash: sha256Hex(originalUrl).slice(0, 12),
+        shortHash: sha256Hex(shortLink.shortUrl).slice(0, 8),
+        shopId: options.shopId || null,
+        campaignId: options.campaignId || null,
+        cacheHit: false,
+        idempotencyKey: sha256Hex(`${options.shopId || 'na'}:${originalUrl}`).slice(0, 12),
+      },
+      'Shortlink generated (backend)',
     );
     return shortLink.shortUrl;
   } catch (error) {
@@ -291,4 +303,3 @@ export default {
   shortenUrlsInText,
   shortenMessageUrls,
 };
-

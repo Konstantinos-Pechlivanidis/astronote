@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 
 type AppPageHeaderProps = {
-  title: string;
+  title: ReactNode;
   description?: string;
   actions?: ReactNode;
   backHref?: string;

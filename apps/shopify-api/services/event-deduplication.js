@@ -113,9 +113,10 @@ export async function updateLastProcessedEvent(
  * @param {string} eventId - Event GID
  * @param {string} shopId - Shop ID
  * @param {string} automationType - Automation type
+ * @param {string|Date|null} occurredAt - Event occurred timestamp (optional)
  * @returns {Promise<boolean>} True if already processed
  */
-export async function isEventProcessed(eventId, shopId, automationType) {
+export async function isEventProcessed(eventId, shopId, automationType, occurredAt = null) {
   try {
     // First check in-memory cache
     if (processedEventsCache.has(eventId)) {
@@ -133,6 +134,16 @@ export async function isEventProcessed(eventId, shopId, automationType) {
       // Add to cache
       processedEventsCache.set(eventId, Date.now());
       return true;
+    }
+
+    // Timestamp-based dedupe:
+    // If we have already processed events up to lastProcessedAt, skip older/equal events.
+    // This prevents duplicate queues during overlap windows and across restarts.
+    if (lastState?.lastProcessedAt && occurredAt) {
+      const occurredAtDate = occurredAt instanceof Date ? occurredAt : new Date(occurredAt);
+      if (!Number.isNaN(occurredAtDate.getTime()) && occurredAtDate <= lastState.lastProcessedAt) {
+        return true;
+      }
     }
 
     return false;

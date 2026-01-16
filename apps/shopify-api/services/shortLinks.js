@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { ValidationError } from '../utils/errors.js';
 import crypto from 'crypto';
 import { getFrontendBaseUrlSync } from '../utils/frontendUrl.js';
+import { sha256Hex } from '../utils/redisSafe.js';
 
 /**
  * Short Link Service
@@ -232,6 +233,60 @@ export async function createOrGetShortLink({
 }
 
 /**
+ * Deterministic short link keyed by hash (idempotent across retries).
+ * Token is derived from shopId + destinationUrl hash unless tokenKey provided.
+ */
+export async function getOrCreateDeterministicShortLink({
+  destinationUrl,
+  shopId = null,
+  campaignId = null,
+  contactId = null,
+  expiresAt = null,
+  meta = null,
+  tokenKey = null,
+}) {
+  const validation = validateDestinationUrl(destinationUrl);
+  if (!validation.valid) {
+    throw new ValidationError(validation.error);
+  }
+
+  const hashSource = tokenKey || `${shopId || 'na'}:${destinationUrl}`;
+  const token = `r${sha256Hex(hashSource).slice(0, 9)}`;
+
+  const shortLink = await prisma.shortLink.upsert({
+    where: { token },
+    update: {
+      destinationUrl,
+      ...(expiresAt ? { expiresAt } : {}),
+      ...(meta ? { meta } : {}),
+      ...(campaignId ? { campaignId } : {}),
+      ...(contactId ? { contactId } : {}),
+      ...(shopId ? { shopId } : {}),
+    },
+    create: {
+      token,
+      destinationUrl,
+      shopId,
+      campaignId,
+      contactId,
+      expiresAt,
+      meta,
+    },
+  });
+
+  return {
+    id: shortLink.id,
+    token: shortLink.token,
+    shortUrl: buildShortUrl(shortLink.token),
+    destinationUrl: shortLink.destinationUrl,
+    clicks: shortLink.clicks,
+    createdAt: shortLink.createdAt,
+    expiresAt: shortLink.expiresAt,
+    reused: !!shortLink.createdAt && shortLink.updatedAt && shortLink.createdAt.getTime() !== shortLink.updatedAt.getTime(),
+  };
+}
+
+/**
  * Get short link by token
  * @param {string} token - Short link token
  * @returns {Promise<Object|null>} Short link or null if not found
@@ -282,4 +337,3 @@ export async function getShortLinkStats(shopId, campaignId = null) {
     totalClicks: totalClicks._sum.clicks || 0,
   };
 }
-

@@ -7,6 +7,7 @@ import { useUpdateSettings } from '@/src/features/shopify/settings/hooks/useUpda
 import { PageLayout } from '@/src/components/app-shell/PageLayout';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
+import { Logo } from '@/src/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -166,7 +167,15 @@ export default function SettingsPage() {
   const hasError = settingsError || accountError;
 
   return (
-    <PageLayout title="Settings" description="Manage your account and SMS settings">
+    <PageLayout
+      title={
+        <span className="inline-flex items-center gap-3">
+          <Logo size="sm" />
+          <span>Settings</span>
+        </span>
+      }
+      description="Manage your account and SMS settings"
+    >
 
       {hasError && (
         <RetailCard variant="danger" className="p-6 mb-6">

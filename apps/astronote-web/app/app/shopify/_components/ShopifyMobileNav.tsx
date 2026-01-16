@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LogOut, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
+import { Logo } from '@/src/components/brand/Logo';
 import { ShopifyNavList } from './ShopifyNavList';
 
 type ShopifyMobileNavProps = {
@@ -24,6 +26,7 @@ export function ShopifyMobileNav({
 }: ShopifyMobileNavProps) {
   const router = useRouter();
   const drawerRef = useRef<HTMLDivElement>(null);
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -74,7 +77,7 @@ export function ShopifyMobileNav({
     };
   }, [open, onOpenChange]);
 
-  const handleLogout = () => {
+  const doLogout = () => {
     // Clear Shopify auth tokens
     if (typeof window !== 'undefined') {
       localStorage.removeItem('shopify_token');
@@ -118,10 +121,7 @@ export function ShopifyMobileNav({
             className="flex items-center gap-2"
             onClick={() => onOpenChange(false)}
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
-              <span className="text-lg font-bold text-white">A</span>
-            </div>
-            <span className="text-lg font-semibold text-text-primary">Astronote</span>
+            <Logo size="md" withText />
           </Link>
           <Button
             variant="ghost"
@@ -150,13 +150,31 @@ export function ShopifyMobileNav({
           <Button
             variant="ghost"
             className="w-full justify-start text-text-secondary hover:text-text-primary"
-            onClick={handleLogout}
+            onClick={() => {
+              onOpenChange(false);
+              setLogoutOpen(true);
+            }}
           >
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={logoutOpen}
+        onOpenChange={setLogoutOpen}
+        onClose={() => setLogoutOpen(false)}
+        onConfirm={() => {
+          setLogoutOpen(false);
+          doLogout();
+        }}
+        title="Log out"
+        message="Are you sure you want to log out?"
+        confirmText="Log out"
+        cancelText="Cancel"
+        variant="danger"
+      />
     </>
   );
 }

@@ -11,6 +11,11 @@ import {
 import { cancelAutomationsForOrder } from '../services/automation-scheduler.js';
 import * as webhookReplay from '../services/webhook-replay.js';
 
+function isDuplicateJobError(err) {
+  const msg = err?.message || String(err);
+  return msg.includes('already exists');
+}
+
 /**
  * Convert numeric order ID to Shopify GID format
  * @param {string|number} orderId - Order ID (numeric or GID)
@@ -249,7 +254,7 @@ export async function handleOrderCreated(req, res, _next) {
           orderData,
         },
         {
-          jobId: `order-confirmation-${shop.id}-${id}-${Date.now()}`,
+          jobId: `order-confirmation-${shop.id}-${id}`,
           attempts: 3,
           backoff: {
             type: 'exponential',
@@ -277,6 +282,24 @@ export async function handleOrderCreated(req, res, _next) {
         'Order webhook processed',
       );
     } catch (queueError) {
+      if (isDuplicateJobError(queueError)) {
+        logger.info('Order confirmation automation already queued (duplicate jobId)', {
+          shopId: shop.id,
+          contactId: contact.id,
+          orderId: id,
+        });
+
+        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+          status: 'processed',
+        });
+
+        return sendSuccess(
+          res,
+          { automationQueued: true, reason: 'duplicate_job' },
+          'Order webhook processed',
+        );
+      }
+
       logger.error('Failed to queue order confirmation automation', {
         shopId: shop.id,
         contactId: contact.id,
@@ -555,7 +578,7 @@ export async function handleAbandonedCheckout(req, res, _next) {
           },
         },
         {
-          jobId: `abandoned-cart-${shop.id}-${checkoutId}-${Date.now()}`,
+          jobId: `abandoned-cart-${shop.id}-${checkoutId}`,
           delay: delayMs,
           attempts: 3,
           backoff: {
@@ -598,6 +621,24 @@ export async function handleAbandonedCheckout(req, res, _next) {
         'Abandoned checkout webhook processed',
       );
     } catch (queueError) {
+      if (isDuplicateJobError(queueError)) {
+        logger.info('Abandoned cart automation already queued (duplicate jobId)', {
+          shopId: shop.id,
+          contactId: contact.id,
+          checkoutId,
+        });
+
+        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+          status: 'processed',
+        });
+
+        return sendSuccess(
+          res,
+          { automationQueued: true, reason: 'duplicate_job' },
+          'Abandoned checkout webhook processed',
+        );
+      }
+
       logger.error('Failed to queue abandoned cart automation', {
         shopId: shop.id,
         contactId: contact.id,
@@ -923,7 +964,7 @@ export async function handleOrderFulfilled(req, res, _next) {
           orderData,
         },
         {
-          jobId: `order-fulfilled-${shop.id}-${id}-${Date.now()}`,
+          jobId: `order-fulfilled-${shop.id}-${id}`,
           attempts: 3,
           backoff: {
             type: 'exponential',
@@ -1000,7 +1041,7 @@ export async function handleOrderFulfilled(req, res, _next) {
                 },
               },
               {
-                jobId: `cross-sell-${shop.id}-${id}-${Date.now()}`,
+                jobId: `cross-sell-${shop.id}-${id}`,
                 delay: crossSellDelayMs,
                 attempts: 3,
                 backoff: {
@@ -1039,6 +1080,24 @@ export async function handleOrderFulfilled(req, res, _next) {
         'Order fulfillment webhook processed',
       );
     } catch (queueError) {
+      if (isDuplicateJobError(queueError)) {
+        logger.info('Order fulfillment automation already queued (duplicate jobId)', {
+          shopId: shop.id,
+          contactId: contact.id,
+          orderId: id,
+        });
+
+        await webhookReplay.markWebhookProcessed(webhookEvent.id, {
+          status: 'processed',
+        });
+
+        return sendSuccess(
+          res,
+          { automationQueued: true, reason: 'duplicate_job' },
+          'Order fulfillment webhook processed',
+        );
+      }
+
       logger.error('Failed to queue order fulfillment automation', {
         shopId: shop.id,
         contactId: contact.id,

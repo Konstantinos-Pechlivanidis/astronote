@@ -16,6 +16,7 @@ import {
   normalizeCampaignStatus,
 } from '../constants/campaign-status.js';
 import { getCanonicalMetricsForCampaignIds } from './campaign-metrics-batch.js';
+import { sha256Hex } from '../utils/redisSafe.js';
 
 /**
  * Campaigns Service
@@ -1199,6 +1200,19 @@ export async function enqueueCampaign(
   logger.info(
     { storeId, campaignId, recipientCount: contacts.length },
     'Audience built, checking subscription and credits',
+  );
+
+  logger.info(
+    {
+      storeId,
+      campaignId,
+      recipientCount: contacts.length,
+      enqueueRunId: options?.enqueueRunId || `enqueue_${Date.now()}`,
+      messageHash: sha256Hex(campaign.message || '').slice(0, 12),
+      unsubscribeMode: 'shortlink:v1',
+      idempotencyKey: _idempotencyKey ? `${_idempotencyKey}`.slice(0, 12) : null,
+    },
+    'Campaign enqueue diagnostics',
   );
 
   // 1) Re-check subscription status before reserving credits

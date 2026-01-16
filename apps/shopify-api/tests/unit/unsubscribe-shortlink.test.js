@@ -5,6 +5,8 @@ describe('Unsubscribe short link (unit)', () => {
     jest.clearAllMocks();
     jest.resetModules();
     process.env.NODE_ENV = 'test';
+    process.env.SKIP_REDIS = 'true';
+    process.env.SKIP_QUEUES = 'true';
     process.env.FRONTEND_URL = 'https://astronote.onrender.com';
   });
 
@@ -14,7 +16,7 @@ describe('Unsubscribe short link (unit)', () => {
     });
 
     jest.unstable_mockModule('../../services/shortLinks.js', () => ({
-      createOrGetShortLink: createShortLinkMock,
+      getOrCreateDeterministicShortLink: createShortLinkMock,
       buildShortUrl: (token) => `https://astronote.onrender.com/s/${token}`,
     }));
 
@@ -33,5 +35,3 @@ describe('Unsubscribe short link (unit)', () => {
     expect(createShortLinkMock).toHaveBeenCalled();
   });
 });
-
-

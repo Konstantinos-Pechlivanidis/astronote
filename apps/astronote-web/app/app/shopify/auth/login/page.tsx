@@ -7,8 +7,10 @@ import { topLevelRedirect } from '@/src/lib/shopify/auth/redirect';
 import { getShopifySessionToken, isEmbeddedShopifyApp } from '@/src/lib/shopify/auth/session-token';
 import { exchangeShopifyToken } from '@/src/lib/shopify/api/auth';
 import { RetailCard } from '@/src/components/retail/RetailCard';
+import { Logo } from '@/src/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Link from 'next/link';
 
 /**
  * Shopify Login Page Content
@@ -88,9 +90,7 @@ function ShopifyLoginPageContent() {
         <RetailCard className="p-6 sm:p-8 lg:p-10">
           <div className="flex flex-col items-center space-y-4 text-center">
             <div className="flex items-center justify-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-accent sm:h-20 sm:w-20">
-                <span className="text-2xl font-bold text-white">A</span>
-              </div>
+              <Logo size="lg" />
             </div>
             <div className="space-y-2">
               <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">
@@ -144,6 +144,15 @@ function ShopifyLoginPageContent() {
                   Log in with Shopify
                 </Button>
               </div>
+
+              <div className="pt-1 text-center">
+                <Link
+                  href="/"
+                  className="text-sm text-text-tertiary underline-offset-4 hover:text-text-secondary hover:underline"
+                >
+                  Back to website
+                </Link>
+              </div>
             </div>
           )}
         </RetailCard>
@@ -165,9 +174,7 @@ export default function ShopifyLoginPage() {
             <RetailCard className="p-6 sm:p-8 lg:p-10">
               <div className="flex flex-col items-center space-y-4 text-center">
                 <div className="flex items-center justify-center">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-accent sm:h-20 sm:w-20">
-                    <span className="text-2xl font-bold text-white">A</span>
-                  </div>
+                  <Logo size="lg" />
                 </div>
                 <div className="space-y-2">
                   <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">

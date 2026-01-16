@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAutomations } from '@/src/features/shopify/automations/hooks/useAutomations';
 import { useAutomationStats } from '@/src/features/shopify/automations/hooks/useAutomationStats';
 import {
@@ -12,6 +13,9 @@ import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
+import { Logo } from '@/src/components/brand/Logo';
+import { Pagination } from '@/src/components/app/Pagination';
+import { getIntParam, setQueryParams } from '@/src/lib/url/query';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -43,11 +47,19 @@ const UI_ALL = '__all__';
  * Automations List Page
  */
 export default function AutomationsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [statusFilter, setStatusFilter] = useState<AutomationStatus | typeof UI_ALL>(UI_ALL);
+  const [currentPage, setCurrentPage] = useState(getIntParam(searchParams.get('page'), 1));
+  const [pageSize, setPageSize] = useState(getIntParam(searchParams.get('pageSize'), 9));
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
     name: string;
   } | null>(null);
+
+  const updateUrl = (updates: Record<string, string | number | null | undefined>) => {
+    router.replace(setQueryParams(searchParams, updates), { scroll: false });
+  };
 
   // Fetch automations
   const {
@@ -70,6 +82,26 @@ export default function AutomationsPage() {
     if (statusFilter === UI_ALL) return automations;
     return automations.filter(a => a.status === statusFilter);
   }, [automations, statusFilter]);
+
+  const pagination = useMemo(() => {
+    const total = filteredAutomations.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(Math.max(1, currentPage), totalPages);
+    return {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    };
+  }, [filteredAutomations.length, pageSize, currentPage]);
+
+  const pagedAutomations = useMemo(() => {
+    const start = (pagination.page - 1) * pagination.pageSize;
+    const end = start + pagination.pageSize;
+    return filteredAutomations.slice(start, end);
+  }, [filteredAutomations, pagination.page, pagination.pageSize]);
 
   // Check if automation is "coming soon"
   const isComingSoon = (automation: Automation) => {
@@ -142,7 +174,12 @@ export default function AutomationsPage() {
     <RetailPageLayout>
       <div className="space-y-6">
         <RetailPageHeader
-          title="Automations"
+          title={
+            <span className="inline-flex items-center gap-3">
+              <Logo size="sm" />
+              <span>Automations</span>
+            </span>
+          }
           description="Set up automated SMS workflows for your store"
           actions={
             <Link href="/app/shopify/automations/new">
@@ -153,6 +190,78 @@ export default function AutomationsPage() {
             </Link>
           }
         />
+
+        {/* Automations Guide */}
+        <RetailCard className="p-6">
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold text-text-primary">Automations Guide</h2>
+            <p className="text-sm text-text-secondary">
+              Each automation sends an SMS when a Shopify event happens. Make sure contacts have a phone number and SMS consent.
+            </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {[
+              {
+                title: 'Welcome',
+                when: 'When a customer opts in / is created (depending on store setup).',
+                setup: 'Write a friendly intro and include a benefit (discount, store info, etc.).',
+                vars: ['{{firstName}}', '{{lastName}}', '{{discountCode}}'],
+              },
+              {
+                title: 'Order placed',
+                when: 'After an order is created in Shopify.',
+                setup: 'Confirm order and set expectations (shipping timeline).',
+                vars: ['{{firstName}}', '{{lastName}}'],
+              },
+              {
+                title: 'Order fulfilled',
+                when: 'When Shopify marks an order as fulfilled.',
+                setup: 'Share shipment or delivery expectations; keep it short.',
+                vars: ['{{firstName}}', '{{lastName}}'],
+              },
+              {
+                title: 'Review request',
+                when: 'A few days after delivery (if enabled in your store configuration).',
+                setup: 'Ask for a quick review and thank them.',
+                vars: ['{{firstName}}', '{{lastName}}'],
+              },
+            ].map((item) => (
+              <details key={item.title} className="group rounded-2xl border border-border bg-surface-light px-4 py-3">
+                <summary className="cursor-pointer list-none select-none">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-text-primary">{item.title}</div>
+                      <div className="mt-0.5 text-xs text-text-tertiary">{item.when}</div>
+                    </div>
+                    <span className="text-xs text-text-tertiary group-open:hidden">Show</span>
+                    <span className="text-xs text-text-tertiary hidden group-open:inline">Hide</span>
+                  </div>
+                </summary>
+
+                <div className="mt-3 space-y-3 text-sm text-text-secondary">
+                  <div>
+                    <div className="text-xs font-medium text-text-secondary uppercase tracking-wide">Setup</div>
+                    <div className="mt-1">{item.setup}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-text-secondary uppercase tracking-wide">Variables</div>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {item.vars.map((v) => (
+                        <code key={v} className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-text-primary">
+                          {v}
+                        </code>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-xs text-text-tertiary">
+                    Troubleshooting: if nothing sends, check consent, phone number, and whether the trigger event happened in Shopify.
+                  </div>
+                </div>
+              </details>
+            ))}
+          </div>
+        </RetailCard>
 
         {/* Stats Cards */}
         {!statsLoading && stats && (
@@ -185,7 +294,11 @@ export default function AutomationsPage() {
               <Select
                 value={statusFilter}
                 onValueChange={value =>
-                  setStatusFilter(value as AutomationStatus | typeof UI_ALL)
+                  (() => {
+                    setStatusFilter(value as AutomationStatus | typeof UI_ALL);
+                    setCurrentPage(1);
+                    updateUrl({ page: 1 });
+                  })()
                 }
               >
                 <SelectTrigger className="w-[180px]">
@@ -272,7 +385,7 @@ export default function AutomationsPage() {
           !automationsError &&
           filteredAutomations.length > 0 && (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredAutomations.map(automation => {
+            {pagedAutomations.map(automation => {
               const comingSoon = isComingSoon(automation);
               return (
                 <RetailCard
@@ -390,6 +503,26 @@ export default function AutomationsPage() {
               );
             })}
           </div>
+        )}
+
+        {/* Pagination */}
+        {!automationsLoading && !automationsError && filteredAutomations.length > 0 && (
+          <RetailCard className="p-4">
+            <Pagination
+              pagination={pagination}
+              onPageChange={(p) => {
+                setCurrentPage(p);
+                updateUrl({ page: p });
+              }}
+              onPageSizeChange={(ps) => {
+                setPageSize(ps);
+                setCurrentPage(1);
+                updateUrl({ pageSize: ps, page: 1 });
+              }}
+              pageSizeOptions={[9, 18, 36]}
+              disabled={automationsLoading}
+            />
+          </RetailCard>
         )}
 
         {/* Delete Confirmation Dialog */}

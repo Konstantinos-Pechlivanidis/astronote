@@ -10,6 +10,8 @@ import { CampaignStatus } from '../../utils/prismaEnums.js';
 import { releaseCredits } from '../../services/wallet.js';
 import { smsQueue } from '../index.js';
 import { createHash } from 'crypto';
+import { cacheRedis } from '../../config/redis.js';
+import { redisSetExBestEffort } from '../../utils/redisSafe.js';
 
 /**
  * Generate deterministic job ID for idempotency
@@ -85,7 +87,8 @@ async function hasActiveJobs(campaignId) {
   // Check waiting/active jobs for this campaign
   const waiting = await smsQueue.getWaiting();
   const active = await smsQueue.getActive();
-  const allJobs = [...waiting, ...active];
+  const delayed = await smsQueue.getDelayed();
+  const allJobs = [...waiting, ...active, ...delayed];
   const campaignJobs = allJobs.filter(job =>
     job.data?.campaignId === campaignId,
   );
@@ -189,6 +192,28 @@ async function expireOldReservations(maxAgeHours = 48) {
   return expired;
 }
 
+async function isOnCooldown(campaignId) {
+  const cooldownSeconds = Number(process.env.RECONCILE_COOLDOWN_SECONDS || 180);
+  if (!cacheRedis || cooldownSeconds <= 0) return false;
+  const key = `campaign:reconcile:cooldown:${campaignId}`;
+  try {
+    const [cooldownFlag, rateLimitFlag] = await Promise.all([
+      cacheRedis.get(key),
+      cacheRedis.get(`sms:ratelimit:campaign:${campaignId}`),
+    ]);
+    return Boolean(cooldownFlag || rateLimitFlag);
+  } catch {
+    return false;
+  }
+}
+
+async function markCooldown(campaignId) {
+  const cooldownSeconds = Number(process.env.RECONCILE_COOLDOWN_SECONDS || 180);
+  if (!cacheRedis || cooldownSeconds <= 0) return;
+  const key = `campaign:reconcile:cooldown:${campaignId}`;
+  await redisSetExBestEffort(cacheRedis, key, cooldownSeconds, '1');
+}
+
 /**
  * Main reconciliation job handler
  */
@@ -260,8 +285,9 @@ export async function handleReconciliation() {
         } else {
           // 4. Check if there are active jobs
           const hasJobs = await hasActiveJobs(campaign.id);
+          const cooldownActive = await isOnCooldown(campaign.id);
 
-          if (!hasJobs && progress.pending > 0) {
+          if (!hasJobs && !cooldownActive && progress.pending > 0) {
             // No jobs exist but there are pending recipients - re-enqueue
             const pendingRecipients = await prisma.campaignRecipient.findMany({
               where: {
@@ -278,19 +304,30 @@ export async function handleReconciliation() {
               campaign.id,
               pendingIds,
             );
+            await markCooldown(campaign.id);
 
             logger.info('Re-enqueued missing batches', {
               campaignId: campaign.id,
               shopId: campaign.shopId,
               pendingCount: pendingIds.length,
               jobsEnqueued,
+              activeJobsFound: hasJobs,
+              decision: 're_enqueued',
             });
 
             reEnqueued += jobsEnqueued;
-          } else if (hasJobs) {
-            logger.debug('Campaign has active jobs, leaving as-is', {
+          } else {
+            logger.info('Reconciliation decision (no re-enqueue)', {
               campaignId: campaign.id,
               shopId: campaign.shopId,
+              pendingCount: progress.pending,
+              activeJobsFound: hasJobs,
+              cooldownActive,
+              decision: cooldownActive
+                ? 'cooldown_skip'
+                : hasJobs
+                  ? 'active_jobs_skip'
+                  : 'noop',
             });
           }
         }
@@ -333,4 +370,3 @@ export async function handleReconciliation() {
 export default {
   handleReconciliation,
 };
-

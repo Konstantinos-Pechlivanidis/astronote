@@ -14,12 +14,20 @@ import { shopifyQueryKeys } from '@/src/features/shopify/queryKeys';
  * React Query hook for creating a purchase (credit packs)
  */
 export function useCreatePurchase() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async (data: CreatePurchaseRequest) => {
       const response = await billingApi.createPurchase(data);
       return response;
     },
     onSuccess: (data) => {
+      // Keep billing views fresh after checkout completes
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.balance() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.summary() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.invoicesRoot() });
+      queryClient.invalidateQueries({ queryKey: shopifyQueryKeys.billing.historyRoot() });
+
       // Redirect to Stripe checkout
       const checkoutUrl = data.checkoutUrl || data.sessionUrl;
       if (checkoutUrl) {

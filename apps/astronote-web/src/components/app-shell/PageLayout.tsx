@@ -5,7 +5,7 @@ import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 
 type PageLayoutProps = {
-  title: string;
+  title: ReactNode;
   description?: string;
   actions?: ReactNode;
   backHref?: string;

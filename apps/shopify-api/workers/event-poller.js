@@ -106,6 +106,7 @@ async function processShopEvents(shop) {
               event.id,
               shop.id,
               automationType,
+              event.occurredAt,
             );
             if (alreadyProcessed) {
               logger.debug('Event already processed, skipping', {
@@ -340,15 +341,34 @@ async function processShopEvents(shop) {
                     ? 'welcome'
                     : automationType;
 
-            await automationQueue.add(jobName, jobData, {
-              jobId: `${automationType}-${shop.id}-${event.id}-${Date.now()}`,
-              attempts: 3,
-              backoff: {
-                type: 'exponential',
-                delay: 2000,
-              },
-            });
+            const deterministicJobId = `${jobName}-${shop.id}-${event.id}`;
 
+            try {
+              await automationQueue.add(jobName, jobData, {
+                jobId: deterministicJobId,
+                attempts: 3,
+                backoff: {
+                  type: 'exponential',
+                  delay: 2000,
+                },
+              });
+            } catch (queueError) {
+              const msg = queueError?.message || String(queueError);
+              // BullMQ throws on duplicate jobId. Treat this as idempotent success.
+              if (msg.includes('already exists')) {
+                logger.info('Automation job already queued (duplicate jobId)', {
+                  shopId: shop.id,
+                  eventId: event.id,
+                  automationType,
+                  jobName,
+                  jobId: deterministicJobId,
+                });
+              } else {
+                throw queueError;
+              }
+            }
+
+            // Mark as processed regardless of whether it was newly queued or already existed.
             processedEvents.push({
               id: event.id,
               occurredAt: event.occurredAt,

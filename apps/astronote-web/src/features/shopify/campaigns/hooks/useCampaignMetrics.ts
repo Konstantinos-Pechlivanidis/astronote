@@ -55,7 +55,13 @@ export function useCampaignStatus(
     gcTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
     refetchOnWindowFocus: false,
-    refetchInterval: options?.refetchInterval !== false ? 30 * 1000 : false, // Auto-refresh every 30s
+    refetchInterval:
+      options?.refetchInterval !== undefined
+        ? options.refetchInterval
+        : (data) => {
+          const status = (data as any)?.campaign?.status || (data as any)?.status;
+          return status === 'sending' || status === 'scheduled' ? 5 * 1000 : false;
+        },
     refetchIntervalInBackground: false,
     placeholderData: (previousData) => previousData,
   });
@@ -64,7 +70,10 @@ export function useCampaignStatus(
 /**
  * React Query hook for campaign progress
  */
-export function useCampaignProgress(id: string | undefined) {
+export function useCampaignProgress(
+  id: string | undefined,
+  options?: { refetchInterval?: number | false },
+) {
   const hasToken =
     typeof window !== 'undefined' ? !!localStorage.getItem('shopify_token') : false;
 
@@ -80,7 +89,14 @@ export function useCampaignProgress(id: string | undefined) {
     gcTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
     refetchOnWindowFocus: false,
-    refetchInterval: 30 * 1000, // Auto-refresh every 30s for active campaigns
+    refetchInterval:
+      options?.refetchInterval !== undefined
+        ? options.refetchInterval
+        : (data) => {
+          const status = (data as any)?.status || (data as any)?.campaign?.status;
+          const pending = (data as any)?.pending || (data as any)?.queued || 0;
+          return status === 'sending' || pending > 0 ? 5 * 1000 : false;
+        },
     refetchIntervalInBackground: false,
     placeholderData: (previousData) => previousData,
   });
@@ -129,4 +145,3 @@ export function useCampaignFailedRecipients(id: string | undefined, enabled = fa
     refetchOnWindowFocus: false,
   });
 }
-

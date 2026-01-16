@@ -10,6 +10,7 @@ import { useDiscounts } from '@/src/features/shopify/discounts/hooks/useDiscount
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { AppPageHeader } from '@/src/components/app/AppPageHeader';
+import { Logo } from '@/src/components/brand/Logo';
 import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -157,7 +158,15 @@ export default function EditCampaignPage() {
     return (
       <RetailPageLayout>
         <div className="space-y-6">
-          <AppPageHeader title="Edit Campaign" backHref="/app/shopify/campaigns" />
+          <AppPageHeader
+            title={
+              <span className="inline-flex items-center gap-3">
+                <Logo size="sm" />
+                <span>Edit Campaign</span>
+              </span>
+            }
+            backHref="/app/shopify/campaigns"
+          />
           <RetailCard className="p-6">
             <div className="space-y-4">
               {[1, 2, 3, 4].map((i) => (
@@ -175,7 +184,15 @@ export default function EditCampaignPage() {
     return (
       <RetailPageLayout>
         <div className="space-y-6">
-          <AppPageHeader title="Edit Campaign" backHref="/app/shopify/campaigns" />
+          <AppPageHeader
+            title={
+              <span className="inline-flex items-center gap-3">
+                <Logo size="sm" />
+                <span>Edit Campaign</span>
+              </span>
+            }
+            backHref="/app/shopify/campaigns"
+          />
           <RetailCard variant="danger" className="p-6">
             <div className="text-center py-8">
               <AlertCircle className="mx-auto h-12 w-12 text-red-400 mb-4" />
@@ -201,7 +218,15 @@ export default function EditCampaignPage() {
     return (
       <RetailPageLayout>
         <div className="space-y-6">
-          <AppPageHeader title="Edit Campaign" backHref={`/app/shopify/campaigns/${id}`} />
+          <AppPageHeader
+            title={
+              <span className="inline-flex items-center gap-3">
+                <Logo size="sm" />
+                <span>Edit Campaign</span>
+              </span>
+            }
+            backHref={`/app/shopify/campaigns/${id}`}
+          />
           <RetailCard variant="danger" className="p-6">
             <div className="text-center py-8">
               <AlertCircle className="mx-auto h-12 w-12 text-red-400 mb-4" />
@@ -223,7 +248,12 @@ export default function EditCampaignPage() {
     <RetailPageLayout>
       <div className="space-y-6">
         <AppPageHeader
-          title="Edit Campaign"
+          title={
+            <span className="inline-flex items-center gap-3">
+              <Logo size="sm" />
+              <span>Edit Campaign</span>
+            </span>
+          }
           description={`Editing: ${campaign.name}`}
           backHref={`/app/shopify/campaigns/${id}`}
         />

@@ -4,7 +4,7 @@ import { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 interface RetailPageHeaderProps {
-  title: string;
+  title: ReactNode;
   description?: string;
   actions?: ReactNode;
   className?: string;

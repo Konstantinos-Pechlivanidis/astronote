@@ -8,7 +8,13 @@ import { appendUnsubscribeLink } from '../../utils/unsubscribe.js';
 import { shortenUrlsInText } from '../../utils/urlShortener.js';
 import { getDiscountCode } from '../../services/shopify.js';
 import { cacheRedis } from '../../config/redis.js';
-import { redisGetMany, redisSetExBestEffort, sha256Hex } from '../../utils/redisSafe.js';
+import {
+  redisGetMany,
+  redisSetExBestEffort,
+  redisSetNxWithTtl,
+  redisDelMany,
+  sha256Hex,
+} from '../../utils/redisSafe.js';
 
 /**
  * Check if error is retryable (Phase 2.1: Rate limiting retry)
@@ -36,6 +42,8 @@ export async function handleBulkSMS(job) {
   let providerSucceeded = false;
   let providerResults = null;
   const debug = process.env.SMS_SEND_DEBUG === '1';
+  let claimKeys = [];
+  let claimedRecipientIds = [];
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:32',message:'handleBulkSMS ENTRY',data:{jobId:job.id,campaignId,shopId,recipientIdsCount:recipientIds?.length,first5Recipients:recipientIds?.slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
   // #endregion
@@ -118,7 +126,7 @@ export async function handleBulkSMS(job) {
         .map(r => r.id),
     );
     const redisAlreadySentCount = redisSentSet.size;
-    const recipientsToProcess = redisAlreadySentCount
+    let recipientsToProcess = redisAlreadySentCount
       ? recipients.filter(r => !redisSentSet.has(r.id))
       : recipients;
 
@@ -133,6 +141,44 @@ export async function handleBulkSMS(job) {
         },
         'Skipping recipients already marked as sent in Redis (post-send persist repair pending)',
       );
+    }
+
+    // Claim recipients to prevent duplicate sends across overlapping jobs
+    const claimTtlSeconds = Number(process.env.SMS_SEND_CLAIM_TTL_SECONDS || 15 * 60);
+    if (claimTtlSeconds > 0 && recipientsToProcess.length > 0) {
+      const claimResults = await Promise.all(
+        recipientsToProcess.map(r =>
+          redisSetNxWithTtl(
+            cacheRedis,
+            `sms:send-claim:${r.id}`,
+            claimTtlSeconds,
+            job.id || 'send',
+          ),
+        ),
+      );
+      const newlyClaimed = [];
+      const alreadyClaimed = [];
+      claimResults.forEach((ok, idx) => {
+        if (ok) {
+          newlyClaimed.push(recipientsToProcess[idx]);
+        } else {
+          alreadyClaimed.push(recipientsToProcess[idx]);
+        }
+      });
+      claimKeys = newlyClaimed.map(r => `sms:send-claim:${r.id}`);
+      claimedRecipientIds = newlyClaimed.map(r => r.id);
+      recipientsToProcess = newlyClaimed;
+      if (alreadyClaimed.length > 0) {
+        logger.warn(
+          {
+            campaignId,
+            shopId,
+            jobId: job.id,
+            skippedAlreadyClaimed: alreadyClaimed.length,
+          },
+          'Send claim exists for recipients, skipping to avoid duplicate send',
+        );
+      }
     }
 
     const startTime = Date.now();
@@ -344,6 +390,22 @@ export async function handleBulkSMS(job) {
       );
     }
 
+    logger.info(
+      {
+        campaignId,
+        shopId,
+        jobId: job.id,
+        requested: recipientIds.length,
+        fetchedPending: recipients.length,
+        alreadySentDb: alreadySent,
+        redisAlreadySent: redisAlreadySentCount,
+        claimed: claimedRecipientIds.length || recipientsToProcess.length,
+        filteredToSend: filteredBulkMessages.length,
+        skippedAfterSnapshot: skippedCount,
+      },
+      'Bulk SMS batch filter summary',
+    );
+
     if (filteredBulkMessages.length === 0) {
       logger.warn(
         {
@@ -356,6 +418,9 @@ export async function handleBulkSMS(job) {
         },
         'No pending recipients found (all already sent by another job or previous retry)',
       );
+      if (claimKeys.length > 0) {
+        await redisDelMany(cacheRedis, claimKeys);
+      }
       return {
         ok: true,
         bulkId: null,
@@ -385,7 +450,11 @@ export async function handleBulkSMS(job) {
     }
     let result;
     try {
-      result = await sendBulkSMSWithCredits(filteredBulkMessages);
+      result = await sendBulkSMSWithCredits(filteredBulkMessages, {
+        jobId: job.id,
+        campaignId,
+        shopId,
+      });
       providerSucceeded = true;
     } catch (providerErr) {
       // Provider call failed before we got definitive provider IDs; safe to retry (BullMQ will retry).
@@ -422,6 +491,17 @@ export async function handleBulkSMS(job) {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bulkSms.js:230',message:'sendBulkSMSWithCredits result',data:{campaignId,jobId:job.id,totalResults:result.results?.length,sentCount:result.results?.filter(r => r.sent).length,failedCount:result.results?.filter(r => !r.sent).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
     // #endregion
+    if (result?.rateLimit) {
+      logger.info(
+        {
+          campaignId,
+          shopId,
+          jobId: job.id,
+          rateLimit: result.rateLimit,
+        },
+        'Rate limit snapshot (post-provider)',
+      );
+    }
 
     // IMPORTANT: After provider success, set redis sent markers immediately to prevent resends
     // even if DB persist fails (job retry must not call provider again).
@@ -760,6 +840,10 @@ export async function handleBulkSMS(job) {
       return { ok: true, bulkId: providerResults?.bulkId || null, postProviderFailure: true };
     }
 
+    if (!providerSucceeded && !providerResults && claimKeys.length > 0) {
+      await redisDelMany(cacheRedis, claimKeys);
+    }
+
     // Pre-send failure: safe to retry (provider not called).
     await prisma.campaignRecipient.updateMany({
       where: {
@@ -792,4 +876,3 @@ export async function handleBulkSMS(job) {
 }
 
 export default { handleBulkSMS };
-

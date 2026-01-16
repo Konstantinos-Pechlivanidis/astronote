@@ -8,6 +8,8 @@ import { isSubscriptionActive } from './subscription.js';
 import { checkAllLimits } from './rateLimiter.js';
 import { logger } from '../utils/logger.js';
 import prisma from './prisma.js';
+import { cacheRedis } from '../config/redis.js';
+import { redisSetExBestEffort } from '../utils/redisSafe.js';
 
 /**
  * Send bulk SMS with credit enforcement
@@ -22,9 +24,12 @@ import prisma from './prisma.js';
  * @param {string} [messages[].contactId] - Optional contact ID for unsubscribe link
  * @param {Object} [messages[].meta] - Optional metadata (campaignId, messageId, etc.)
  * @param {string} messages[].internalRecipientId - Internal CampaignRecipient.id for mapping response
+ * @param {Object} [context] - Optional context for logging
+ * @param {string} [context.jobId] - Queue job id
+ * @param {string} [context.campaignId] - Campaign id
  * @returns {Promise<Object>} Result with bulkId, results array, and summary
  */
-export async function sendBulkSMSWithCredits(messages) {
+export async function sendBulkSMSWithCredits(messages, context = {}) {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/72a17531-4a03-4868-9574-6d14ee68fc32',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'smsBulk.js:27',message:'sendBulkSMSWithCredits ENTRY',data:{messageCount:messages?.length,shopId:messages[0]?.shopId,campaignId:messages[0]?.meta?.campaignId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(() => {});
   // #endregion
@@ -209,7 +214,28 @@ export async function sendBulkSMSWithCredits(messages) {
     mittoMessages[0]?.trafficAccountId || TRAFFIC_ACCOUNT_ID;
 
   const rateLimitCheck = await checkAllLimits(trafficAccountId, shopId);
+  const rateLimitSnapshot = {
+    allowed: rateLimitCheck.allowed,
+    trafficRemaining: rateLimitCheck.trafficAccountLimit.remaining,
+    tenantRemaining: rateLimitCheck.tenantLimit.remaining,
+    resetAt: {
+      traffic: rateLimitCheck.trafficAccountLimit.resetAt,
+      tenant: rateLimitCheck.tenantLimit.resetAt,
+    },
+  };
+  logger.info(
+    {
+      shopId,
+      campaignId: context?.campaignId || messages[0]?.meta?.campaignId || null,
+      jobId: context?.jobId || null,
+      ...rateLimitSnapshot,
+    },
+    'Rate limit check (bulk send)',
+  );
   if (!rateLimitCheck.allowed) {
+    const cooldownKey = `sms:ratelimit:campaign:${context?.campaignId || messages[0]?.meta?.campaignId || 'unknown'}`;
+    await redisSetExBestEffort(cacheRedis, cooldownKey, Number(process.env.RATE_LIMIT_COOLDOWN_SECONDS || 60), '1');
+
     logger.warn(
       {
         shopId,
@@ -226,6 +252,7 @@ export async function sendBulkSMSWithCredits(messages) {
     );
     error.reason = 'rate_limit_exceeded';
     error.status = 429; // Standard HTTP status for Too Many Requests
+    error.rateLimitState = rateLimitSnapshot;
     throw error;
   }
 
@@ -374,6 +401,7 @@ export async function sendBulkSMSWithCredits(messages) {
       sent: successfulCount,
       failed: messages.length - successfulCount,
     },
+    rateLimit: rateLimitSnapshot,
   };
 }
 

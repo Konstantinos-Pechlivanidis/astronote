@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { logger } from './logger.js';
-import { createOrGetShortLink } from '../services/shortLinks.js';
+import { getOrCreateDeterministicShortLink } from '../services/shortLinks.js';
 import { cacheRedis } from '../config/redis.js';
 import { redisSetExBestEffort, sha256Hex } from './redisSafe.js';
 
@@ -179,6 +179,14 @@ export async function appendUnsubscribeLink(
     phoneE164,
     req,
   );
+  const unsubscribeUrlHash = sha256Hex(unsubscribeUrl);
+  const deterministicTokenKey = sha256Hex(
+    `${shopId || 'na'}:${contactId || phoneE164 || 'unknown'}:${campaignId || 'any'}`,
+  );
+  const cacheTtlSeconds = Number(
+    process.env.UNSUBSCRIBE_SHORT_CACHE_TTL_SECONDS || 30 * 24 * 60 * 60,
+  );
+  const cacheKey = `unsubscribe:short:${deterministicTokenKey}`;
 
   // If message already contains an unsubscribe line, ensure the URL is short and return.
   // Supports both previously appended long URLs and short URLs.
@@ -194,16 +202,29 @@ export async function appendUnsubscribeLink(
     try {
       const expiresAt = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000);
       const shortLink = await withTimeout(
-        createOrGetShortLink({
+        getOrCreateDeterministicShortLink({
           destinationUrl: existingUrl,
           shopId,
           campaignId,
           contactId,
           expiresAt,
           meta: { type: 'unsubscribe', recipientId },
+          tokenKey: deterministicTokenKey,
         }),
         shortlinkTimeoutMs,
-        'createOrGetShortLink(unsubscribe-existing)',
+        'getOrCreateDeterministicShortLink(unsubscribe-existing)',
+      );
+      logger.info(
+        {
+          shopId,
+          campaignId,
+          recipientId,
+          inputHash: sha256Hex(existingUrl).slice(0, 12),
+          shortHash: sha256Hex(shortLink.shortUrl).slice(0, 8),
+          cacheHit: false,
+          idempotencyKey: deterministicTokenKey.slice(0, 12),
+        },
+        'Unsubscribe shortlink normalized (existing)',
       );
       return message.replace(existingUnsubRegex, `$1${shortLink.shortUrl}`);
     } catch (e) {
@@ -217,28 +238,41 @@ export async function appendUnsubscribeLink(
   // Expire the short link slightly after the unsubscribe token window (30 days).
   const expiresAt = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000);
   let shortUrl = unsubscribeUrl;
+  let cacheHit = false;
   try {
-    const ttlSeconds = Number(process.env.UNSUBSCRIBE_SHORT_CACHE_TTL_SECONDS || 30 * 24 * 60 * 60);
-    const cacheKey = `unsubscribe:short:${shopId || 'na'}:${sha256Hex(unsubscribeUrl).slice(0, 16)}`;
     const cached = await cacheRedis.get(cacheKey);
     if (cached) {
       shortUrl = cached;
+      cacheHit = true;
     } else {
       const shortLink = await withTimeout(
-        createOrGetShortLink({
+        getOrCreateDeterministicShortLink({
           destinationUrl: unsubscribeUrl,
           shopId,
           campaignId,
           contactId,
           expiresAt,
           meta: { type: 'unsubscribe', recipientId },
+          tokenKey: deterministicTokenKey,
         }),
         shortlinkTimeoutMs,
-        'createOrGetShortLink(unsubscribe)',
+        'getOrCreateDeterministicShortLink(unsubscribe)',
       );
       shortUrl = shortLink.shortUrl;
-      await redisSetExBestEffort(cacheRedis, cacheKey, ttlSeconds, String(shortUrl));
+      await redisSetExBestEffort(cacheRedis, cacheKey, cacheTtlSeconds, String(shortUrl));
     }
+    logger.info(
+      {
+        shopId,
+        campaignId,
+        recipientId,
+        inputHash: unsubscribeUrlHash.slice(0, 12),
+        shortHash: sha256Hex(shortUrl).slice(0, 8),
+        cacheHit,
+        idempotencyKey: deterministicTokenKey.slice(0, 12),
+      },
+      'Unsubscribe shortlink resolved',
+    );
   } catch (e) {
     logger.warn(
       { err: e?.message || String(e), shopId, contactId },

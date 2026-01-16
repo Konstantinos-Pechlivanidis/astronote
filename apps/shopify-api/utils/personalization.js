@@ -9,16 +9,21 @@ export function replacePlaceholders(message, contact) {
     return message || '';
   }
 
-  // Get contact data with fallbacks
   const firstName = contact?.firstName || '';
   const lastName = contact?.lastName || '';
   const discountCode = contact?.discountCode || '';
 
-  // Replace placeholders (case-insensitive)
-  let personalizedMessage = message
-    .replace(/\{\{first_name\}\}/gi, firstName)
-    .replace(/\{\{last_name\}\}/gi, lastName)
-    .replace(/\{\{discount_code\}\}/gi, discountCode);
+  // Support common casing/underscore variants
+  const patterns = {
+    firstName: /\{\{\s*(first[_\s]?name|firstname|FIRSTNAME|FIRST_NAME|FirstName|First_Name)\s*\}\}/gi,
+    lastName: /\{\{\s*(last[_\s]?name|lastname|LASTNAME|LAST_NAME|LastName|Last_Name)\s*\}\}/gi,
+    discountCode: /\{\{\s*(discount[_\s]?code|discountcode|DISCOUNT_CODE|DISCOUNTCODE|DiscountCode|Discount_Code)\s*\}\}/gi,
+  };
+
+  let personalizedMessage = message;
+  personalizedMessage = personalizedMessage.replace(patterns.firstName, firstName);
+  personalizedMessage = personalizedMessage.replace(patterns.lastName, lastName);
+  personalizedMessage = personalizedMessage.replace(patterns.discountCode, discountCode);
 
   // Clean up extra spaces that might result from empty replacements
   personalizedMessage = personalizedMessage.replace(/\s+/g, ' ').trim();
