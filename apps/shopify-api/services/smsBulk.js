@@ -75,8 +75,10 @@ export async function sendBulkSMSWithCredits(messages, context = {}) {
   }
 
   // 2. Check available balance and allowance before sending
-  // For campaigns, credits are already reserved; allowance is consumed first
-  const [availableBalance, shop] = await Promise.all([
+  // For campaigns, paid credits may already be RESERVED (CreditReservation) at enqueue time.
+  // Those reserved credits must be considered available for this campaign's send.
+  const campaignIdFromContext = context?.campaignId || messages[0]?.meta?.campaignId || null;
+  const [availableBalance, shop, reservedForCampaignAgg] = await Promise.all([
     getAvailableBalance(shopId),
     prisma.shop.findUnique({
       where: { id: shopId },
@@ -85,18 +87,32 @@ export async function sendBulkSMSWithCredits(messages, context = {}) {
         usedSmsThisPeriod: true,
       },
     }),
+    campaignIdFromContext
+      ? prisma.creditReservation.aggregate({
+        where: {
+          shopId,
+          campaignId: campaignIdFromContext,
+          status: 'active',
+        },
+        _sum: { amount: true },
+      }).catch(() => ({ _sum: { amount: 0 } }))
+      : Promise.resolve({ _sum: { amount: 0 } }),
   ]);
   const requiredCredits = messages.length;
   const remainingAllowance = shop?.includedSmsPerPeriod
     ? Math.max(0, shop.includedSmsPerPeriod - (shop.usedSmsThisPeriod || 0))
     : 0;
-  const totalAvailable = remainingAllowance + availableBalance;
+  const reservedForCampaign = reservedForCampaignAgg?._sum?.amount || 0;
+  const effectivePaidBalance = availableBalance + reservedForCampaign;
+  const totalAvailable = remainingAllowance + effectivePaidBalance;
 
   if (totalAvailable < requiredCredits) {
     logger.warn(
       {
         shopId,
         availableBalance,
+        reservedForCampaign,
+        effectivePaidBalance,
         remainingAllowance,
         totalAvailable,
         requiredCredits,

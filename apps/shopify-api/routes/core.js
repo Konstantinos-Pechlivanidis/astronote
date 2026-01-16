@@ -22,6 +22,7 @@ r.get('/readiness', async (req, res) => {
     database: false,
     redis: false,
     workers: false,
+    workerLock: null,
   };
 
   // Check database
@@ -52,9 +53,19 @@ r.get('/readiness', async (req, res) => {
   try {
     const { getWorkerMode } = await import('../config/worker-mode.js');
     const { areWorkersStarted } = await import('../queue/start-workers.js');
+    const { getWorkerLockStatus } = await import('../config/worker-lock.js');
     const mode = await getWorkerMode();
     if (mode === 'embedded') {
-      checks.workers = areWorkersStarted();
+      // In embedded deployments with a distributed worker lock, only ONE instance should run workers.
+      // This instance is still "ready" if workers are running elsewhere (lock exists with TTL).
+      const startedHere = areWorkersStarted();
+      if (startedHere) {
+        checks.workers = true;
+      } else {
+        const lock = await getWorkerLockStatus('shopify-api');
+        checks.workerLock = lock;
+        checks.workers = Boolean(lock?.ok && lock.exists && (lock.ttlMs || 0) > 0);
+      }
     } else {
       checks.workers = true; // Not required in separate/off mode
     }
@@ -136,17 +147,19 @@ r.get('/health/full', async (req, res) => {
   try {
     const { getWorkerMode } = await import('../config/worker-mode.js');
     const { areWorkersStarted } = await import('../queue/start-workers.js');
+    const { getWorkerLockStatus } = await import('../config/worker-lock.js');
     const mode = await getWorkerMode();
     if (mode === 'embedded') {
       const workersStarted = areWorkersStarted();
+      const lock = await getWorkerLockStatus('shopify-api');
       out.checks.workers = {
         status: workersStarted ? 'healthy' : 'unhealthy',
         mode: 'embedded',
         started: workersStarted,
+        lock,
       };
-      if (!workersStarted) {
-        out.ok = false;
-      }
+      // If workers aren't started here, that's OK as long as another instance holds the lock.
+      if (!workersStarted && !(lock?.ok && lock.exists && (lock.ttlMs || 0) > 0)) out.ok = false;
     } else {
       out.checks.workers = {
         status: 'healthy',
@@ -158,6 +171,12 @@ r.get('/health/full', async (req, res) => {
     out.checks.workers = { status: 'unknown', error: String(e.message) };
   }
 
+  // Scheduler config (observability only)
+  out.checks.scheduler = {
+    runScheduler: process.env.RUN_SCHEDULER || 'true (default)',
+    scheduledCampaignsEnabled: process.env.SCHEDULED_CAMPAIGNS_ENABLED || 'true (default)',
+  };
+
   // Cache health
   try {
     const cacheHealth = await cacheManager.healthCheck();
@@ -166,10 +185,10 @@ r.get('/health/full', async (req, res) => {
     out.checks.cache = { status: 'unhealthy', error: String(e.message) };
   }
 
-  // Queue health
+  // Queue health + queue counts (observability)
   try {
     const queueStart = Date.now();
-    const { smsQueue } = await import('../queue/index.js');
+    const { smsQueue, campaignQueue, automationQueue, deliveryStatusQueue, allCampaignsStatusQueue, reconciliationQueue } = await import('../queue/index.js');
     const j = await smsQueue.add(
       'health',
       { t: Date.now() },
@@ -180,6 +199,16 @@ r.get('/health/full', async (req, res) => {
     out.checks.queue = {
       status: 'healthy',
       responseTime: `${queueDuration}ms`,
+    };
+
+    const counts = async (q) => q.getJobCounts('waiting', 'active', 'delayed', 'failed');
+    out.checks.queueCounts = {
+      'sms-send': await counts(smsQueue),
+      'campaign-send': await counts(campaignQueue),
+      'automation-trigger': await counts(automationQueue),
+      'delivery-status-update': await counts(deliveryStatusQueue),
+      'all-campaigns-status-update': await counts(allCampaignsStatusQueue),
+      'reconciliation': await counts(reconciliationQueue),
     };
   } catch (e) {
     out.checks.queue = { status: 'unhealthy', error: String(e.message) };

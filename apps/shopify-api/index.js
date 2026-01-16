@@ -74,8 +74,15 @@ const server = app.listen(PORT, async () => {
   // F) Start workers (if WORKER_MODE=embedded)
   if (workerMode === 'embedded') {
     try {
-      await startWorkers();
-      logger.info('Workers started successfully (embedded mode)');
+      const result = await startWorkers();
+      if (result?.started) {
+        logger.info('Workers started successfully (embedded mode)', result);
+      } else {
+        logger.warn(
+          { ...result },
+          'Workers not started on this instance (embedded mode) — API will continue; check worker lock / deployment topology',
+        );
+      }
     } catch (error) {
       logger.error('Failed to start workers', {
         error: error.message,

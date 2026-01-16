@@ -9,10 +9,24 @@ import { logger } from '../utils/logger.js';
 let workersStarted = false;
 let startWorkersPromise = null;
 let workerInstances = [];
+let lockRetryTimer = null;
+let lastStartResult = null;
+
+function scheduleLockRetry() {
+  const retryMs = Number(process.env.WORKER_LOCK_RETRY_MS || 60000);
+  if (!Number.isFinite(retryMs) || retryMs <= 0) return;
+  if (lockRetryTimer) return;
+  lockRetryTimer = setTimeout(() => {
+    lockRetryTimer = null;
+    // Allow a new attempt
+    startWorkersPromise = null;
+    startWorkers().catch(() => {});
+  }, retryMs);
+}
 
 /**
  * Start embedded workers (idempotent)
- * @returns {Promise<void>}
+ * @returns {Promise<{started: boolean, reason?: string, workerCount?: number}>}
  */
 export async function startWorkers() {
   // Idempotency: return existing promise if already starting
@@ -22,7 +36,7 @@ export async function startWorkers() {
 
   // Idempotency: return immediately if already started
   if (workersStarted) {
-    return;
+    return { started: true, workerCount: workerInstances.length };
   }
 
   startWorkersPromise = (async () => {
@@ -30,7 +44,8 @@ export async function startWorkers() {
       // Check if workers should be started
       if (!(await shouldStartWorkers())) {
         logger.info('Workers not started (WORKER_MODE != embedded)');
-        return;
+        lastStartResult = { started: false, reason: 'mode_not_embedded' };
+        return lastStartResult;
       }
 
       const mode = await getWorkerMode();
@@ -51,8 +66,10 @@ export async function startWorkers() {
           'Workers will not start in this instance. ' +
           'If this is unexpected, check for duplicate services or stale locks in Redis.',
         );
-        // Don't throw - allow API to start without workers
-        return;
+        // Don't throw - allow API to start without workers. But do retry periodically for failover.
+        lastStartResult = { started: false, reason: 'lock_held_elsewhere' };
+        scheduleLockRetry();
+        return lastStartResult;
       }
 
       // Import worker module (this creates Worker instances)
@@ -87,6 +104,12 @@ export async function startWorkers() {
       });
 
       workersStarted = true;
+      lastStartResult = { started: true, workerCount: workerInstances.length };
+      if (lockRetryTimer) {
+        clearTimeout(lockRetryTimer);
+        lockRetryTimer = null;
+      }
+      return lastStartResult;
     } catch (error) {
       logger.error('Failed to start workers', {
         error: error.message,
@@ -94,6 +117,7 @@ export async function startWorkers() {
       });
       // Release lock on error
       await releaseWorkerLock('shopify-api').catch(() => {});
+      lastStartResult = { started: false, reason: 'error' };
       throw error;
     }
   })();
@@ -139,3 +163,6 @@ export function areWorkersStarted() {
   return workersStarted;
 }
 
+export function getLastWorkersStartResult() {
+  return lastStartResult;
+}

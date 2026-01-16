@@ -5,6 +5,7 @@ import {
   CampaignStatus,
   MessageStatus,
 } from '../utils/prismaEnums.js';
+import { releaseCredits } from './wallet.js';
 
 /**
  * Delivery Status Service
@@ -353,9 +354,34 @@ export async function updateCampaignStatusFromRecipients(campaignId) {
 
   // Only update if status changed
   if (newStatus !== campaign.status) {
-    await prisma.campaign.update({
-      where: { id: campaignId },
-      data: { status: newStatus },
+    // P0: finalize campaign atomically and release credit reservation (if any).
+    await prisma.$transaction(async (tx) => {
+      await tx.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: newStatus,
+          finishedAt: pending === 0 ? new Date() : undefined,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (pending === 0) {
+        const reservation = await tx.creditReservation.findFirst({
+          where: {
+            campaignId,
+            shopId: campaign.shopId,
+            status: 'active',
+          },
+          select: { id: true },
+        });
+        if (reservation?.id) {
+          await releaseCredits(
+            reservation.id,
+            { reason: `campaign_${newStatus}_finalize` },
+            tx,
+          );
+        }
+      }
     });
 
     logger.info('Campaign status updated', {

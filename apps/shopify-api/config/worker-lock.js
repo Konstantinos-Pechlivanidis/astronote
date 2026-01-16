@@ -117,3 +117,29 @@ export function isLockAcquired() {
   return lockAcquired;
 }
 
+/**
+ * Get worker lock status for observability/debugging.
+ * Safe: does not return lock token, only presence + TTL.
+ * @param {string} serviceName
+ */
+export async function getWorkerLockStatus(serviceName) {
+  const lockKey = `${LOCK_KEY_PREFIX}:${serviceName}:${process.env.NODE_ENV || 'development'}`;
+  if (!queueRedis) {
+    return { lockKey, ok: false, error: 'Redis not available' };
+  }
+  try {
+    const [pttl, currentToken] = await Promise.all([
+      queueRedis.pttl(lockKey),
+      queueRedis.get(lockKey),
+    ]);
+    return {
+      lockKey,
+      ok: true,
+      exists: Boolean(currentToken),
+      ttlMs: typeof pttl === 'number' ? pttl : null,
+      ownedByThisProcess: lockAcquired && Boolean(currentToken) && currentToken === lockToken,
+    };
+  } catch (e) {
+    return { lockKey, ok: false, error: e?.message || String(e) };
+  }
+}
