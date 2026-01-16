@@ -479,6 +479,31 @@ function BillingPageContent() {
           title="Billing"
           description="Manage your SMS credits and subscription"
         />
+
+        <RetailCard className="p-6">
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold text-text-primary">How billing works</h2>
+            <p className="text-sm text-text-secondary">
+              Sending uses your <span className="font-medium">free allowance</span> first, then <span className="font-medium">wallet credits</span>.
+              Subscriptions unlock sending and include a monthly/yearly allowance.
+            </p>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-surface-light p-4">
+              <div className="text-sm font-semibold text-text-primary">After Stripe checkout</div>
+              <p className="mt-1 text-sm text-text-secondary">
+                You’ll return here automatically. If status looks out of date, use the “Reconcile” action to sync with Stripe.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-surface-light p-4">
+              <div className="text-sm font-semibold text-text-primary">Invoices</div>
+              <p className="mt-1 text-sm text-text-secondary">
+                Invoices are available below and in your Stripe customer portal.
+              </p>
+            </div>
+          </div>
+        </RetailCard>
+
         {/* Subscription Required Banner */}
         {!isSubscriptionActive && (
           <RetailCard className="p-6 border-2 border-red-500/50 bg-red-500/10">

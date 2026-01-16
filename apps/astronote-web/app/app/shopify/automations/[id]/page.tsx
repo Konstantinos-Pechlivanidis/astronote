@@ -10,7 +10,6 @@ import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { AppPageHeader } from '@/src/components/app/AppPageHeader';
-import { Logo } from '@/src/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -130,7 +129,6 @@ export default function EditAutomationPage() {
           <AppPageHeader
             title={
               <span className="inline-flex items-center gap-3">
-                <Logo size="sm" />
                 <span>Edit Automation</span>
               </span>
             }
@@ -156,7 +154,6 @@ export default function EditAutomationPage() {
           <AppPageHeader
             title={
               <span className="inline-flex items-center gap-3">
-                <Logo size="sm" />
                 <span>Edit Automation</span>
               </span>
             }
@@ -185,7 +182,6 @@ export default function EditAutomationPage() {
         <AppPageHeader
           title={
             <span className="inline-flex items-center gap-3">
-              <Logo size="sm" />
               <span>Edit Automation</span>
             </span>
           }

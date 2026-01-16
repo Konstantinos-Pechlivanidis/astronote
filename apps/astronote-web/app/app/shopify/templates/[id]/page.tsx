@@ -9,7 +9,6 @@ import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
 import { AppPageHeader } from '@/src/components/app/AppPageHeader';
-import { Logo } from '@/src/components/brand/Logo';
 import { FileText, BarChart3, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { getTemplateName, getTemplateContent } from '@/src/lib/shopify/api/templates';
@@ -59,7 +58,6 @@ export default function TemplateDetailPage() {
           <AppPageHeader
             title={
               <span className="inline-flex items-center gap-3">
-                <Logo size="sm" />
                 <span>Template Details</span>
               </span>
             }
@@ -88,7 +86,6 @@ export default function TemplateDetailPage() {
           <AppPageHeader
             title={
               <span className="inline-flex items-center gap-3">
-                <Logo size="sm" />
                 <span>Template Details</span>
               </span>
             }
@@ -119,7 +116,6 @@ export default function TemplateDetailPage() {
         <AppPageHeader
           title={
             <span className="inline-flex items-center gap-3">
-              <Logo size="sm" />
               <span>{getTemplateName(template)}</span>
             </span>
           }

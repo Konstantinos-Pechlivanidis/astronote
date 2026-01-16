@@ -8,7 +8,6 @@ import { useTrackTemplateUsage } from '@/src/features/shopify/templates/hooks/us
 import { useEnsureDefaults } from '@/src/features/shopify/templates/hooks/useEnsureDefaults';
 import { PageLayout } from '@/src/components/app-shell/PageLayout';
 import { RetailCard } from '@/src/components/retail/RetailCard';
-import { Logo } from '@/src/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -193,12 +192,7 @@ export default function TemplatesPage() {
 
   return (
     <PageLayout
-      title={
-        <span className="inline-flex items-center gap-3">
-          <Logo size="sm" />
-          <span>Templates</span>
-        </span>
-      }
+      title="Templates"
       description="Browse SMS templates and use them to create campaigns"
       actions={
         <Button
@@ -211,12 +205,25 @@ export default function TemplatesPage() {
         </Button>
       }
     >
+      <RetailCard className="mb-6 p-6">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="mt-0.5 h-5 w-5 text-text-tertiary" />
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-text-primary">Using templates</h2>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-text-secondary">
+              <li>Templates can include variables like <span className="font-mono">{'{{firstName}}'}</span> and <span className="font-mono">{'{{discountCode}}'}</span>.</li>
+              <li>When you click <span className="font-medium">Use</span>, we’ll prefill the Create Campaign form.</li>
+              <li>Unsubscribe text is appended automatically during sending.</li>
+            </ul>
+          </div>
+        </div>
+      </RetailCard>
 
       {/* Toolbar */}
       <RetailCard className="mb-6 p-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-1 items-center gap-4">
-            <div className="relative flex-1 max-w-md">
+          <div className="flex flex-1 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <div className="relative w-full sm:flex-1 sm:max-w-md">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
               <Input
                 type="text"
@@ -227,7 +234,7 @@ export default function TemplatesPage() {
               />
             </div>
             <Select value={categoryFilter} onValueChange={handleCategoryChange}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
@@ -253,6 +260,7 @@ export default function TemplatesPage() {
                 setCurrentPage(1);
                 updateUrl({ favorites: !favoritesFilter ? 1 : null, page: 1 });
               }}
+              className="w-full sm:w-auto"
             >
               <Star className={`mr-2 h-4 w-4 ${favoritesFilter ? 'fill-current' : ''}`} />
               Favorites

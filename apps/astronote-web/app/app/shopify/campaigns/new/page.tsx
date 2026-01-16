@@ -11,7 +11,6 @@ import { useDiscounts } from '@/src/features/shopify/discounts/hooks/useDiscount
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { AppPageHeader } from '@/src/components/app/AppPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
-import { Logo } from '@/src/components/brand/Logo';
 import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -205,12 +204,7 @@ export default function NewCampaignPage() {
     <RetailPageLayout>
       <div className="space-y-6">
         <AppPageHeader
-          title={
-            <span className="inline-flex items-center gap-3">
-              <Logo size="sm" />
-              <span>Create Campaign</span>
-            </span>
-          }
+          title="Create Campaign"
           description="Create a new SMS campaign"
           backHref="/app/shopify/campaigns"
         />
@@ -462,12 +456,13 @@ export default function NewCampaignPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-3 pt-4 border-t border-border">
+                <div className="sticky bottom-0 z-10 -mx-6 mt-4 flex flex-col gap-3 border-t border-border bg-background/95 px-6 py-4 backdrop-blur-sm sm:static sm:z-auto sm:mx-0 sm:flex-row sm:items-center sm:bg-transparent sm:px-0 sm:py-0">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => handleSubmit('draft')}
                     disabled={submitAction !== null || createCampaign.isPending || enqueueCampaign.isPending}
+                    className="w-full sm:w-auto"
                   >
                     {submitAction === 'draft' ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -481,6 +476,7 @@ export default function NewCampaignPage() {
                       type="button"
                       onClick={() => handleSubmit('schedule')}
                       disabled={submitAction !== null || createCampaign.isPending || enqueueCampaign.isPending}
+                      className="w-full sm:w-auto"
                     >
                       {submitAction === 'schedule' ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -500,6 +496,7 @@ export default function NewCampaignPage() {
                         enqueueCampaign.isPending
                       }
                       title={!isSubscriptionActive ? 'Active subscription required to send campaigns' : 'Create and send now'}
+                      className="w-full sm:w-auto"
                     >
                       {submitAction === 'send' || enqueueCampaign.isPending ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -561,17 +558,17 @@ export default function NewCampaignPage() {
                 </div>
               </RetailCard>
 
-              {/* SMS Help */}
+              {/* Message help */}
               <RetailCard className="p-6">
                 <details className="group">
                   <summary className="cursor-pointer list-none select-none">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-text-primary">SMS Help</h3>
+                      <h3 className="text-lg font-semibold text-text-primary">Message help</h3>
                       <span className="text-sm text-text-secondary group-open:hidden">Show</span>
                       <span className="text-sm text-text-secondary hidden group-open:inline">Hide</span>
                     </div>
                     <p className="mt-1 text-sm text-text-secondary">
-                      Tokens, discounts, opt-out compliance, and character counting.
+                      Variables, unsubscribe behavior, and preview tips.
                     </p>
                   </summary>
                   <div className="mt-4 space-y-4 text-sm text-text-secondary">
@@ -595,6 +592,13 @@ export default function NewCampaignPage() {
                       <ul className="list-disc pl-5 space-y-1">
                         <li>We automatically append an opt-out line to every outbound SMS.</li>
                         <li>The link is a short URL on our domain (`/s/:token`) that redirects to the unsubscribe page.</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-medium text-text-primary mb-1">Preview tips</div>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li>The preview replaces tokens with sample values and shows a realistic short unsubscribe URL.</li>
+                        <li>Segments determine cost; keep the message short to reduce segments.</li>
                       </ul>
                     </div>
                     <div>

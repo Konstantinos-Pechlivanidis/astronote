@@ -7,7 +7,6 @@ import { useUpdateSettings } from '@/src/features/shopify/settings/hooks/useUpda
 import { PageLayout } from '@/src/components/app-shell/PageLayout';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
-import { Logo } from '@/src/components/brand/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -168,14 +167,31 @@ export default function SettingsPage() {
 
   return (
     <PageLayout
-      title={
-        <span className="inline-flex items-center gap-3">
-          <Logo size="sm" />
-          <span>Settings</span>
-        </span>
-      }
+      title="Settings"
       description="Manage your account and SMS settings"
     >
+      <RetailCard className="mb-6 p-6">
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-text-primary">Quick guidance</h2>
+          <p className="text-sm text-text-secondary">
+            These settings affect sending behavior and links inside SMS. Changes apply to new sends after you save.
+          </p>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-border bg-surface-light p-4">
+            <div className="text-sm font-semibold text-text-primary">Sender ID</div>
+            <p className="mt-1 text-sm text-text-secondary">
+              Controls what recipients see as the sender. Use either an E.164 phone number or an alphanumeric sender (where supported).
+            </p>
+          </div>
+          <div className="rounded-2xl border border-border bg-surface-light p-4">
+            <div className="text-sm font-semibold text-text-primary">Base URL override</div>
+            <p className="mt-1 text-sm text-text-secondary">
+              Only change this if you know what you’re doing. It can affect public links (e.g. unsubscribe redirects) used in messages.
+            </p>
+          </div>
+        </div>
+      </RetailCard>
 
       {hasError && (
         <RetailCard variant="danger" className="p-6 mb-6">

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { Logo } from '@/src/components/brand/Logo';
 import { ShopifyNavList } from './ShopifyNavList';
+import { shouldHideShopifyLogo } from './shopifyBranding';
 
 type ShopifySidebarProps = {
   pathname: string;
@@ -44,6 +45,7 @@ export function ShopifySidebar({
       : null;
 
   const sidebarWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH;
+  const hideLogo = shouldHideShopifyLogo(pathname);
 
   return (
     <>
@@ -64,7 +66,13 @@ export function ShopifySidebar({
           )}
         >
           <Link href="/app/shopify/dashboard" className="flex items-center gap-2">
-            <Logo size="md" withText={!collapsed} />
+            {hideLogo ? (
+              <span className={cn('font-semibold text-text-primary', collapsed ? 'text-sm' : 'text-base')}>
+                {collapsed ? 'S' : 'Shopify'}
+              </span>
+            ) : (
+              <Logo size="md" withText={!collapsed} />
+            )}
           </Link>
         </div>
 

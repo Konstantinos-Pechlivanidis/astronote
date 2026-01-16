@@ -13,7 +13,6 @@ import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { StatusBadge } from '@/src/components/retail/StatusBadge';
-import { Logo } from '@/src/components/brand/Logo';
 import { Pagination } from '@/src/components/app/Pagination';
 import { getIntParam, setQueryParams } from '@/src/lib/url/query';
 import { Button } from '@/components/ui/button';
@@ -174,12 +173,7 @@ export default function AutomationsPage() {
     <RetailPageLayout>
       <div className="space-y-6">
         <RetailPageHeader
-          title={
-            <span className="inline-flex items-center gap-3">
-              <Logo size="sm" />
-              <span>Automations</span>
-            </span>
-          }
+          title="Automations"
           description="Set up automated SMS workflows for your store"
           actions={
             <Link href="/app/shopify/automations/new">
@@ -197,6 +191,9 @@ export default function AutomationsPage() {
             <h2 className="text-lg font-semibold text-text-primary">Automations Guide</h2>
             <p className="text-sm text-text-secondary">
               Each automation sends an SMS when a Shopify event happens. Make sure contacts have a phone number and SMS consent.
+            </p>
+            <p className="text-sm text-text-secondary">
+              Unsubscribe text is appended automatically during sending. Keep messages short for fewer SMS segments.
             </p>
           </div>
 

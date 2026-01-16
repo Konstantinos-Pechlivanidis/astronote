@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { Logo } from '@/src/components/brand/Logo';
 import { ShopifyNavList } from './ShopifyNavList';
+import { shouldHideShopifyLogo } from './shopifyBranding';
 
 type ShopifyMobileNavProps = {
   open: boolean;
@@ -92,6 +93,7 @@ export function ShopifyMobileNav({
     typeof window !== 'undefined'
       ? JSON.parse(localStorage.getItem('shopify_store') || '{}')?.shopDomain || null
       : null;
+  const hideLogo = shouldHideShopifyLogo(pathname);
 
   if (!open) return null;
 
@@ -121,7 +123,11 @@ export function ShopifyMobileNav({
             className="flex items-center gap-2"
             onClick={() => onOpenChange(false)}
           >
-            <Logo size="md" withText />
+            {hideLogo ? (
+              <span className="text-base font-semibold text-text-primary">Shopify</span>
+            ) : (
+              <Logo size="md" withText />
+            )}
           </Link>
           <Button
             variant="ghost"
