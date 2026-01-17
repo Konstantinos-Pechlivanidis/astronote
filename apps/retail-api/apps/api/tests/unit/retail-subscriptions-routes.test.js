@@ -122,8 +122,9 @@ test('POST /api/subscriptions/switch maps interval->planType (month->starter, ye
   process.env.FRONTEND_URL = 'https://example.com';
 
   const requireAuthPath = path.resolve(__dirname, '../../src/middleware/requireAuth.js');
-  const prismaPath = path.resolve(__dirname, '../../src/lib/prisma.js');
   const subscriptionServicePath = path.resolve(__dirname, '../../src/services/subscription.service.js');
+  const stripeSyncServicePath = path.resolve(__dirname, '../../src/services/stripe-sync.service.js');
+  const billingProfileServicePath = path.resolve(__dirname, '../../src/services/billing-profile.service.js');
   const currencyPath = path.resolve(__dirname, '../../src/billing/currency.js');
   const stripeServicePath = path.resolve(__dirname, '../../src/services/stripe.service.js');
 
@@ -138,27 +139,31 @@ test('POST /api/subscriptions/switch maps interval->planType (month->starter, ye
         },
       ],
       [
-        prismaPath,
-        {
-          user: { update: async () => ({}) },
-        },
-      ],
-      [
         subscriptionServicePath,
         {
-          getSubscriptionStatus: async () => ({
-            active: true,
-            planType: 'starter',
-            interval: 'month',
-            stripeSubscriptionId: 'sub_test_1',
-            stripeCustomerId: 'cus_test_1',
-          }),
           getIntervalForPlan: (planType) => (planType === 'starter' ? 'month' : 'year'),
           activateSubscription: async (_ownerId, _cusId, _subId, planType, meta) => {
             updatedTo = { planType, interval: meta?.interval };
             return {};
           },
         },
+      ],
+      [
+        stripeSyncServicePath,
+        {
+          getSubscriptionStatusWithStripeSync: async () => ({
+            active: true,
+            planType: 'starter',
+            interval: 'month',
+            stripeSubscriptionId: 'sub_test_1',
+            stripeCustomerId: 'cus_test_1',
+            pendingChange: null,
+          }),
+        },
+      ],
+      [
+        billingProfileServicePath,
+        { getBillingProfile: async () => null, upsertBillingProfile: async () => ({}) },
       ],
       [
         currencyPath,
@@ -169,12 +174,12 @@ test('POST /api/subscriptions/switch maps interval->planType (month->starter, ye
       [
         stripeServicePath,
         {
-          stripe: {
-            subscriptions: {
-              retrieve: async () => ({ metadata: { planType: 'starter' }, customer: 'cus_test_1' }),
-            },
-          },
-          updateSubscription: async () => ({}),
+          stripe: { subscriptions: { retrieve: async () => ({}) } },
+          ensureStripeCustomer: async () => 'cus_test_1',
+          createSubscriptionChangeCheckoutSession: async () => ({
+            id: 'cs_change_1',
+            url: 'https://stripe.example/checkout-change',
+          }),
         },
       ],
     ],
@@ -192,7 +197,9 @@ test('POST /api/subscriptions/switch maps interval->planType (month->starter, ye
         assert.equal(json.ok, true);
         assert.equal(json.planType, 'pro');
         assert.equal(json.interval, 'year');
-        assert.deepEqual(updatedTo, { planType: 'pro', interval: 'year' });
+        assert.equal(json.changeMode, 'checkout');
+        assert.equal(json.checkoutUrl, 'https://stripe.example/checkout-change');
+        assert.equal(updatedTo, null);
       } finally {
         await new Promise((r) => server.close(r));
       }

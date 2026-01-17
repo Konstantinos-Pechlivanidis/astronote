@@ -10,7 +10,6 @@ const {
   getPlanConfig,
   calculateTopupPrice,
   getIntervalForPlan,
-  reconcileSubscriptionFromStripe,
 } = require('../services/subscription.service');
 const { getSubscriptionStatusWithStripeSync } = require('../services/stripe-sync.service');
 const { getBillingProfile, upsertBillingProfile } = require('../services/billing-profile.service');
@@ -703,9 +702,14 @@ r.get('/subscriptions/current', requireAuth, async (req, res, next) => {
   try {
     const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
     const planConfig = subscription.planType ? getPlanConfig(subscription.planType) : null;
+    const { computeAllowedActions, getAvailableOptions } = require('../services/subscription-actions.service');
+    const allowedActions = computeAllowedActions(subscription);
+    const availableOptions = getAvailableOptions(subscription);
     res.json({
       ...subscription,
       plan: planConfig,
+      allowedActions,
+      availableOptions,
     });
   } catch (e) { next(e); }
 });
@@ -721,18 +725,19 @@ r.post('/subscriptions/reconcile', requireAuth, async (req, res) => {
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   try {
-    const result = await reconcileSubscriptionFromStripe(req.user.id);
+    // Shopify parity: reconcile returns the same DTO as /subscriptions/current
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
+    const { computeAllowedActions, getAvailableOptions } = require('../services/subscription-actions.service');
+    const allowedActions = computeAllowedActions(subscription);
+    const availableOptions = getAvailableOptions(subscription);
 
-    if (!result.reconciled) {
-      return res.json({
-        ok: true,
-        ...result,
-      });
-    }
-
-    res.json({
+    return res.json({
       ok: true,
-      ...result,
+      ...subscription,
+      allowedActions,
+      availableOptions,
+      reconciled: true,
+      requestId,
     });
   } catch (e) {
     if (e.message?.includes('Stripe is not configured')) {
@@ -887,7 +892,6 @@ r.post('/subscriptions/subscribe', requireAuth, async (req, res, next) => {
 r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
   try {
     const planType = req.body?.planType;
-
     if (!planType || !['starter', 'pro'].includes(planType)) {
       return res.status(400).json({
         message: 'Plan type must be "starter" or "pro"',
@@ -895,8 +899,15 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
       });
     }
 
-    const subscription = await getSubscriptionStatus(req.user.id);
+    const planCatalog = require('../services/plan-catalog.service');
+    const mode = planCatalog.detectCatalogMode();
 
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.body?.currency,
+    });
+
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
     if (!subscription.active || !subscription.stripeSubscriptionId) {
       return res.status(400).json({
         message: 'No active subscription found. Please subscribe first.',
@@ -904,105 +915,131 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
       });
     }
 
-    // Check if already on the requested plan
-    if (subscription.planType === planType) {
-      return res.status(400).json({
-        message: `You are already on the ${planType} plan.`,
-        code: 'ALREADY_ON_PLAN',
-        currentPlan: planType,
+    const currentInterval =
+      subscription.interval || (subscription.planType ? getIntervalForPlan(subscription.planType) : null);
+    const targetInterval =
+      mode === 'retail-simple'
+        ? getIntervalForPlan(planType)
+        : (req.body?.interval === 'month' || req.body?.interval === 'year' ? req.body.interval : getIntervalForPlan(planType));
+
+    if (subscription.planType === planType && currentInterval === targetInterval && !subscription.pendingChange) {
+      return res.json({
+        ok: true,
+        message: 'Subscription already on requested plan',
+        planType,
+        interval: targetInterval,
+        alreadyUpdated: true,
       });
     }
 
-    // Check if update is already in progress (idempotency check)
-    // Get current subscription from Stripe to check metadata
-    const stripe = require('../services/stripe.service').stripe;
-    if (!stripe) {
-      return res.status(503).json({
-        message: 'Payment processing unavailable',
-        code: 'STRIPE_NOT_CONFIGURED',
+    const decideChangeMode = (current, target) => {
+      if (current === 'month' && target === 'year') {
+        return 'checkout';
+      }
+      if (current === 'year' && target === 'month') {
+        return 'scheduled';
+      }
+      return 'immediate';
+    };
+    const changeMode = decideChangeMode(currentInterval, targetInterval);
+
+    if (changeMode === 'checkout') {
+      const billingProfile = await getBillingProfile(req.user.id);
+      const stripeCustomerId = await ensureStripeCustomer({
+        ownerId: req.user.id,
+        userEmail: req.user.email,
+        userName: req.user.company,
+        currency,
+        stripeCustomerId: subscription.stripeCustomerId,
+        billingProfile,
       });
-    }
 
-    let stripeSubscription = null;
-    try {
-      stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
-
-      // Check if planType in Stripe already matches requested planType
-      const stripeMetadata = stripeSubscription.metadata || {};
-      const stripePlanType = stripeMetadata.planType;
-
-      if (stripePlanType === planType && subscription.planType === planType) {
-        logger.info({
-          userId: req.user.id,
-          subscriptionId: subscription.stripeSubscriptionId,
-          planType,
-        }, 'Subscription already on requested plan (idempotency check)');
-
-        return res.json({
-          ok: true,
-          message: `Subscription is already on the ${planType} plan`,
-          planType,
-          alreadyUpdated: true,
+      const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
+        session_id: '{CHECKOUT_SESSION_ID}',
+      });
+      const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
+      if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
+        return res.status(500).json({
+          message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',
+          code: 'CONFIG_ERROR',
         });
       }
-    } catch (err) {
-      logger.warn({
-        subscriptionId: subscription.stripeSubscriptionId,
-        err: err.message,
-      }, 'Failed to retrieve subscription from Stripe for idempotency check');
-      // Continue with update anyway
+
+      const { createSubscriptionChangeCheckoutSession } = require('../services/stripe.service');
+      const session = await createSubscriptionChangeCheckoutSession({
+        ownerId: req.user.id,
+        userEmail: req.user.email,
+        planCode: planType,
+        interval: targetInterval,
+        currency,
+        successUrl,
+        cancelUrl,
+        stripeCustomerId,
+        previousStripeSubscriptionId: subscription.stripeSubscriptionId,
+      });
+
+      return res.json({
+        ok: true,
+        changeMode: 'checkout',
+        message: 'Checkout required to complete upgrade',
+        checkoutUrl: session.url,
+        sessionId: session.id,
+        planType,
+        interval: targetInterval,
+        currency,
+      });
     }
 
-    const currency = await resolveBillingCurrency({
-      userId: req.user.id,
-      currency: req.body?.currency,
-    });
+    if (changeMode === 'scheduled') {
+      const priceId = planCatalog.getPriceId(planType, targetInterval, currency);
+      if (!priceId) {
+        return res.status(500).json({
+          message: `Stripe price ID not configured for ${planType}/${targetInterval}/${currency}`,
+          code: CONFIG_ERROR_CODE,
+        });
+      }
+
+      const { createOrUpdateSubscriptionSchedule } = require('../services/stripe.service');
+      const scheduleResult = await createOrUpdateSubscriptionSchedule({
+        subscriptionId: subscription.stripeSubscriptionId,
+        targetPriceId: priceId,
+      });
+
+      await prisma.subscription.updateMany({
+        where: { ownerId: req.user.id },
+        data: {
+          pendingChangePlanCode: planType,
+          pendingChangeInterval: targetInterval,
+          pendingChangeCurrency: currency,
+          pendingChangeEffectiveAt: scheduleResult.effectiveAt,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'scheduled_change_request',
+        },
+      });
+
+      return res.json({
+        ok: true,
+        changeMode: 'scheduled',
+        message: 'Plan change scheduled at period end',
+        pendingChange: {
+          planCode: planType,
+          interval: targetInterval,
+          currency,
+          effectiveAt: scheduleResult.effectiveAt,
+        },
+      });
+    }
 
     const { updateSubscription } = require('../services/stripe.service');
     await updateSubscription(subscription.stripeSubscriptionId, planType, currency);
 
-    let stripeCustomerId = subscription.stripeCustomerId;
-    const resolvedCustomerId =
-      typeof stripeSubscription?.customer === 'string'
-        ? stripeSubscription.customer
-        : stripeSubscription?.customer?.id;
-    if (isValidStripeCustomerId(resolvedCustomerId)) {
-      stripeCustomerId = resolvedCustomerId;
-      if (stripeCustomerId !== subscription.stripeCustomerId) {
-        await prisma.user.update({
-          where: { id: req.user.id },
-          data: { stripeCustomerId },
-        });
-      }
-    }
-
-    if (!isValidStripeCustomerId(stripeCustomerId)) {
-      return res.status(400).json({
-        message: 'Missing valid Stripe customer mapping for subscription update',
-        code: 'MISSING_CUSTOMER_ID',
-      });
-    }
-
-    // Update local DB immediately (idempotent - activateSubscription checks current state)
-    const { activateSubscription } = require('../services/subscription.service');
-    await activateSubscription(
-      req.user.id,
-      stripeCustomerId,
-      subscription.stripeSubscriptionId,
-      planType,
-    );
-
-    logger.info({
-      userId: req.user.id,
-      oldPlan: subscription.planType,
-      newPlan: planType,
-      subscriptionId: subscription.stripeSubscriptionId,
-    }, 'Subscription plan updated');
-
-    res.json({
+    const after = await getSubscriptionStatusWithStripeSync(req.user.id);
+    return res.json({
       ok: true,
+      changeMode: 'immediate',
       message: `Subscription updated to ${planType} plan successfully`,
       planType,
+      interval: after.interval || targetInterval,
       currency,
     });
   } catch (e) {
@@ -1029,19 +1066,27 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
  */
 r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
   try {
+    const planCatalog = require('../services/plan-catalog.service');
+    const mode = planCatalog.detectCatalogMode();
+
     const requestedPlan = req.body?.planType || req.body?.plan;
     const requestedInterval = req.body?.interval;
-    const normalizedInterval = requestedInterval === 'month' || requestedInterval === 'year'
-      ? requestedInterval
-      : null;
-    const intervalToPlan = {
-      month: 'starter',
-      year: 'pro',
-    };
+    const normalizedInterval =
+      requestedInterval === 'month' || requestedInterval === 'year'
+        ? requestedInterval
+        : null;
 
+    // PHASE 0: retail-simple (default) maps interval-only switches to the two valid SKUs.
     let planType = requestedPlan;
     if (!planType && normalizedInterval) {
-      planType = intervalToPlan[normalizedInterval];
+      if (mode === 'retail-simple') {
+        planType = normalizedInterval === 'year' ? 'pro' : 'starter';
+      } else {
+        return res.status(400).json({
+          message: 'In matrix mode, planType is required when switching by interval.',
+          code: 'VALIDATION_ERROR',
+        });
+      }
     }
 
     if (!planType || !['starter', 'pro'].includes(planType)) {
@@ -1051,8 +1096,13 @@ r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
       });
     }
 
-    const subscription = await getSubscriptionStatus(req.user.id);
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.body?.currency,
+    });
 
+    // Use StripeSync-backed DTO to include pendingChange and avoid drift.
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
     if (!subscription.active || !subscription.stripeSubscriptionId) {
       return res.status(400).json({
         message: 'No active subscription found. Please subscribe first.',
@@ -1060,104 +1110,160 @@ r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
       });
     }
 
-    const expectedInterval = getIntervalForPlan(planType);
-    if (normalizedInterval && expectedInterval && normalizedInterval !== expectedInterval) {
+    const currentInterval =
+      subscription.interval || (subscription.planType ? getIntervalForPlan(subscription.planType) : null);
+    const targetInterval =
+      mode === 'retail-simple'
+        ? getIntervalForPlan(planType)
+        : (normalizedInterval || getIntervalForPlan(planType) || null);
+
+    // retail-simple must not accept invalid interval/plan combinations.
+    if (mode === 'retail-simple' && normalizedInterval && targetInterval && normalizedInterval !== targetInterval) {
       return res.status(400).json({
         message: `Interval ${normalizedInterval} is not available for ${planType} plan`,
         code: 'INVALID_INTERVAL',
       });
     }
 
-    const currentInterval = subscription.interval || expectedInterval;
-    if (subscription.planType === planType && (!normalizedInterval || currentInterval === normalizedInterval)) {
+    // Idempotency: if already on requested plan and no scheduled change, return.
+    if (subscription.planType === planType && currentInterval === targetInterval && !subscription.pendingChange) {
       return res.json({
         ok: true,
         message: 'Subscription already on requested plan',
         planType,
+        interval: targetInterval,
         alreadyUpdated: true,
       });
     }
 
-    const stripe = require('../services/stripe.service').stripe;
-    if (!stripe) {
-      return res.status(503).json({
-        message: 'Payment processing unavailable',
-        code: 'STRIPE_NOT_CONFIGURED',
+    const decideChangeMode = (current, target) => {
+      if (current === 'month' && target === 'year') {
+        return 'checkout';
+      }
+      if (current === 'year' && target === 'month') {
+        return 'scheduled';
+      }
+      return 'immediate';
+    };
+
+    const changeMode = decideChangeMode(currentInterval, targetInterval);
+
+    if (changeMode === 'checkout') {
+      const billingProfile = await getBillingProfile(req.user.id);
+      const stripeCustomerId = await ensureStripeCustomer({
+        ownerId: req.user.id,
+        userEmail: req.user.email,
+        userName: req.user.company,
+        currency,
+        stripeCustomerId: subscription.stripeCustomerId,
+        billingProfile,
+      });
+
+      const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
+        session_id: '{CHECKOUT_SESSION_ID}',
+      });
+      const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
+      if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
+        return res.status(500).json({
+          message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',
+          code: 'CONFIG_ERROR',
+        });
+      }
+
+      const { createSubscriptionChangeCheckoutSession } = require('../services/stripe.service');
+      const session = await createSubscriptionChangeCheckoutSession({
+        ownerId: req.user.id,
+        userEmail: req.user.email,
+        planCode: planType,
+        interval: targetInterval,
+        currency,
+        successUrl,
+        cancelUrl,
+        stripeCustomerId,
+        previousStripeSubscriptionId: subscription.stripeSubscriptionId,
+      });
+
+      return res.json({
+        ok: true,
+        changeMode: 'checkout',
+        message: 'Checkout required to complete upgrade',
+        checkoutUrl: session.url,
+        sessionId: session.id,
+        planType,
+        interval: targetInterval,
+        currency,
       });
     }
 
-    let stripeSubscription = null;
-    try {
-      stripeSubscription = await stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
-      const stripeMetadata = stripeSubscription.metadata || {};
-      const stripePlanType = stripeMetadata.planType;
-
-      if (stripePlanType === planType && subscription.planType === planType) {
-        return res.json({
-          ok: true,
-          message: `Subscription is already on the ${planType} plan`,
-          planType,
-          alreadyUpdated: true,
+    if (changeMode === 'scheduled') {
+      const priceId = planCatalog.getPriceId(planType, targetInterval, currency);
+      if (!priceId) {
+        return res.status(500).json({
+          message: `Stripe price ID not configured for ${planType}/${targetInterval}/${currency}`,
+          code: CONFIG_ERROR_CODE,
         });
       }
-    } catch (err) {
-      logger.warn({
+
+      const { createOrUpdateSubscriptionSchedule } = require('../services/stripe.service');
+      const scheduleResult = await createOrUpdateSubscriptionSchedule({
         subscriptionId: subscription.stripeSubscriptionId,
-        err: err.message,
-      }, 'Failed to retrieve subscription from Stripe for idempotency check');
+        targetPriceId: priceId,
+      });
+
+      await prisma.subscription.upsert({
+        where: { ownerId: req.user.id },
+        create: {
+          ownerId: req.user.id,
+          provider: 'stripe',
+          stripeCustomerId: subscription.stripeCustomerId || null,
+          stripeSubscriptionId: subscription.stripeSubscriptionId,
+          planCode: subscription.planCode || subscription.planType || null,
+          status: subscription.status || null,
+          currency,
+          currentPeriodStart: subscription.currentPeriodStart || null,
+          currentPeriodEnd: subscription.currentPeriodEnd || null,
+          cancelAtPeriodEnd: Boolean(subscription.cancelAtPeriodEnd),
+          pendingChangePlanCode: planType,
+          pendingChangeInterval: targetInterval,
+          pendingChangeCurrency: currency,
+          pendingChangeEffectiveAt: scheduleResult.effectiveAt,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'scheduled_change_request',
+        },
+        update: {
+          pendingChangePlanCode: planType,
+          pendingChangeInterval: targetInterval,
+          pendingChangeCurrency: currency,
+          pendingChangeEffectiveAt: scheduleResult.effectiveAt,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'scheduled_change_request',
+        },
+      });
+
+      return res.json({
+        ok: true,
+        changeMode: 'scheduled',
+        message: 'Plan change scheduled at period end',
+        pendingChange: {
+          planCode: planType,
+          interval: targetInterval,
+          currency,
+          effectiveAt: scheduleResult.effectiveAt,
+        },
+      });
     }
 
-    const currency = await resolveBillingCurrency({
-      userId: req.user.id,
-      currency: req.body?.currency,
-    });
-
+    // Immediate change (fallback) - preserves existing behavior where needed.
     const { updateSubscription } = require('../services/stripe.service');
     await updateSubscription(subscription.stripeSubscriptionId, planType, currency);
 
-    let stripeCustomerId = subscription.stripeCustomerId;
-    const resolvedCustomerId =
-      typeof stripeSubscription?.customer === 'string'
-        ? stripeSubscription.customer
-        : stripeSubscription?.customer?.id;
-    if (isValidStripeCustomerId(resolvedCustomerId)) {
-      stripeCustomerId = resolvedCustomerId;
-      if (stripeCustomerId !== subscription.stripeCustomerId) {
-        await prisma.user.update({
-          where: { id: req.user.id },
-          data: { stripeCustomerId },
-        });
-      }
-    }
-
-    if (!isValidStripeCustomerId(stripeCustomerId)) {
-      return res.status(400).json({
-        message: 'Missing valid Stripe customer mapping for subscription update',
-        code: 'MISSING_CUSTOMER_ID',
-      });
-    }
-
-    const { activateSubscription } = require('../services/subscription.service');
-    await activateSubscription(
-      req.user.id,
-      stripeCustomerId,
-      subscription.stripeSubscriptionId,
-      planType,
-      { interval: normalizedInterval || expectedInterval },
-    );
-
-    logger.info({
-      userId: req.user.id,
-      oldPlan: subscription.planType,
-      newPlan: planType,
-      subscriptionId: subscription.stripeSubscriptionId,
-    }, 'Subscription plan updated');
-
-    res.json({
+    const after = await getSubscriptionStatusWithStripeSync(req.user.id);
+    return res.json({
       ok: true,
+      changeMode: 'immediate',
       message: `Subscription updated to ${planType} plan successfully`,
       planType,
-      interval: normalizedInterval || expectedInterval,
+      interval: after.interval || targetInterval,
       currency,
     });
   } catch (e) {
@@ -1175,6 +1281,123 @@ r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
     }
     next(e);
   }
+});
+
+/**
+ * POST /api/subscriptions/scheduled/change
+ * Adjust an existing scheduled change (or create it)
+ */
+r.post('/subscriptions/scheduled/change', requireAuth, async (req, res, next) => {
+  try {
+    const planCatalog = require('../services/plan-catalog.service');
+    const mode = planCatalog.detectCatalogMode();
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
+
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      return res.status(400).json({
+        message: 'No active subscription found. Please subscribe first.',
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
+    }
+
+    const requestedPlan = req.body?.planType || req.body?.plan || 'starter';
+    if (!['starter', 'pro'].includes(requestedPlan)) {
+      return res.status(400).json({
+        message: 'Plan type must be "starter" or "pro"',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    // Scheduled changes are for downgrades (year -> month).
+    // In retail-simple, the only scheduled target is starter/month.
+    if (mode === 'retail-simple' && requestedPlan !== 'starter') {
+      return res.status(400).json({
+        message: 'In retail-simple mode, only downgrade to Starter (monthly) can be scheduled.',
+        code: 'INVALID_SCHEDULED_CHANGE',
+      });
+    }
+
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.body?.currency,
+    });
+
+    const targetInterval = mode === 'retail-simple'
+      ? getIntervalForPlan(requestedPlan)
+      : (req.body?.interval === 'month' || req.body?.interval === 'year'
+        ? req.body.interval
+        : getIntervalForPlan(requestedPlan));
+
+    const priceId = planCatalog.getPriceId(requestedPlan, targetInterval, currency);
+    if (!priceId) {
+      return res.status(500).json({
+        message: `Stripe price ID not configured for ${requestedPlan}/${targetInterval}/${currency}`,
+        code: CONFIG_ERROR_CODE,
+      });
+    }
+
+    const { createOrUpdateSubscriptionSchedule } = require('../services/stripe.service');
+    const scheduleResult = await createOrUpdateSubscriptionSchedule({
+      subscriptionId: subscription.stripeSubscriptionId,
+      targetPriceId: priceId,
+    });
+
+    await prisma.subscription.updateMany({
+      where: { ownerId: req.user.id },
+      data: {
+        pendingChangePlanCode: requestedPlan,
+        pendingChangeInterval: targetInterval,
+        pendingChangeCurrency: currency,
+        pendingChangeEffectiveAt: scheduleResult.effectiveAt,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'scheduled_change_request',
+      },
+    });
+
+    return res.json({
+      ok: true,
+      message: 'Scheduled change updated',
+      pendingChange: {
+        planCode: requestedPlan,
+        interval: targetInterval,
+        currency,
+        effectiveAt: scheduleResult.effectiveAt,
+      },
+    });
+  } catch (e) { next(e); }
+});
+
+/**
+ * POST /api/subscriptions/scheduled/cancel
+ * Cancel a scheduled change (Shopify parity)
+ */
+r.post('/subscriptions/scheduled/cancel', requireAuth, async (req, res, next) => {
+  try {
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      return res.status(400).json({
+        message: 'No active subscription found. Please subscribe first.',
+        code: 'NO_ACTIVE_SUBSCRIPTION',
+      });
+    }
+
+    const { cancelSubscriptionSchedule } = require('../services/stripe.service');
+    const result = await cancelSubscriptionSchedule(subscription.stripeSubscriptionId);
+
+    await prisma.subscription.updateMany({
+      where: { ownerId: req.user.id },
+      data: {
+        pendingChangePlanCode: null,
+        pendingChangeInterval: null,
+        pendingChangeCurrency: null,
+        pendingChangeEffectiveAt: null,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'scheduled_change_cancelled',
+      },
+    });
+
+    return res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
 });
 
 /**
@@ -1239,7 +1462,7 @@ r.get('/subscriptions/portal', requireAuth, async (req, res) => {
       });
     }
 
-    const returnUrl = buildRetailFrontendUrl('/app/retail/billing');
+    const returnUrl = buildRetailFrontendUrl('/app/retail/billing', null, { fromPortal: 'true' });
     if (!isValidAbsoluteUrl(returnUrl)) {
       return res.status(500).json({
         message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',

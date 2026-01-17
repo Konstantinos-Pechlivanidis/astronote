@@ -5,8 +5,6 @@
 
 const normalizePlan = (planCode) =>
   planCode ? String(planCode).toLowerCase() : null;
-const normalizeInterval = (interval) =>
-  interval ? String(interval).toLowerCase() : null;
 
 /**
  * Decide how a change should be applied.
@@ -16,33 +14,21 @@ const normalizeInterval = (interval) =>
  */
 export function decideChangeMode(current, target) {
   const currentPlan = normalizePlan(current?.planCode || current?.planType);
-  const currentInterval = normalizeInterval(current?.interval);
   const targetPlan = normalizePlan(target?.planCode || target?.planType);
-  const targetInterval = normalizeInterval(target?.interval);
 
-  if (!currentPlan || !currentInterval || !targetPlan) {
+  if (!currentPlan || !targetPlan) {
     return 'immediate';
   }
 
-  const isProYearlyDowngrade =
-    currentPlan === 'pro' &&
-    currentInterval === 'year' &&
-    targetPlan === 'starter';
-
-  if (isProYearlyDowngrade) {
-    return 'scheduled';
-  }
-
-  // Yearly → Monthly is a downgrade in billing frequency and should be scheduled at period end.
-  // This covers Starter Yearly → Starter Monthly as well.
-  const isYearToMonth = currentInterval === 'year' && targetInterval === 'month';
-  if (isYearToMonth) {
-    return 'scheduled';
-  }
-
-  const isMonthToYear = currentInterval === 'month' && targetInterval === 'year';
-  if (isMonthToYear) {
+  // 2-SKU unification policy:
+  // - starter(monthly) -> pro(yearly): checkout now
+  // - pro(yearly) -> starter(monthly): scheduled at period end
+  // - same plan: no-op handled by callers (treated as immediate here)
+  if (currentPlan === 'starter' && targetPlan === 'pro') {
     return 'checkout';
+  }
+  if (currentPlan === 'pro' && targetPlan === 'starter') {
+    return 'scheduled';
   }
 
   return 'immediate';

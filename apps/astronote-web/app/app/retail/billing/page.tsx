@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { billingApi, type Package } from '@/src/lib/retail/api/billing';
 import { subscriptionsApi } from '@/src/lib/retail/api/subscriptions';
@@ -200,6 +201,9 @@ function SubscriptionCard({
     interval?: 'month' | 'year' | null
     currentPeriodEnd?: string | null
     cancelAtPeriodEnd?: boolean
+    pendingChange?: any
+    allowedActions?: string[] | null
+    availableOptions?: Array<{ planCode: string; interval: string; currency: string }> | null
   }
   currency: BillingCurrency
 }) {
@@ -255,25 +259,38 @@ function SubscriptionCard({
   });
 
   const switchMutation = useMutation({
-    mutationFn: async (interval: 'month' | 'year') => {
-      if (!switchKeysRef.current[interval]) {
-        switchKeysRef.current[interval] = createIdempotencyKey();
+    mutationFn: async (targetPlan: 'starter' | 'pro') => {
+      if (!switchKeysRef.current[targetPlan]) {
+        switchKeysRef.current[targetPlan] = createIdempotencyKey();
       }
       const res = await subscriptionsApi.switch({
-        interval,
+        targetPlan,
         currency,
-        idempotencyKey: switchKeysRef.current[interval],
+        idempotencyKey: switchKeysRef.current[targetPlan],
       });
       return res.data;
     },
     onSuccess: (data: any) => {
+      // Parity: upgrade may require checkout; scheduled downgrades should not pretend to be immediate.
+      const checkoutUrl = data?.checkoutUrl || data?.url;
+      if (data?.changeMode === 'checkout' && checkoutUrl) {
+        window.location.href = checkoutUrl;
+        return;
+      }
+
       queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
       queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
-      toast.success(data?.message || 'Subscription updated');
+      queryClient.invalidateQueries({ queryKey: ['retail-subscription-current'] });
+
+      if (data?.changeMode === 'scheduled') {
+        toast.success(data?.message || 'Plan change scheduled');
+      } else {
+        toast.success(data?.message || 'Subscription updated');
+      }
     },
-    onSettled: (_data, _error, interval) => {
-      if (interval) {
-        delete switchKeysRef.current[interval];
+    onSettled: (_data, _error, targetPlan) => {
+      if (targetPlan) {
+        delete switchKeysRef.current[targetPlan];
       }
     },
     onError: (error: any) => {
@@ -293,6 +310,7 @@ function SubscriptionCard({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
       queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-subscription-current'] });
       toast.success('Subscription cancelled');
     },
     onSettled: () => {
@@ -337,6 +355,10 @@ function SubscriptionCard({
     portalMutation.mutate();
   };
 
+  const allowed = Array.isArray(subscription?.allowedActions) ? subscription.allowedActions : null;
+  const canSwitch = allowed ? allowed.includes('switchInterval') || allowed.includes('changePlan') : true;
+  const hasPendingChange = Boolean(subscription?.pendingChange);
+
   if (isActive) {
     return (
       <RetailCard>
@@ -357,15 +379,15 @@ function SubscriptionCard({
         )}
         <div className="flex flex-wrap gap-2">
           <Button
-            onClick={() => switchMutation.mutate('month')}
-            disabled={switchMutation.isPending || interval === 'month'}
+            onClick={() => switchMutation.mutate('starter')}
+            disabled={switchMutation.isPending || interval === 'month' || !canSwitch || hasPendingChange}
             variant="outline"
           >
             Switch to Monthly
           </Button>
           <Button
-            onClick={() => switchMutation.mutate('year')}
-            disabled={switchMutation.isPending || interval === 'year'}
+            onClick={() => switchMutation.mutate('pro')}
+            disabled={switchMutation.isPending || interval === 'year' || !canSwitch || hasPendingChange}
             variant="outline"
           >
             Switch to Yearly
@@ -455,6 +477,7 @@ function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
       queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-subscription-current'] });
       if (data.checkoutUrl || data.url) {
         window.location.href = data.checkoutUrl || data.url!;
       } else {
@@ -921,6 +944,8 @@ function BillingHistoryTable({
 }
 
 export default function RetailBillingPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [transactionsPage, setTransactionsPage] = useState(1);
   const [invoicePage] = useState(1);
   const [billingHistoryPage] = useState(1);
@@ -936,6 +961,16 @@ export default function RetailBillingPage() {
       return res.data;
     },
     staleTime: 60 * 1000, // 1 minute
+  });
+
+  // Backend-driven subscription contract (Shopify parity): allowedActions + availableOptions + pendingChange.
+  const { data: subscriptionCurrent } = useQuery({
+    queryKey: ['retail-subscription-current'],
+    queryFn: async () => {
+      const res = await subscriptionsApi.getCurrent();
+      return res.data as any;
+    },
+    staleTime: 30 * 1000,
   });
 
   useEffect(() => {
@@ -1015,6 +1050,7 @@ export default function RetailBillingPage() {
       queryClient.invalidateQueries({ queryKey: ['retail-transactions'] });
       queryClient.invalidateQueries({ queryKey: ['retail-invoices'] });
       queryClient.invalidateQueries({ queryKey: ['retail-billing-history'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-subscription-current'] });
       toast.success('Refreshed from Stripe');
     },
     onError: (error: any) => {
@@ -1022,6 +1058,24 @@ export default function RetailBillingPage() {
       toast.error(msg);
     },
   });
+
+  // Portal return: reconcile once and then clean the URL.
+  useEffect(() => {
+    if (searchParams.get('fromPortal') === 'true') {
+      reconcileMutation.mutate();
+      router.replace('/app/retail/billing');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, router]);
+
+  // Payment success return: show toast once and clean the URL.
+  useEffect(() => {
+    if (searchParams.get('paymentSuccess') === '1') {
+      toast.success('Payment processed successfully');
+      router.replace('/app/retail/billing');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, router]);
   const handleCurrencyChange = (value: string) => {
     const normalized = normalizeCurrency(value) || 'EUR';
     setSelectedCurrency(normalized);
@@ -1083,7 +1137,8 @@ export default function RetailBillingPage() {
     );
   }
 
-  const subscription = summaryData?.subscription || { active: false, planType: null };
+  const subscription =
+    subscriptionCurrent || summaryData?.subscription || { active: false, planType: null };
   const credits = summaryData?.credits || 0;
   const allowance = summaryData?.allowance || {
     includedPerPeriod: 0,

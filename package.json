@@ -76,6 +76,7 @@
     "stamp:release:gate": "node scripts/stamp-release-gate.mjs",
     "shopify:gate": "node scripts/shopify-gate.mjs",
     "retail:gate": "node scripts/retail-gate.mjs",
+    "prisma:gate": "bash apps/shopify-api/scripts/gate-prisma.sh && bash apps/retail-api/apps/api/scripts/gate-prisma.sh",
     "install:all": "npm install"
   },
   "devDependencies": {

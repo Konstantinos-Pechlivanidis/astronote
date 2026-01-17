@@ -482,16 +482,21 @@ export async function subscribe(req, res, next) {
 export async function switchInterval(req, res, next) {
   try {
     const shopId = getStoreId(req);
-    const { interval: targetInterval, planType: targetPlanCode } = req.body;
+    const {
+      interval: targetInterval,
+      planType: targetPlanType,
+      targetPlan: targetPlanCode,
+    } = req.body;
     let changeMode = null;
     let normalizedTarget = null;
 
-    if (!targetInterval && !targetPlanCode) {
+    const normalizedTargetPlan = (targetPlanCode || targetPlanType) ? String(targetPlanCode || targetPlanType).toLowerCase() : null;
+    if (!targetInterval && !normalizedTargetPlan) {
       return sendError(
         res,
         400,
         'VALIDATION_ERROR',
-        'Either interval or planType must be provided',
+        'Either targetPlan, planType, or interval must be provided',
       );
     }
 
@@ -519,20 +524,20 @@ export async function switchInterval(req, res, next) {
     // retail-simple mode: enforce 2-SKU mapping + deterministic validation BEFORE any price lookup
     if (catalogMode === CATALOG_MODES.RETAIL_SIMPLE) {
       const normalized = normalizeTargetSkuRetailSimple(
-        { planType: targetPlanCode, interval: targetInterval },
+        { planType: normalizedTargetPlan, interval: targetInterval },
         currentSku,
         currency,
       );
       if (!normalized.ok) {
         if (normalized.error.code === 'INVALID_INTERVAL_FOR_PLAN') {
           return sendInvalidIntervalForPlan(res, {
-            planType: targetPlanCode,
+            planType: normalizedTargetPlan,
             interval: targetInterval,
             currency,
           });
         }
         return sendError(res, 400, normalized.error.code, normalized.error.message, {
-          received: { planType: targetPlanCode, interval: targetInterval, currency },
+          received: { targetPlan: normalizedTargetPlan, planType: normalizedTargetPlan, interval: targetInterval, currency },
           supportedSkus: listSupportedSkus(currency),
         });
       }
@@ -563,12 +568,15 @@ export async function switchInterval(req, res, next) {
       // Delegate to update() with normalized plan+interval so we never attempt unsupported SKU priceId lookups.
       req.body.planType = normalized.planType;
       req.body.interval = normalized.interval;
+      req.body.targetPlan = normalized.planType;
       req.body.currency = currency;
       return update(req, res, next);
     }
 
-    // matrix mode: If planType is provided, use update endpoint logic
-    if (targetPlanCode) {
+    // matrix mode: If target plan is provided, use update endpoint logic
+    if (normalizedTargetPlan) {
+      req.body.planType = normalizedTargetPlan;
+      req.body.targetPlan = normalizedTargetPlan;
       return update(req, res, next);
     }
 

@@ -7,6 +7,7 @@ const {
   getSubscriptionPriceId,
   getPackagePriceId,
 } = require('../billing/stripePrices');
+const planCatalog = require('./plan-catalog.service');
 
 const logger = pino({ name: 'stripe-service' });
 
@@ -367,6 +368,83 @@ async function createSubscriptionCheckoutSession({
 }
 
 /**
+ * Create a Stripe checkout session for upgrading/downgrading a subscription via Checkout (Shopify parity).
+ * This creates a NEW subscription in Stripe, and includes previous subscription id in metadata.
+ * Webhook handler is responsible for cancelling the previous subscription (best-effort) after success.
+ */
+async function createSubscriptionChangeCheckoutSession({
+  ownerId,
+  userEmail,
+  planCode,
+  interval,
+  currency = 'EUR',
+  successUrl,
+  cancelUrl,
+  stripeCustomerId,
+  previousStripeSubscriptionId = null,
+}) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+
+  const normalizedPlan = String(planCode || '').toLowerCase();
+  const normalizedInterval = String(interval || '').toLowerCase();
+  const normalizedCurrency = String(currency || '').toUpperCase();
+
+  const priceId = planCatalog.getPriceId(normalizedPlan, normalizedInterval, normalizedCurrency);
+  if (!priceId) {
+    throw new Error(`Stripe price ID not configured for ${normalizedPlan}/${normalizedInterval}/${normalizedCurrency}`);
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    mode: 'subscription',
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        price: priceId,
+        quantity: 1,
+      },
+    ],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    metadata: {
+      ownerId: String(ownerId),
+      planType: normalizedPlan,
+      interval: normalizedInterval,
+      type: 'subscription',
+      changeType: 'subscription_change',
+      currency: normalizedCurrency,
+      previousStripeSubscriptionId: previousStripeSubscriptionId || '',
+    },
+    ...(isValidStripeCustomerId(stripeCustomerId)
+      ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
+      : {
+        customer_email: userEmail || undefined,
+        customer_creation: 'always',
+      }),
+    client_reference_id: `owner_${ownerId}`,
+    subscription_data: {
+      metadata: {
+        ownerId: String(ownerId),
+        planType: normalizedPlan,
+        interval: normalizedInterval,
+        currency: normalizedCurrency,
+        previousStripeSubscriptionId: previousStripeSubscriptionId || '',
+      },
+    },
+    ...(isStripeTaxEnabled()
+      ? {
+        automatic_tax: { enabled: true },
+        tax_id_collection: { enabled: true },
+      }
+      : {}),
+    expand: ['line_items', 'subscription'],
+  });
+
+  return session;
+}
+
+/**
  * Create a Stripe checkout session for credit top-up
  * @param {Object} params
  * @param {number} params.ownerId - User/Store ID
@@ -481,7 +559,10 @@ async function updateSubscription(subscriptionId, newPlanType, currency = 'EUR')
   }
 
   // Get subscription price ID for the new plan
-  const newPriceId = getStripeSubscriptionPriceId(newPlanType, currency);
+  const impliedInterval = newPlanType === 'starter' ? 'month' : 'year';
+  const newPriceId =
+    planCatalog.getPriceId(newPlanType, impliedInterval, String(currency).toUpperCase()) ||
+    getStripeSubscriptionPriceId(newPlanType, currency);
 
   // Retrieve current subscription
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -512,6 +593,114 @@ async function cancelSubscription(subscriptionId) {
   return stripe.subscriptions.cancel(subscriptionId);
 }
 
+async function getSubscriptionExpanded(subscriptionId) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+  return stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['items.data.price', 'schedule'],
+  });
+}
+
+/**
+ * Create or update a subscription schedule to change price at period end (Shopify parity).
+ * Used for scheduled downgrades (e.g., year -> month).
+ */
+async function createOrUpdateSubscriptionSchedule({
+  subscriptionId,
+  targetPriceId,
+}) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+  if (!subscriptionId) {
+    throw new Error('subscriptionId is required');
+  }
+  if (!targetPriceId) {
+    throw new Error('targetPriceId is required');
+  }
+
+  const subscription = await getSubscriptionExpanded(subscriptionId);
+  const currentItem = subscription.items?.data?.[0];
+  const currentPriceId = currentItem?.price?.id;
+  const periodEnd = subscription.current_period_end;
+  if (!currentPriceId || !periodEnd) {
+    throw new Error('Subscription is missing current price or current period end');
+  }
+
+  // Resolve existing schedule (may be id string or expanded object)
+  let scheduleId = null;
+  if (typeof subscription.schedule === 'string') {
+    scheduleId = subscription.schedule;
+  } else if (subscription.schedule?.id) {
+    scheduleId = subscription.schedule.id;
+  }
+
+  let schedule = null;
+  if (scheduleId) {
+    schedule = await stripe.subscriptionSchedules.retrieve(scheduleId);
+  } else {
+    schedule = await stripe.subscriptionSchedules.create({
+      from_subscription: subscriptionId,
+    });
+    scheduleId = schedule.id;
+  }
+
+  const firstPhaseStart = schedule?.phases?.[0]?.start_date || subscription.current_period_start;
+  const changeAt = periodEnd;
+
+  // Two phases:
+  // 1) Current plan until current period end
+  // 2) Target plan starting at period end
+  schedule = await stripe.subscriptionSchedules.update(scheduleId, {
+    end_behavior: 'release',
+    phases: [
+      {
+        start_date: firstPhaseStart,
+        end_date: changeAt,
+        items: [{ price: currentPriceId, quantity: 1 }],
+      },
+      {
+        start_date: changeAt,
+        items: [{ price: targetPriceId, quantity: 1 }],
+      },
+    ],
+  });
+
+  return {
+    scheduleId,
+    effectiveAt: new Date(changeAt * 1000),
+  };
+}
+
+/**
+ * Cancel (release) a subscription schedule, keeping the subscription active on its current pricing.
+ */
+async function cancelSubscriptionSchedule(subscriptionId) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+  const subscription = await getSubscriptionExpanded(subscriptionId);
+  let scheduleId = null;
+  if (typeof subscription.schedule === 'string') {
+    scheduleId = subscription.schedule;
+  } else if (subscription.schedule?.id) {
+    scheduleId = subscription.schedule.id;
+  }
+  if (!scheduleId) {
+    return { cancelled: false, reason: 'no_schedule' };
+  }
+
+  try {
+    await stripe.subscriptionSchedules.release(scheduleId);
+    return { cancelled: true, scheduleId, mode: 'release' };
+  } catch (err) {
+    // Fallback: cancel schedule
+    await stripe.subscriptionSchedules.cancel(scheduleId);
+    return { cancelled: true, scheduleId, mode: 'cancel' };
+  }
+}
+
 /**
  * Verify Stripe webhook signature
  */
@@ -530,12 +719,15 @@ module.exports = {
   stripe,
   createCheckoutSession,
   createSubscriptionCheckoutSession,
+  createSubscriptionChangeCheckoutSession,
   createCreditTopupCheckoutSession,
   getCheckoutSession,
   getPaymentIntent,
   getCustomerPortalUrl,
   updateSubscription,
   cancelSubscription,
+  createOrUpdateSubscriptionSchedule,
+  cancelSubscriptionSchedule,
   verifyWebhookSignature,
   getStripePriceId,
   getStripeSubscriptionPriceId,

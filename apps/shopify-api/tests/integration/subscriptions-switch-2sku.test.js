@@ -89,12 +89,12 @@ describe('Subscriptions switch (2-SKU retail-simple mapping)', () => {
     return { app, mocks: { switchSubscriptionInterval, mockStripeService, mockStripeSync } };
   }
 
-  it('pro/year + {interval:"month"} schedules downgrade to starter/month (no pro/month lookup)', async () => {
+  it('pro/year + {targetPlan:"starter"} schedules downgrade to starter/month (no pro/month lookup)', async () => {
     const { app, mocks } = await makeTestAppWithMocks({ currentPlanType: 'pro', currentInterval: 'year' });
 
     const res = await request(app)
       .post('/subscriptions/switch')
-      .send({ interval: 'month', currency: 'EUR' })
+      .send({ targetPlan: 'starter', currency: 'EUR' })
       .expect(200);
 
     expect(res.body?.success).toBe(true);
@@ -104,12 +104,12 @@ describe('Subscriptions switch (2-SKU retail-simple mapping)', () => {
     expect(mocks.switchSubscriptionInterval).not.toHaveBeenCalled();
   });
 
-  it('starter/month + {interval:"year"} returns checkoutUrl for upgrade to pro/year', async () => {
+  it('starter/month + {targetPlan:"pro"} returns checkoutUrl for upgrade to pro/year', async () => {
     const { app, mocks } = await makeTestAppWithMocks({ currentPlanType: 'starter', currentInterval: 'month' });
 
     const res = await request(app)
       .post('/subscriptions/switch')
-      .send({ interval: 'year', currency: 'EUR' })
+      .send({ targetPlan: 'pro', currency: 'EUR' })
       .expect(200);
 
     expect(res.body?.success).toBe(true);

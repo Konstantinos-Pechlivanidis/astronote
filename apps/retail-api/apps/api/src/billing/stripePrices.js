@@ -36,33 +36,38 @@ function getCreditTopupPriceId(currency) {
 
 function getSubscriptionPriceId(planType, currency) {
   const normalized = assertCurrency(currency);
-  if (!['starter', 'pro'].includes(planType)) {
+  const normalizedPlan = String(planType || '').toLowerCase();
+  if (!['starter', 'pro'].includes(normalizedPlan)) {
     const err = new Error(`Invalid plan type: ${planType}`);
     err.code = 'INVALID_PLAN_TYPE';
     throw err;
   }
-  const envKey = `STRIPE_PRICE_ID_SUB_${planType.toUpperCase()}_${normalized}`;
-  let priceId = getEnvValue(envKey);
 
-  // Backward-compatible alias support (Shopify Billing v2 matrix names):
-  // - starter is monthly
-  // - pro is yearly
-  // This allows environments that set only interval-specific keys to keep working.
-  if (!priceId) {
-    const impliedInterval = planType === 'starter' ? 'MONTH' : 'YEAR';
-    const matrixKey = `STRIPE_PRICE_ID_SUB_${planType.toUpperCase()}_${impliedInterval}_${normalized}`;
-    priceId = getEnvValue(matrixKey);
+  // Prefer centralized plan catalog (Shopify parity).
+  // This also ensures matrix mode (plan×interval×currency) is supported when configured.
+  const planCatalog = require('../services/plan-catalog.service');
+  const impliedInterval = normalizedPlan === 'starter' ? 'month' : 'year';
+  const priceId = planCatalog.getPriceId(normalizedPlan, impliedInterval, normalized);
+  if (priceId) {
+    return priceId;
   }
 
-  if (!priceId) {
-    throw makeConfigError(`Missing Stripe price ID for ${planType} plan (${normalized}).`, {
+  // Fallback to legacy direct env var lookup for robustness (keeps current behavior if module resolution differs).
+  const envKey = `STRIPE_PRICE_ID_SUB_${normalizedPlan.toUpperCase()}_${normalized}`;
+  const legacy = getEnvValue(envKey);
+  if (legacy) {
+    return legacy;
+  }
+
+  throw makeConfigError(
+    `Missing Stripe price ID for ${normalizedPlan} plan (${normalized}).`,
+    {
       envKey,
       currency: normalized,
       type: 'subscription',
-      planType,
-    });
-  }
-  return priceId;
+      planType: normalizedPlan,
+    },
+  );
 }
 
 function getPackagePriceId(packageName, currency, packageDb = null) {

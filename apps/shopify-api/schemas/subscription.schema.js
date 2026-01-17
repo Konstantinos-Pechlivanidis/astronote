@@ -14,6 +14,11 @@ export const subscriptionUpdateSchema = z.object({
 
 export const subscriptionSwitchSchema = z
   .object({
+    targetPlan: z
+      .enum(['starter', 'pro'], {
+        errorMap: () => ({ message: 'Target plan must be "starter" or "pro"' }),
+      })
+      .optional(),
     planType: z
       .enum(['starter', 'pro'], {
         errorMap: () => ({ message: 'Plan type must be "starter" or "pro"' }),
@@ -25,8 +30,8 @@ export const subscriptionSwitchSchema = z
       })
       .optional(),
   })
-  .refine((data) => data.planType || data.interval, {
-    message: 'Either planType or interval must be provided',
+  .refine((data) => data.targetPlan || data.planType || data.interval, {
+    message: 'Either targetPlan, planType, or interval must be provided',
     path: ['interval'],
   });
 

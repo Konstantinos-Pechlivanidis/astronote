@@ -3,6 +3,44 @@
 const loadEnv = require('./config/loadEnv');
 loadEnv();
 
+// ---- Billing plan catalog validation (Shopify parity) ----
+// Fail-fast in prod/CI when Stripe is enabled but required price IDs are missing.
+try {
+  if (process.env.STRIPE_SECRET_KEY) {
+    const planCatalog = require('./services/plan-catalog.service');
+    const validation = planCatalog.validateCatalog();
+    const supported = Array.isArray(validation.supportedSkus)
+      ? validation.supportedSkus.map((s) => `${s.planCode}/${s.interval}/${s.currency}`).join(', ')
+      : '(unknown)';
+
+    // eslint-disable-next-line no-console
+    console.log('[BILLING] Plan catalog mode:', validation.mode, 'supportedSkus:', supported);
+
+    if (!validation.valid) {
+      const msg =
+        `[BILLING] Missing required Stripe price env vars (mode=${validation.mode}): ` +
+        `${(validation.missingVars || []).join(', ')}`;
+
+      // Hard fail only in production or CI, to preserve local dev ergonomics.
+      if (process.env.NODE_ENV === 'production' || process.env.CI) {
+        // eslint-disable-next-line no-console
+        console.error(msg);
+        throw new Error(msg);
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(msg);
+      }
+    }
+  }
+} catch (e) {
+  // Re-throw to fail-fast in prod/CI.
+  if (process.env.NODE_ENV === 'production' || process.env.CI) {
+    throw e;
+  }
+  // eslint-disable-next-line no-console
+  console.warn('[BILLING] Plan catalog validation skipped/failed in dev:', e?.message || String(e));
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');

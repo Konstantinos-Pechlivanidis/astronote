@@ -621,6 +621,14 @@ model Subscription {
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean  @default(false)
   trialEndsAt          DateTime?
+  // Pending scheduled change (Shopify parity)
+  pendingChangePlanCode    String?  @db.VarChar(50)
+  pendingChangeInterval    String?  @db.VarChar(10)
+  pendingChangeCurrency    String?  @db.VarChar(3)
+  pendingChangeEffectiveAt DateTime?
+  // Reconciliation transparency
+  lastSyncedAt    DateTime?
+  sourceOfTruth   String?  @db.VarChar(32)
   metadata             Json?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

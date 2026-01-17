@@ -77,19 +77,10 @@ const resolvePlanTypeFromStripeSubscription = (stripeSubscription) => {
   const priceId = stripeSubscription.items?.data?.[0]?.price?.id;
   if (!priceId) {return null;}
 
-  const { getStripeSubscriptionPriceId } = require('./stripe.service');
-  const starterPriceIds = [
-    getStripeSubscriptionPriceId('starter', 'EUR'),
-    getStripeSubscriptionPriceId('starter', 'USD'),
-  ].filter(Boolean);
-  const proPriceIds = [
-    getStripeSubscriptionPriceId('pro', 'EUR'),
-    getStripeSubscriptionPriceId('pro', 'USD'),
-  ].filter(Boolean);
-
-  if (starterPriceIds.includes(priceId)) {return 'starter';}
-  if (proPriceIds.includes(priceId)) {return 'pro';}
-  return null;
+  // Centralized reverse lookup (Shopify parity)
+  const planCatalog = require('./plan-catalog.service');
+  const resolved = planCatalog.resolvePlanFromPriceId(priceId);
+  return resolved?.planCode || null;
 };
 
 /**

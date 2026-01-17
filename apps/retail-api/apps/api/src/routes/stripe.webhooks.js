@@ -505,6 +505,9 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
   const metadata = session.metadata || {};
   const ownerId = Number(metadata.ownerId);
   const planType = metadata.planType;
+  const previousStripeSubscriptionId = metadata.previousStripeSubscriptionId
+    ? String(metadata.previousStripeSubscriptionId).trim()
+    : null;
 
   if (!ownerId || !planType) {
     logger.warn({ sessionId: session.id }, 'Subscription checkout missing required metadata');
@@ -553,6 +556,27 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
       stripeSubscription,
     });
     logger.info({ ownerId, planType, subscriptionId }, 'Subscription activated successfully');
+
+    // Shopify parity: if this checkout was a subscription change (upgrade), cancel the previous subscription.
+    // Best-effort and idempotent: cancelling an already-cancelled subscription should be safe.
+    if (
+      previousStripeSubscriptionId &&
+      previousStripeSubscriptionId.startsWith('sub_') &&
+      previousStripeSubscriptionId !== subscriptionId
+    ) {
+      try {
+        await stripe.subscriptions.cancel(previousStripeSubscriptionId);
+        logger.info(
+          { ownerId, previousStripeSubscriptionId, newSubscriptionId: subscriptionId },
+          'Cancelled previous subscription after successful subscription change',
+        );
+      } catch (cancelErr) {
+        logger.warn(
+          { ownerId, previousStripeSubscriptionId, err: cancelErr.message },
+          'Failed to cancel previous subscription (non-fatal)',
+        );
+      }
+    }
 
     // Reset allowance for first billing cycle (idempotent)
     // Use subscription ID as invoice ID for idempotency (first invoice will be created separately)
@@ -1332,18 +1356,10 @@ async function handleSubscriptionUpdated(subscription) {
   } else if (subscription.items?.data?.[0]?.price?.id) {
     // Fallback: determine planType from price ID
     const priceId = subscription.items.data[0].price.id;
-    const { getStripeSubscriptionPriceId } = require('../services/stripe.service');
-
-    // Check which plan this price ID belongs to
-    const starterPriceIdEur = getStripeSubscriptionPriceId('starter', 'EUR');
-    const starterPriceIdUsd = getStripeSubscriptionPriceId('starter', 'USD');
-    const proPriceIdEur = getStripeSubscriptionPriceId('pro', 'EUR');
-    const proPriceIdUsd = getStripeSubscriptionPriceId('pro', 'USD');
-
-    if (priceId === starterPriceIdEur || priceId === starterPriceIdUsd) {
-      newPlanType = 'starter';
-    } else if (priceId === proPriceIdEur || priceId === proPriceIdUsd) {
-      newPlanType = 'pro';
+    const planCatalog = require('../services/plan-catalog.service');
+    const resolved = planCatalog.resolvePlanFromPriceId(priceId);
+    if (resolved?.planCode) {
+      newPlanType = resolved.planCode;
     }
   }
 

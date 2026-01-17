@@ -274,7 +274,14 @@ export interface UpdateSubscriptionRequest {
 }
 
 export interface SwitchIntervalRequest {
-  interval: 'month' | 'year';
+  /**
+   * New contract (2-SKU): plan-based switch
+   */
+  targetPlan?: SubscriptionPlanType;
+  /**
+   * Back-compat: legacy payloads
+   */
+  interval?: 'month' | 'year';
   planType?: SubscriptionPlanType;
   currency?: string;
 }

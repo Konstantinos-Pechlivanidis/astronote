@@ -164,7 +164,19 @@ function hasAnyMatrixEnvVars() {
   return matrixEnvVars.some((k) => !!process.env[k]);
 }
 
+function hasAnyRetailSimpleEnvVars() {
+  const legacyEnvVars = flattenSimplifiedEnvVars();
+  return legacyEnvVars.some((k) => !!process.env[k]);
+}
+
 export function getCatalogMode() {
+  // Unification rule (2-SKU Retail-simple as source of truth):
+  // - Prefer retail-simple when its 4 vars are present (even if matrix vars also exist).
+  // - Only select matrix when retail-simple is not configured and matrix vars are present.
+  // This prevents "missing MONTH/YEAR vars" crashes when running in 2-SKU mode.
+  if (hasAnyRetailSimpleEnvVars()) {
+    return CATALOG_MODES.RETAIL_SIMPLE;
+  }
   return hasAnyMatrixEnvVars() ? CATALOG_MODES.MATRIX : CATALOG_MODES.RETAIL_SIMPLE;
 }
 
@@ -335,6 +347,8 @@ export function validateCatalog() {
   const matrixEnvVars = flattenMatrixEnvVars(); // 8 vars: STARTER/PRO × MONTH/YEAR × EUR/USD
 
   const mode = getCatalogMode();
+  // In retail-simple mode, ONLY validate the 4 retail-simple vars.
+  // In matrix mode, validate the matrix vars (legacy 4 are optional).
   const requiredVars = mode === CATALOG_MODES.MATRIX ? matrixEnvVars : legacyEnvVars;
   const missingEnvVars = requiredVars.filter((k) => !process.env[k]);
 

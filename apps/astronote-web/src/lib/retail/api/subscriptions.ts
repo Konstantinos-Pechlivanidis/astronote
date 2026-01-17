@@ -28,7 +28,7 @@ export const subscriptionsApi = {
   update: (data: { planType: string; currency?: string }) =>
     api.post(endpoints.subscriptions.update, data),
 
-  switch: (data: { planType?: string; interval?: 'month' | 'year'; currency?: string; idempotencyKey?: string }) => {
+  switch: (data: { targetPlan?: 'starter' | 'pro'; planType?: string; interval?: 'month' | 'year'; currency?: string; idempotencyKey?: string }) => {
     const { idempotencyKey, ...payload } = data;
     return api.post(endpoints.subscriptions.switch, payload, {
       headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,

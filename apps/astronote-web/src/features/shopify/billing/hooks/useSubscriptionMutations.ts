@@ -167,14 +167,14 @@ export function useSwitchInterval() {
       // Show appropriate message based on whether change is immediate or scheduled
       if (data.scheduled && data.effectiveAt) {
         const effectiveDate = new Date(data.effectiveAt).toLocaleDateString();
-        toast.success(`Subscription will switch to ${data.interval === 'year' ? 'yearly' : 'monthly'} billing on ${effectiveDate}`);
+        toast.success(`Subscription change scheduled for ${effectiveDate}`);
       } else {
-        toast.success('Subscription interval updated successfully');
+        toast.success('Subscription updated successfully');
       }
     },
     onError: (error: any) => {
       const apiError = error as BillingApiError;
-      const message = apiError?.message || error.response?.data?.message || 'Failed to switch subscription interval';
+      const message = apiError?.message || error.response?.data?.message || 'Failed to switch subscription';
       toast.error(message);
     },
   });

@@ -28,29 +28,26 @@ function RetailBillingSuccessContent() {
     let cancelled = false;
     (async () => {
       try {
-        // Retail backend: finalize is best-effort; falls back to reconcile if finalize is unavailable.
-        await api.post('/subscriptions/finalize', { sessionId });
-        if (!cancelled) setFinalized(true);
-      } catch (e: any) {
-        const status = e?.response?.status;
-        const code = e?.response?.data?.code;
+        // Parity: always verify the payment first (handles subscription + topup + credit packs).
+        const verifyRes = await api.post('/billing/verify-payment', { sessionId });
+        const paymentType = verifyRes?.data?.paymentType || 'unknown';
 
-        // If finalize endpoint doesn't exist yet or is not enabled, fallback to reconcile.
-        if (status === 404 || code === 'NOT_FOUND') {
+        // If subscription, we may additionally call finalize (idempotent) and reconcile.
+        if (paymentType === 'subscription') {
+          try {
+            await api.post('/subscriptions/finalize', { sessionId });
+          } catch {
+            // ignore: verify-payment already did best-effort activation
+          }
           try {
             await api.post('/subscriptions/reconcile');
-            if (!cancelled) setFinalized(true);
-            return;
-          } catch (reconcileErr: any) {
-            const msg =
-              reconcileErr?.response?.data?.message ||
-              reconcileErr?.message ||
-              'Failed to refresh subscription from Stripe';
-            if (!cancelled) setError(msg);
-            return;
+          } catch {
+            // ignore: billing page will still be stripe-synced on load
           }
         }
 
+        if (!cancelled) setFinalized(true);
+      } catch (e: any) {
         const msg = e?.response?.data?.message || e?.message || 'Failed to finalize subscription';
         if (!cancelled) setError(msg);
       }
@@ -64,7 +61,7 @@ function RetailBillingSuccessContent() {
   useEffect(() => {
     if (finalized || error) {
       const timer = setTimeout(() => {
-        router.push('/app/retail/billing');
+        router.push('/app/retail/billing?paymentSuccess=1');
       }, 5000);
       return () => clearTimeout(timer);
     }

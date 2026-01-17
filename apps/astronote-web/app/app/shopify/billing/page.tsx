@@ -345,8 +345,8 @@ function BillingPageContent() {
       }
       break;
     case 'changePlan':
-      if (targetPlanCode && targetInterval) {
-        handleChangePlan(targetPlanCode, targetInterval);
+      if (targetPlanCode) {
+        handleChangePlan(targetPlanCode);
       }
       break;
     case 'cancelScheduledChange':
@@ -405,21 +405,9 @@ function BillingPageContent() {
     }
 
     try {
-      // If a scheduled change exists, modify the scheduled change instead of applying immediately.
-      if (uiState.pendingChange) {
-        await changeScheduledSubscription.mutateAsync({
-          planType: changePlanSelectedPlan,
-          interval: changePlanSelectedInterval,
-          currency,
-        });
-        setChangePlanDialogOpen(false);
-        return;
-      }
-
       if (isSubscriptionActive) {
         await switchInterval.mutateAsync({
-          planType: changePlanSelectedPlan,
-          interval: changePlanSelectedInterval,
+          targetPlan: changePlanSelectedPlan,
           currency,
         });
         setChangePlanDialogOpen(false);
@@ -437,34 +425,35 @@ function BillingPageContent() {
     }
   };
 
-  const handleChangePlan = async (planType: 'starter' | 'pro', interval: 'month' | 'year') => {
+  const impliedIntervalForPlan = (planType: 'starter' | 'pro'): 'month' | 'year' =>
+    planType === 'starter' ? 'month' : 'year';
+
+  const handleChangePlan = async (targetPlan: 'starter' | 'pro') => {
     try {
-      // If a scheduled change exists, modify the scheduled change instead of applying immediately.
-      if (uiState.pendingChange) {
-        await changeScheduledSubscription.mutateAsync({ planType, interval, currency });
-        return;
-      }
-
-      // If subscribed, use /subscriptions/switch (which delegates to /subscriptions/update on plan changes)
+      // Always use /subscriptions/switch (plan-based contract) once subscribed.
+      // Backend decides: checkout vs scheduled vs noop.
       if (isSubscriptionActive) {
-        await switchInterval.mutateAsync({ planType, interval, currency });
+        await switchInterval.mutateAsync({ targetPlan, currency });
         return;
       }
 
-      // Otherwise create initial subscription
-      await subscribe.mutateAsync({ planType, interval, currency });
+      // New subscription: keep subscribe payload as planType (+ implied interval for UX/back-compat)
+      await subscribe.mutateAsync({
+        planType: targetPlan,
+        interval: impliedIntervalForPlan(targetPlan),
+        currency,
+      });
     } catch (error) {
       // Error handled by mutation hook
     }
   };
 
   const handleSwitchInterval = async (interval: 'month' | 'year') => {
-    // Note: Confirmation is handled by handleAction() via ConfirmDialog
-    // This function is called after confirmation
+    // Back-compat path (UI may still think in intervals): map interval -> targetPlan for 2-SKU.
+    const targetPlan: 'starter' | 'pro' = interval === 'month' ? 'starter' : 'pro';
     try {
-      await switchInterval.mutateAsync({ interval });
-      // Status will be refreshed automatically via query invalidation in the mutation hook
-    } catch (error) {
+      await switchInterval.mutateAsync({ targetPlan, currency });
+    } catch {
       // Error handled by mutation hook
     }
   };
