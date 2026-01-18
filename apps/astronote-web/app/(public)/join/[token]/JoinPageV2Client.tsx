@@ -30,6 +30,8 @@ type FormData = {
   email: string
   phoneCountryCode: string
   phoneNational: string
+  gender: string
+  birthday: string
 };
 
 const LANGUAGE_KEY = 'join_language';
@@ -83,6 +85,8 @@ export function JoinPageV2Client({ token }: { token: string }) {
     email: '',
     phoneCountryCode: DEFAULT_COUNTRY_CODE,
     phoneNational: '',
+    gender: '',
+    birthday: '',
   });
 
   // Load saved language
@@ -138,6 +142,8 @@ export function JoinPageV2Client({ token }: { token: string }) {
       email: form.email.trim() || undefined,
       countryCode: normalizedPhone.countryCode,
       phoneNational: normalizedPhone.phoneNational,
+      gender: form.gender || undefined,
+      birthday: form.birthday || undefined,
     });
   };
 

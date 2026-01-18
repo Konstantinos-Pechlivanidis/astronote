@@ -10,6 +10,8 @@ export const joinCopyV2 = {
     phoneCountry: '+30',
     phone: 'Mobile number',
     email: 'Email (optional)',
+    gender: 'Gender (optional)',
+    birthday: 'Birthday (optional)',
   },
   benefits: [
     {
@@ -52,4 +54,3 @@ export const DEFAULT_BULLETS_EN = [
   'Updates that matter — Only important announcements.',
   'Easy opt-out — Unsubscribe anytime with 1 tap.',
 ];
-

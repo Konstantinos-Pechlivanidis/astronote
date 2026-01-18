@@ -7,6 +7,8 @@ export interface JoinSubmitPayload {
   email?: string
   countryCode: string
   phoneNational: string
+  gender?: string
+  birthday?: string
 }
 
 export function useJoinSubmit(token: string | null) {

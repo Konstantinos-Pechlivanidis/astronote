@@ -2,6 +2,8 @@ const express = require('express');
 const prisma = require('../lib/prisma');
 const { createLimiter } = require('../lib/ratelimit');
 const { normalizePhoneToE164 } = require('../lib/phone');
+const { normalizeGender, isValidBirthday } = require('../lib/validation');
+const { addContactToNfcLeadsList } = require('../services/nfc.service');
 const pino = require('pino');
 
 const router = express.Router();
@@ -162,7 +164,7 @@ const joinSubmitHandler = async (req, res, next) => {
       return res.status(404).json({ message: 'Not found', code: 'NOT_FOUND' });
     }
 
-    const { firstName, lastName, email, phoneCountryCode, phoneNational, countryCode } = req.body || {};
+    const { firstName, lastName, email, phoneCountryCode, phoneNational, countryCode, gender, birthday } = req.body || {};
     if (!firstName || typeof firstName !== 'string') {
       return res.status(400).json({ message: 'First name is required', code: 'VALIDATION_ERROR' });
     }
@@ -176,6 +178,17 @@ const joinSubmitHandler = async (req, res, next) => {
     }
 
     const now = new Date();
+    const normalizedGender = gender ? normalizeGender(gender) : null;
+    if (gender && !normalizedGender) {
+      return res.status(400).json({ message: 'Invalid gender', code: 'INVALID_GENDER' });
+    }
+    let birthdayDate = null;
+    if (birthday) {
+      if (!isValidBirthday(birthday)) {
+        return res.status(400).json({ message: 'Invalid birthday', code: 'INVALID_BIRTHDAY' });
+      }
+      birthdayDate = birthday instanceof Date ? birthday : new Date(birthday);
+    }
     const contact = await prisma.contact.upsert({
       where: { ownerId_phone: { ownerId: link.ownerId, phone } },
       create: {
@@ -184,6 +197,8 @@ const joinSubmitHandler = async (req, res, next) => {
         firstName,
         lastName: lastName || null,
         email: email || null,
+        gender: normalizedGender,
+        birthday: birthdayDate,
         isSubscribed: true,
         gdprConsentAt: now,
         gdprConsentSource: 'public_signup',
@@ -202,6 +217,8 @@ const joinSubmitHandler = async (req, res, next) => {
         firstName,
         lastName: lastName || null,
         email: email || null,
+        gender: normalizedGender,
+        birthday: birthdayDate,
         isSubscribed: true,
         gdprConsentAt: { set: now },
         gdprConsentSource: 'public_signup',
@@ -228,6 +245,13 @@ const joinSubmitHandler = async (req, res, next) => {
         meta: { action: 'submit' },
       },
     });
+
+    // Ensure contact appears in a default list for NFC/public join captures
+    try {
+      await addContactToNfcLeadsList(link.ownerId, contact.id);
+    } catch (err) {
+      logger.warn({ ownerId: link.ownerId, contactId: contact.id, err: err.message }, 'Failed to add contact to NFC Leads list');
+    }
 
     res.json({
       ok: true,

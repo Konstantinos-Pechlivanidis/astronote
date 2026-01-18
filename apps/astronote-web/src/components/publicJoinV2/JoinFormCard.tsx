@@ -8,6 +8,8 @@ type FormData = {
   email: string
   phoneCountryCode: string
   phoneNational: string
+  gender: string
+  birthday: string
 };
 
 type FormCopy = {
@@ -20,6 +22,8 @@ type FormCopy = {
     phoneCountry: string
     phone: string
     email: string
+    gender: string
+    birthday: string
   }
 };
 
@@ -217,6 +221,76 @@ export function JoinFormCard({
                 color: THEME.input.text,
               }}
               autoComplete="email"
+              disabled={isSubmitting}
+              onFocus={(e) => {
+                e.target.style.borderColor = THEME.accent.default;
+                e.target.style.boxShadow = `0 0 0 3px ${THEME.accent.light}`;
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = THEME.input.border;
+                e.target.style.boxShadow = 'none';
+              }}
+            />
+          </div>
+
+          {/* Gender */}
+          <div className="space-y-2">
+            <label
+              htmlFor="gender"
+              className="block text-sm font-medium"
+              style={{ color: THEME.text.secondary }}
+            >
+              {copy.fields.gender}
+            </label>
+            <select
+              id="gender"
+              name="gender"
+              value={form.gender}
+              onChange={(e) => onChange('gender', e.target.value)}
+              className={inputClass}
+              style={{
+                backgroundColor: THEME.input.bg,
+                border: `1px solid ${THEME.input.border}`,
+                color: THEME.input.text,
+              }}
+              disabled={isSubmitting}
+              onFocus={(e) => {
+                e.target.style.borderColor = THEME.accent.default;
+                e.target.style.boxShadow = `0 0 0 3px ${THEME.accent.light}`;
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = THEME.input.border;
+                e.target.style.boxShadow = 'none';
+              }}
+            >
+              <option value="">Select gender (optional)</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          {/* Birthday */}
+          <div className="space-y-2">
+            <label
+              htmlFor="birthday"
+              className="block text-sm font-medium"
+              style={{ color: THEME.text.secondary }}
+            >
+              {copy.fields.birthday}
+            </label>
+            <input
+              id="birthday"
+              name="birthday"
+              type="date"
+              value={form.birthday}
+              onChange={(e) => onChange('birthday', e.target.value)}
+              className={inputClass}
+              style={{
+                backgroundColor: THEME.input.bg,
+                border: `1px solid ${THEME.input.border}`,
+                color: THEME.input.text,
+              }}
               disabled={isSubmitting}
               onFocus={(e) => {
                 e.target.style.borderColor = THEME.accent.default;

@@ -107,10 +107,12 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       return { ok: false, reason: 'queue_unavailable', enqueuedJobs: 0 };
     }
 
+    const queueName = smsQueue.name || 'smsQueue';
+
     logger.info({
       ...baseContext,
       step,
-      queue: smsQueue.name || 'smsQueue',
+      queue: queueName,
       redis: redisInfo,
       status: camp.status,
     }, 'enqueueCampaign called');
@@ -436,6 +438,7 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
         batchSize: BATCH_SIZE,
         runToken,
         jobIds,
+        queue: queueName,
       }, '[ENQUEUE JOBS] Adding bulk SMS batch jobs');
 
       // Enqueue batch jobs
@@ -453,10 +456,10 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
         })
           .then(() => {
             enqueuedJobs += messageIds.length;
-            logger.debug({ ...baseContext, step, batchIndex, messageCount: messageIds.length, jobId }, 'Batch job enqueued');
+            logger.debug({ ...baseContext, step, batchIndex, messageCount: messageIds.length, jobId, queue: queueName }, 'Batch job enqueued');
           })
           .catch(err => {
-            logger.error({ ...baseContext, step, batchIndex, jobId, err: err.message }, 'Failed to enqueue batch job');
+            logger.error({ ...baseContext, step, batchIndex, jobId, queue: queueName, err: err.message }, 'Failed to enqueue batch job');
             // Continue even if some batches fail to enqueue
           });
       });
@@ -511,9 +514,10 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       step,
       created: messagesData.length,
       enqueuedJobs,
+      queue: queueName,
     }, '[ENQUEUE DONE] Campaign enqueued successfully');
 
-    return { ok: true, created: messagesData.length, enqueuedJobs, campaignId: camp.id };
+    return { ok: true, created: messagesData.length, enqueuedJobs, campaignId: camp.id, queueName };
   } catch (err) {
     const reason = err?.code === 'P2022' || err?.message?.includes('column') ? 'prisma_schema_drift' : 'enqueue_failed';
     logger.error({

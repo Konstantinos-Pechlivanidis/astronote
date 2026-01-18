@@ -2,6 +2,7 @@ const express = require('express');
 const prisma = require('../lib/prisma');
 const { createLimiter, rateLimitByKey } = require('../lib/ratelimit');
 const { normalizePhoneToE164 } = require('../lib/phone');
+const { addContactToNfcLeadsList } = require('../services/nfc.service');
 
 const router = express.Router();
 
@@ -126,6 +127,13 @@ router.post('/public/nfc/:token/submit', rateLimitByKey(submitLimiter, (req) => 
         deviceType: null,
       },
     });
+
+    try {
+      await addContactToNfcLeadsList(tag.storeId, contact.id);
+    } catch (err) {
+      // Do not block submission if list creation fails
+      console.warn('nfc-list-membership-failed', { storeId: tag.storeId, contactId: contact.id, err: err.message });
+    }
 
     res.json({
       ok: true,

@@ -245,7 +245,43 @@ async function createOrUpdateContactFromNfc(storeId, tagId, campaignId, formData
     });
   }
 
+  // Ensure contact is added to the default NFC list for this store
+  try {
+    await addContactToNfcLeadsList(storeId, contact.id);
+  } catch (err) {
+    logger.warn({ storeId, contactId: contact.id, err: err.message }, 'Failed to add contact to NFC Leads list');
+  }
+
   return { contact, isNew };
+}
+
+async function ensureNfcLeadsList(ownerId) {
+  const listName = 'NFC Leads';
+  // Use upsert to avoid race conditions when multiple contacts are added quickly
+  const list = await prisma.list.upsert({
+    where: {
+      ownerId_name: {
+        ownerId,
+        name: listName,
+      },
+    },
+    update: {},
+    create: {
+      ownerId,
+      name: listName,
+      description: 'Contacts captured via NFC / public join',
+    },
+  });
+  return list;
+}
+
+async function addContactToNfcLeadsList(ownerId, contactId) {
+  const list = await ensureNfcLeadsList(ownerId);
+  await prisma.listMembership.createMany({
+    data: [{ listId: list.id, contactId }],
+    skipDuplicates: true,
+  });
+  return list;
 }
 
 /**
@@ -294,5 +330,6 @@ module.exports = {
   isPlausiblePhone,
   normalizePhone,
   isValidEmail,
+  ensureNfcLeadsList,
+  addContactToNfcLeadsList,
 };
-

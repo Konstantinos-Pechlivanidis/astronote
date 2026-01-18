@@ -39,9 +39,6 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                     Phone
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
                     Gender
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
@@ -70,9 +67,6 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-text-primary">{maskPhone(contact.phone)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-text-primary">{contact.email || '—'}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-text-primary capitalize">{contact.gender || '—'}</div>
@@ -136,9 +130,6 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                 </div>
                 <SubscriptionBadge isSubscribed={contact.isSubscribed} />
               </div>
-              {contact.email && (
-                <div className="text-sm text-text-primary">{contact.email}</div>
-              )}
               <div className="flex flex-wrap gap-3 text-xs text-text-secondary">
                 {contact.gender && <span className="capitalize">Gender: {contact.gender}</span>}
                 {contact.birthday && (
@@ -191,4 +182,3 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
     </>
   );
 }
-

@@ -627,7 +627,13 @@ router.post('/campaigns/:id/enqueue', requireAuth, async (req, res, next) => {
       requestId,
     }, 'enqueue endpoint succeeded');
 
-    res.json(withRequestId({ queued: result.created, enqueuedJobs: result.enqueuedJobs, campaignId: id, status: 'sending' }));
+    res.json(withRequestId({
+      queued: result.created,
+      enqueuedJobs: result.enqueuedJobs,
+      campaignId: id,
+      status: 'sending',
+      queue: result.queueName || 'smsQueue',
+    }));
   } catch (e) {
     next(e);
   }
