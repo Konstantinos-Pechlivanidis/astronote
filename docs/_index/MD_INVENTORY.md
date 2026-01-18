@@ -1,0 +1,449 @@
+# Markdown Inventory
+| Path | Size (bytes) | Last Commit (ts) | Last Commit SHA | SHA256 |
+| --- | ---: | --- | --- | --- |
+| .github/ISSUE_TEMPLATE/bug_report.md | 815 | 1767035407 | 27b85f9 | 007e2a024e576ecce130b25dc191053d9160c3f06f120f05b8b9b01034573b9d |
+| .github/ISSUE_TEMPLATE/feature_request.md | 717 | 1767035407 | 27b85f9 | a9afacf73d85628f4208b50c952491abde2f7cff3bc2194fe0240ea8624650d0 |
+| CHANGELOG.md | 1226 | 1767035407 | 27b85f9 | 1b27ebaeaaa2bf794ab1bb6ae4429784084ce68b9c3875ab52ac6d242237b3eb |
+| CONTRIBUTING.md | 3947 | 1767035407 | 27b85f9 | 6437262880287863bd93583de915ac98ad3a45c0c7a6783afd126414911b2b8d |
+| README.md | 12365 | 1767862833 | 9bce141 | d9734ec35126c8ea5651b78e435f88a89517b3bbcf7881a741f540a84b220da0 |
+| SECURITY.md | 2459 | 1767035407 | 27b85f9 | 4c47e533beffc4151b72d529d3d9b62e77834a4bb3f3dda6f317b187abc62b49 |
+| docs/ALL_LIMITATIONS_IMPLEMENTED.md | 9947 | 1767201116 | de5dcea | 38b1020b7e54fd2a6a685d25cea3d4a0549dfc7f1567460200040684a42a3ef9 |
+| docs/ARCHITECTURE_AUDIT_REPORT.md | 14235 | 1767862833 | 9bce141 | b8bff562821f15e1067a3c9caafd55e77837d1cd18c26567c86db32bccebb0b2 |
+| docs/ARCHITECTURE_CHECK_JOIN_NFC.md | 9672 | 1767862833 | 9bce141 | d0eb2cf7d30b2b59cd28b79e96df88b7e6034ec99c7038d08ff8f3c0c3f085d3 |
+| docs/ARCHITECTURE_COMPLIANCE_REPORT.md | 5128 | 1767862833 | 9bce141 | dfe509c673aec1f1898164e2a5df01d2d4877d065c5a6af369795580c4564c3b |
+| docs/AUDIT_REPORT_PUBLIC_JOIN.md | 3543 | 1767862833 | 9bce141 | 09c62391a760de9d330f59297f1d3361d62da7a2cc162ab2b914c8473c889168 |
+| docs/BUILD_STATUS_REPORT.md | 4485 | 1767188889 | 48b8e9f | 23dde0ba958385006a19eeb261052029ad11877c84db4bafaf44a0ed225188c9 |
+| docs/LIMITATIONS_IMPLEMENTATION_COMPLETE.md | 8469 | 1767201116 | de5dcea | 2e430ee7b678d96fcfe65ea801b86087d02fe55a4907a813e9a63002d21917cb |
+| docs/LIMITATIONS_IMPLEMENTATION_STATUS.md | 5545 | 1767201116 | de5dcea | ba58f6da9d2593de10d95c9e7c97729c07f69fcdeabf11a6375be92cdf85eeec |
+| docs/NFC_JOIN_BRANDING_VERIFICATION.md | 4136 | 1767862833 | 9bce141 | c583aa7b878f8b45df705d83f7776d58ba2cf39a3aadd5fde2741722ede5794d |
+| docs/PHASE1_SHOPIFY_IMPLEMENTED.md | 10051 | 1767201116 | de5dcea | da2fc80cfde1f3a72cce42afac7ac77a9fd31207e19b3d457a6b6b29f1a39c4c |
+| docs/PHASE3_COMPLETE_SUMMARY.md | 5719 | 1767110360 | 6a1eb42 | cea1022f8b81b7061c9a62050f51ae75dfad7ea4ea04d994fd5f55b80bea9b99 |
+| docs/PHASE3_HARDENING_REPORT.md | 6442 | 1767110360 | 6a1eb42 | 6c82b54a2eac64f3efd02428028bd684fe76979358c008d79e3b41dd2488f833 |
+| docs/PHASE3_PARITY_REPORTS.md | 8831 | 1767110360 | 6a1eb42 | 49fff9d9eca7c89120e6449c1e25fa4d3f849a0d26f00e69d67c9eb2b8105853 |
+| docs/PHASE3_SHOPIFY_CAMPAIGNS_IMPLEMENTED.md | 14307 | 1767201116 | de5dcea | 1ba78505fa87c45143215a2501ba2618a7701c564759d1ede7ac3944bf03e439 |
+| docs/PHASE4_COMPLETE_REPORT.md | 11460 | 1767188889 | 48b8e9f | 33a4addbb97aeb5d19077219ba2a28c6f7cebffb5c05438a6279ae6ca5cf7ddd |
+| docs/PHASE4_SHOPIFY_CONTACTS_IMPLEMENTED.md | 9252 | 1767201116 | de5dcea | ff96cd169439debc7abcc2b00086a8ea97084966de397f306462e8ce0c42e14e |
+| docs/PHASE4_UI_POLISH_SUMMARY.md | 8837 | 1767188889 | 48b8e9f | b3b4e105208fa7bd77681aeef1079a7daff07940c5dafe3978b0b28df91da10f |
+| docs/PHASE5_SHOPIFY_TEMPLATES_IMPLEMENTED.md | 7769 | 1767201116 | de5dcea | f21eacd7f97a92bdcd63da7f76a2fd7a570377421d52b88e53cfbbdb868b8afb |
+| docs/PHASE6_SHOPIFY_AUTOMATIONS_IMPLEMENTED.md | 11008 | 1767201116 | de5dcea | 4c8a265e4838a280ec51f9c576f6bf3fbb15d5956c2e7f44a3ac236fef083ca5 |
+| docs/PHASE7_SHOPIFY_BILLING_IMPLEMENTED.md | 12417 | 1767201116 | de5dcea | e6ae9c216b8ae4229cdca0dba07a9d75a7ec9d386be793e15a552ece2575bdfb |
+| docs/PHASE8_SHOPIFY_SETTINGS_IMPLEMENTED.md | 8303 | 1767201116 | de5dcea | 40a1d96088fe136cc41baa85210e6541f9ab944b72ed5c5185fab307d7b4434b |
+| docs/PHASE_3.5_SUMMARY.md | 6203 | 1767188889 | 48b8e9f | 0ae53a81559cd008d8239a80f191a419252322e3681c50b4c579976af0ee2587 |
+| docs/PHASE_4_PROGRESS.md | 9478 | 1767188889 | 48b8e9f | b1f403c6862b1e48baa9e881289d75f9daac6b2ca8078d34d01fb8ecb283eb87 |
+| docs/PHASE_A_INVESTIGATION_REPORT.md | 6860 | 1767862833 | 9bce141 | 6c24ae06953683626acd9907ac8c76acfa41a747dbb605d07a8645a6768a572b |
+| docs/PHASE_C_VERIFICATION_REPORT.md | 8128 | 1767862833 | 9bce141 | f7b524445b3ca1d482c62a7f60ffb21eb8862620d5d622556bdc0f60fbc84f43 |
+| docs/PRISMA_BACKEND_FRONTEND_ASSOCIATION_REPORT.md | 4338 | 1767862833 | 9bce141 | bef0a218caacb68b35436df5fda4ff82c9cb9d9b8e126f4272655a2b7c0e5807 |
+| docs/PUBLIC_JOIN.md | 2401 | 1767862833 | 9bce141 | ed8735509a3f2799d5a060705468120cdbfad167011add3d11e7ff36fe5f3148 |
+| docs/READY_FOR_LIVE_TESTING.md | 6304 | 1767862833 | 9bce141 | 8491e2abc6af3449b58880f31ce84cd2937cebe39ee1cf53b580dd9f1422e116 |
+| docs/RETAIL_API_USAGE.md | 21430 | 1767110360 | 6a1eb42 | 2ba024259148d9ef5e54d48a66d55d7040bc072ddf145183dc62714baaf257f1 |
+| docs/RETAIL_AUTH_FLOW.md | 10069 | 1767110360 | 6a1eb42 | 482922268d60b98cfccaff508eacdb5a09218f3b0c831dbc8af6e5ab1448ab12 |
+| docs/RETAIL_BILLING_CONTRACT.md | 1506 | 1767188889 | 48b8e9f | f079e286a7f9caca7f39eaa5e18b5685a6c2374813723118a5029080478827e0 |
+| docs/RETAIL_DEPLOYMENT.md | 5464 | 1767110360 | 6a1eb42 | 46115665a4e0cef6a212d4ca46eaa1c1673559a059af050224d884447f4f8b09 |
+| docs/RETAIL_IMPORTS_AND_NAV_FIX_REPORT.md | 14405 | 1767862833 | 9bce141 | cee68c23d8f9e43d5bde8bb2d03e844447628d38952ef6f17d3eea57e9e26c2c |
+| docs/RETAIL_LAYOUT.md | 1913 | 1767862833 | 9bce141 | dec10050c1322b7f76544d04dbee9325b2753af5c41d00f1944e2c43923af58f |
+| docs/RETAIL_LAYOUT_NAV_AUDIT.md | 8393 | 1767862833 | 9bce141 | cf10e32469ff4364333518620b252e5aad2e1300c649c7172c8424e3374992b4 |
+| docs/RETAIL_LEGACY_MAP.md | 15463 | 1767110360 | 6a1eb42 | f7c27efd3f01e8c9ff1c0310aeeb0cd7d32470b41f83cd41eaed1af405c6e5b0 |
+| docs/RETAIL_MIGRATION_STATUS.md | 7551 | 1767110360 | 6a1eb42 | b1ba82813a3538ebf35006a358d68ff961b169408a3f4135febcc7ddbae93d52 |
+| docs/RETAIL_NAV_VERIFICATION_REPORT.md | 14069 | 1767862833 | 9bce141 | 18f133d63a93e67d8f7374edc3b1daf9d7adc83d39e9c949e43190ede172fac2 |
+| docs/RETAIL_NAV_WIRING_REPORT.md | 11395 | 1767862833 | 9bce141 | e8331b0bfee1850bd581ed192305b38b7bd62b50c16f82500500f6801334f5cf |
+| docs/RETAIL_PAGE_PARITY_MAP.md | 8147 | 1767136646 | f3f87f7 | 807857a6e371cdd01e51773ce2bcb2f998242faaf794788313826e68248d9b57 |
+| docs/RETAIL_PARITY_REPORTS_PHASE1-5.md | 14247 | 1767138279 | 3db42c3 | f8608af9137cd76d4f21c4183ff09080cbe5540b78eb66dacb7cf50962a2dd5d |
+| docs/RETAIL_PRODUCTION_READINESS_REPORT.md | 11852 | 1767110360 | 6a1eb42 | 45357a3a562db3a1c4420284d9679edf1f5eea648435425c3d59e20f1a697677 |
+| docs/RETAIL_RESPONSIVE_QA.md | 10263 | 1767188889 | 48b8e9f | 3467e58d2eddbb56c737cf703a8b4254ac622a3791d04b411f4604185e7290ee |
+| docs/RETAIL_SMOKE_TESTS.md | 12282 | 1767110360 | 6a1eb42 | 63941a767fd6072ca663530da8ae6242a0ffe6616f1b7500eb94c59fcd1150d8 |
+| docs/RETAIL_TRACKING_GAP.md | 4009 | 1767110360 | 6a1eb42 | 8e5236ba4aaf0097ab8ecacc04f06ef4918b2f82151dd33765d75a8c35b91491 |
+| docs/RETAIL_UI_QA_CHECKLIST.md | 8548 | 1767188889 | 48b8e9f | fa1170d198d7d9e007c436ac394ce7f7e671f8c11ff0e28d23dbbe78ef480a0c |
+| docs/RETAIL_UI_SYSTEM.md | 13567 | 1767188889 | 48b8e9f | d6b298cd993ca0448fa9369d87d45239417ca3b37b72d9389b8819096aded702 |
+| docs/SHOPIFY_API_CLIENT_SPEC.md | 27371 | 1767201116 | de5dcea | c4d73db9f424602e642531bf4c55ef116c23a19b80a238b8d694eb109c45f612 |
+| docs/SHOPIFY_AUTH_AND_TENANCY.md | 16641 | 1767201116 | de5dcea | 73daff3cb3354b04952f1f862e35a9ff64e6bdca0a177199ebd62c7741f04b42 |
+| docs/SHOPIFY_AUTH_CALLBACK_ANALYSIS.md | 8181 | 1767204789 | 26869ab | 5f0271085c4a31aab4ecba0f8041805eaf5c09f2336bcccc0421c5623b865b38 |
+| docs/SHOPIFY_AUTH_CALLBACK_TEST_STEPS.md | 4188 | 1767204789 | 26869ab | fda3b27576937cfef35751a98fba2d6f361335c028af6b779b53a3b0a8ca0999 |
+| docs/SHOPIFY_AUTOMATIONS_ENDPOINTS.md | 5330 | 1767201116 | de5dcea | 8daeefb757caa2ef28d7b90547a72301e46e261f9f0d5f46cf3b5e722019a5ac |
+| docs/SHOPIFY_BILLING_ENDPOINTS.md | 7178 | 1767201116 | de5dcea | ac179d419ecd4cf48b03af3ff62a9ad974e8cf1472b3dfb49c69e1af9f9cea1e |
+| docs/SHOPIFY_CAMPAIGNS_ENDPOINTS.md | 6718 | 1767201116 | de5dcea | 3c61d5d06d0f1d039ccf7a3d4813cb0bc144c0da127a0d440310852be74fc1a4 |
+| docs/SHOPIFY_CONTACTS_ENDPOINTS.md | 6867 | 1767201116 | de5dcea | 111c7e4e698f5140b9360b083ad5565b299f804f2d45bb8e1e332dc5d33071b7 |
+| docs/SHOPIFY_DASHBOARD_ENDPOINTS.md | 5019 | 1767201116 | de5dcea | 6fd0c6f51bee4d4d0135f9127e2c3d8bc8f9833f3a81e4057db33b6e7fb6b323 |
+| docs/SHOPIFY_IMPLEMENTATION_AUDIT.md | 23399 | 1767201116 | de5dcea | 036a267458abbac828663724b5b7394d36da56d41c4c77a3ce9139c0bb702de8 |
+| docs/SHOPIFY_PHASE_PLAN.md | 26022 | 1767201116 | de5dcea | 062fb66e68a22d34e8a29b25ddbfc0dab40a1430c76ef49d962ab91c8e823c70 |
+| docs/SHOPIFY_PRODUCTION_READINESS_AUDIT.md | 21089 | 1767201116 | de5dcea | 415ee244ac46e98c00c205aa5894e4ce60f0fae16c3efb2a9b4008fc011f73c6 |
+| docs/SHOPIFY_PRODUCTION_READINESS_SUMMARY.md | 4780 | 1767201116 | de5dcea | 90c046fc20d446e0bcbc1a5c0799c995801bdd1f2db04426c44bd83301dc7af0 |
+| docs/SHOPIFY_ROUTES_IN_ASTRONOTE_WEB.md | 13177 | 1767201116 | de5dcea | 5d389c9403ffe2131bf649980e448b06746dc897c6776cba07c8431c582cf4b9 |
+| docs/SHOPIFY_SETTINGS_ENDPOINTS.md | 5455 | 1767201116 | de5dcea | f30c1f01c58c382d2e3e360ed93060f46f45e03d757ed578cabc4daf1f23ed1a |
+| docs/SHOPIFY_TEMPLATES_ENDPOINTS.md | 3333 | 1767201116 | de5dcea | ebe2c88457877a262bde11fbf6c102a8b6cde969707f73cec1944205f9925927 |
+| docs/SHOPIFY_UI_PAGE_MAP.md | 40173 | 1767201116 | de5dcea | 3de9261209a05bd835927fc77cd64c7d658108e7b0cb5854a57d71b35b1bcb49 |
+| docs/SHOPIFY_UI_STYLE_REUSE.md | 12807 | 1767201116 | de5dcea | 78506dc2a3e54902a31084e6e656af92514b4e2bfa60bcb06d490c2373b67601 |
+| docs/SHOPIFY_VERIFICATION_COMPLETE.md | 5019 | 1767201116 | de5dcea | 2a96147025214fac904956b82f9b46dd7fbaa4d0e2659dab904cf47579addd37 |
+| docs/SMS_PHONE_PREVIEW_DARK_MARKETING.md | 8711 | 1767205411 | 81b8f66 | c0f3789dc31e9c83a3025521662a623bc52976b13a65cbdf15e5ca6f6687e3db |
+| docs/SMS_PHONE_PREVIEW_IMPLEMENTATION.md | 8619 | 1767205411 | 81b8f66 | 0cf1f1efeafdefe443a19002a272e4a2c14b3438690b9ead4e218ea62d10dc8b |
+| docs/_audit/api-retail-endpoints.md | 15978 | 1767035081 | 4dc46db | 853f4707cc59e9c59f8331a1b8d89842e9b5b1981f83fa611e60a4c71a9615f5 |
+| docs/_audit/api-shopify-endpoints.md | 18586 | 1767035081 | 4dc46db | 87f206fae4ff8d2221c6ee981d73f7d96b4e1c998b004fa75455ec67eb49e079 |
+| docs/_audit/env-map.md | 16154 | 1767035081 | 4dc46db | ff0b9d59d19e3f1a0669bda6a80d20903faf4e41082da6de6bad781b0ce44fd7 |
+| docs/_audit/problems-and-recommendations.md | 10929 | 1767035081 | 4dc46db | 6db87c0aec23a565d01c58d66e0de542d9f6bdd5375023369b9c05d084c37083 |
+| docs/_audit/render-deploy-matrix.md | 12240 | 1767035081 | 4dc46db | ae805c7afacb02b6921410914ec89d964971c621a5a92ec83f8c7304efbb7b49 |
+| docs/_audit/repo-structure.md | 6480 | 1767035081 | 4dc46db | 21373e415544ca8132dd54a8e7824c1b975173bfef8805bccec1fb944f755999 |
+| docs/_audit/retail-web-overview.md | 4354 | 1767035081 | 4dc46db | b149e1bec81fd796e83e29a5f1d1380f20c5902557a4259c6ba23b571a7dab84 |
+| docs/_audit/retail-worker-overview.md | 6479 | 1767035081 | 4dc46db | d4c36c390ab2b3de76b5d9f2ff4dafcb913ad2e7ccdb59763307e798cc41e4c2 |
+| docs/_audit/unified-frontend-routing-proposal.md | 8519 | 1767035081 | 4dc46db | ac1910db596d10e452d1aeeaf9da4c767f1270edd7d3db9ed8ba631b3919c027 |
+| docs/_audit/workspaces-inventory.md | 10377 | 1767035081 | 4dc46db | 7c828796a5e93b43ac68cd10e1063f5b49fd380867c43200ef7b61e7271d3b70 |
+| docs/_verify/embedded-workers.md | 4133 | 1767045513 | a950737 | 9da44f5c0745501cf7a3fe289d88e3fb7e8eda9710b41a85082c1a1598efb2b6 |
+| docs/_verify/phase1/http-smoke.md | 2162 | 1767035081 | 4dc46db | 98755557bda6fa31aaa4000b517811b4dffc47c764cc56f6941141adc5779765 |
+| docs/_verify/phase1/lockfiles.md | 2226 | 1767035081 | 4dc46db | d063a3e502eae8cfd49b80b2e0380b86acec5114fa12f45f3131f6ea372d620c |
+| docs/_verify/phase1/node-modules.md | 2199 | 1767035081 | 4dc46db | 5f063d9825d6aec997d7e0e153de8a5d17dae23459d86917a0cc35632a4be73e |
+| docs/_verify/phase1/package-name-conflicts.md | 1678 | 1767035081 | 4dc46db | 3a314167299835ec8f029eee2c0ac475186d4734fc00ef755067e8e97b88cc2e |
+| docs/_verify/phase1/path-reference-audit.md | 4374 | 1767035081 | 4dc46db | 00d76e3e7fcd5353e99688dbcfb9248aec256493d2be199d3a91c42244c29f43 |
+| docs/_verify/phase1/runtime-checks.md | 4379 | 1767035081 | 4dc46db | 1d64af4c35173e6d817d1dc1f172c6b8d63cd4a6c2e4fb68b0594e2438baedf8 |
+| docs/_verify/phase1/structure-check.md | 880 | 1767035081 | 4dc46db | 66a6d848e19427d1d28d6c40e5c93c753d3415c275cf4e48f397009332d92e9d |
+| docs/_verify/phase1/verdict.md | 5855 | 1767035081 | 4dc46db | 9637aec67a376cb04ac644e1038cc148369eaf567d030686ccb23bd551ac267d |
+| docs/_verify/phase1/workspaces-inventory.md | 1575 | 1767035081 | 4dc46db | 4240d6924f845178e612547d372b1b92c5a7acd3541a07aa900564237608ea9a |
+| docs/_verify/phaseC/api-smoke.md | 1090 | 1767035081 | 4dc46db | 322c73ac250a4e52f2cfabca5051049407ffaba1f125863d606bb98bbd0d3500 |
+| docs/_verify/phaseC/api-wiring.md | 3602 | 1767035081 | 4dc46db | 132eee6bfe59742f6f709de3f4b0668f211fe9b36be5167e05939af156ee0e5c |
+| docs/_verify/phaseC/docs-check.md | 943 | 1767035081 | 4dc46db | c44b06d029cfe6bc5c9dc857f33c7b0318bc4f5cb4b0c84d0b86732b7667bbee |
+| docs/_verify/phaseC/env-check.md | 1368 | 1767035081 | 4dc46db | e1d10b6ad9b36f0f69050d0f0a4c1ef24083cdbfc7410eb960a909cdeafce15d |
+| docs/_verify/phaseC/frontend-routing-auth.md | 4154 | 1767035081 | 4dc46db | 01852f2504fc97f237266dca5a77c2fea6017bcfa4eddd93b11f38dbab603694 |
+| docs/_verify/phaseC/page-smoke.md | 3647 | 1767035081 | 4dc46db | 83799185bd2b3b2ffb42e8b927590a9bec317bae7333acc0e130356ab577544d |
+| docs/_verify/phaseC/prisma-generation-blocker.md | 2268 | 1767035081 | 4dc46db | 0b8dc31ab961f1dabaca08010b7aa001131ecab2c084a732bbe0366b10382a96 |
+| docs/_verify/phaseC/runtime-startup.md | 2005 | 1767035081 | 4dc46db | e4ad8575b57ccab938526a80b9792413e4a832875fa7a40365d674bcb8b2a20e |
+| docs/_verify/phaseC/verdict.md | 5538 | 1767035081 | 4dc46db | 5714770288d9f5a901eba6156544608547bd1e7d4b0e9201ba18027afabe194a |
+| docs/_verify/production-verification.md | 10262 | 1767045513 | a950737 | b9ed3d1966c746fb9e1e4af456bb3bb6737990df89b6f6d7c2bfa6ff3794525a |
+| docs/api-inventory.md | 13928 | 1767035081 | 4dc46db | 8c652399012ada2e00616f255b23d4fdaa8359403ffa339f83f5e504249d6b18 |
+| docs/api/endpoints.md | 11578 | 1767035081 | 4dc46db | 2f49baaa70eeb8c58cf237c7508414368300c0193ce692f274f5bfd21640fd6f |
+| docs/architecture/BILLING_SPEC.md | 9982 |  |  | 66cd966b673a06b02188b34214cb2b30ec16bce4ecda203fed49b2a37a05a0f7 |
+| docs/architecture/reports__store-type-templates-spec.md | 4758 |  |  | dfa58e3a7e7f5e119f527788df6af56f511907f069df2b75d6c5328119756dcd |
+| docs/architecture/retail/BULK_SMS_TECHNICAL_DESIGN.md | 20700 |  |  | 9d78632a11c5c65848a6c41fb5679da9cbfa7f2b031d270535817b683d5477c5 |
+| docs/architecture/retail/RETAIL_SYSTEM_ARCHITECTURE.md | 4025 |  |  | e41ca1690e5dd6ed0479ba4e30e090768da9ffa88d33fd37ba275657ae26021f |
+| docs/architecture/retail/apps__retail-api__docs__SYSTEM_DEFINED_SEGMENTATION.md | 5312 |  |  | f8b3f18efb04f59205eeec2fbd76d675322bd6c83636c6884ceca82b8cd16cee |
+| docs/architecture/retail/apps__retail-api__docs__SYSTEM_SEGMENTATION_VERIFICATION.md | 4945 |  |  | 5cfebbde272e8b1a903ec656f86474959013f8aba40f240573f0814f648d5fc0 |
+| docs/architecture/retail/apps__retail-api__docs__SYSTEM_TEMPLATE_LIBRARY.md | 5966 |  |  | 068de847d2af800ead125d6a870dc6422a16197266fb446ea48385651783c56a |
+| docs/architecture/shopify/SHOPIFY_BILLING_ARCHITECTURE_FLOW.md | 91976 |  |  | 6724c97b5e729dc9b046a573b1a4c091c699bc47164e7fd4f1275b4f2325cbcd |
+| docs/architecture/shopify/apps__shopify-api__BILLING_ARCHITECTURE_SHOPIFY.md | 31347 |  |  | 553939dc1a77cdfbf8d39a5a42e4c4d807858984f7d70b17dd326e9083d1d349 |
+| docs/architecture/shopify/reports__shopify-ui-design-system-phase2.md | 10073 |  |  | c6f830b5c934aab365c4dbc0394cbee3dfbd86bc2d07b81f71f75897bf26120c |
+| docs/backend-gaps.md | 4990 | 1767035081 | 4dc46db | 33baf02b9a95e7229f42cadc9fe040144869a0b0adef20c6e69b74ace7273269 |
+| docs/billing-multicurrency.md | 2060 | 1767906469 | 91a3b87 | 92c8bd1b3336ce2d2103268c027eb9bcbfd711a1b01809fa1bfe469e73da54f8 |
+| docs/billing.md | 2600 | 1767906469 | 91a3b87 | 94f8550a4ff7e5d147b609192fad42b1e6ad0ac8bdbcc99d57abfcbffdfcf54d |
+| docs/build-status.md | 1185 | 1767035081 | 4dc46db | b8639bbe84023567dff59b777323a25225fe07fd2bca9a45b816d97ef626c526 |
+| docs/build-verification.md | 2784 | 1767035081 | 4dc46db | cb81be5f5274d43727f1fae16f31f75bf8edc45d7c1e233470b68953617be55e |
+| docs/command-verification-guide.md | 4956 | 1767035081 | 4dc46db | 5e364ea89b361acad2b4591c3076122e076a3eb165ec83294eece19bd36093e4 |
+| docs/data-flows.md | 15921 | 1767035081 | 4dc46db | 892f484638514f062bf9cf6c0d7dd132f47c2793ff5802f88cf190296351439c |
+| docs/db-migration-neon.md | 13137 | 1767035081 | 4dc46db | 4bbdc366bf245a2649a1aa11311525139ddff7e11109cc1a3de09cec3e82bcbe |
+| docs/deploy/checklists/production-hardening.md | 8353 | 1767035081 | 4dc46db | 7966e34fabbf912e2e398213baefe9ecddcd5d9ae87735736a18101630b67bfb |
+| docs/deploy/checklists/render-retail-api-env.md | 7457 | 1767035081 | 4dc46db | fa21eb1bd4133fe8a288abf0038a9dbcbb63efd6f840ec2823ca061db1c2a3bc |
+| docs/deploy/checklists/render-retail-worker-env.md | 6150 | 1767035081 | 4dc46db | 3cc2aaef2bf2b3e04eb92b26ca985f3a14590a317451a9b9100bba80cb70518f |
+| docs/deploy/checklists/render-shopify-api-env.md | 7412 | 1767035081 | 4dc46db | 69ad9476d1bf724974cb1b35fa0baa8913ba4b27577b3cf831532692c30c7c98 |
+| docs/deploy/checklists/render-shopify-worker-env.md | 4136 | 1767042507 | 50f0f9c | 27907775329f837285c24afaaf316e50531a0b48689c0d406651725ad085e3b8 |
+| docs/deploy/checklists/render-web-env.md | 1488 | 1767035081 | 4dc46db | 63e1217512258bf94580997528c3bb138d80f96a70939805d9b4c55060275d7d |
+| docs/deploy/render/PHASE_D_COMPLETE.md | 7344 | 1767035081 | 4dc46db | 2556e3f64b7a7dfe676d3d193f6a1609b58d03b47795b40275423c4ba0f8dd2f |
+| docs/deploy/render/QUICK_REFERENCE.md | 3126 | 1767042507 | 50f0f9c | 59778f481376567a7cc5c348afbe3f5b3c748a1e4ddb654f1ddaf6a650f6a976 |
+| docs/deploy/render/RENDER_DEPLOYMENT_FIX.md | 2698 | 1767047076 | 996b171 | 193b9d8c2a3ef6dfb98f57353d0b49f3a056898075fd32bfbb38b15b93cce2e7 |
+| docs/deploy/render/RENDER_START_COMMANDS.md | 2776 | 1767047622 | 6f842df | 2ebd94ded2c8174fcb1a590be4a04e0137d265ad21a5c57b6a4db1953407486f |
+| docs/deploy/render/RETAIL_API_BUILD_EXPLANATION.md | 2423 | 1767048456 | 02391c4 | fd23092f431a006f3c61a2bccbf8dcfb350a26a3303c8c97680a5c5182069ef3 |
+| docs/deploy/render/RETAIL_API_FINAL_COMMANDS.md | 1970 | 1767051075 | 8466ea6 | c6d7345f7b6b7c699c4271eaf0372bfc656743c16074bef42577fbdc857ac2d1 |
+| docs/deploy/render/RETAIL_API_FIX.md | 2147 | 1767049634 | d7d586b | a12369423d67062b6ff2fa5baa7d9e3444f52f31d354e21a838fe9cdb08026d4 |
+| docs/deploy/render/RETAIL_API_SUBMODULE_TO_WORKSPACE.md | 3017 | 1767051075 | 8466ea6 | b0b412d49ad767ad27a651ec702816713f568235506188079b49dfa91be674f5 |
+| docs/deploy/render/SHOPIFY_WORKER_SEPARATION_SUMMARY.md | 2183 | 1767042507 | 50f0f9c | a0f0fde7c9db0770cae645d38231733300a65616d4f3d45ccf1b72ad56fc7342 |
+| docs/deploy/render/SIMPLE_DEPLOYMENT_GUIDE_GR.md | 9989 | 1767042507 | 50f0f9c | dc2cc5fabdc5be7fb031c895e27d5e00d0f55720137e136a45a3dda9c9f76361 |
+| docs/deploy/render/VERIFICATION_COMPLETE.md | 4289 | 1767035081 | 4dc46db | b530c8e7c7254ec27dd2af681ad783a73d8673279658bbe01c690d24a23e16f7 |
+| docs/deploy/render/WORKERS_COMPARISON.md | 5323 | 1767042507 | 50f0f9c | f667fb053d4c5790efa13035edef509705da927b9e782c8f1653061b548b0080 |
+| docs/deploy/render/backend-services.md | 6325 | 1767035081 | 4dc46db | 41d32abd08bc54e5e3745bec4151c88f1a0e45ff87a92264170335f83a9ef02c |
+| docs/deploy/render/go-live-runbook.md | 11499 | 1767049634 | d7d586b | 79e4ae3f37f973e70d89a87de64ac236988d2858d4715744ac1eee169706ac42 |
+| docs/deploy/render/public-url-and-cors.md | 7667 | 1767035081 | 4dc46db | 8a1f3b3f2dea13c0c8aa14ab4a7ddffd964085ef1198f14e1dd551927d7ed341 |
+| docs/deploy/render/services-and-scripts.md | 5595 | 1767042507 | 50f0f9c | 3f158b2975430ab64a2c780ff8cabf73563658eb6209084e3b99168dfdbad3c3 |
+| docs/deploy/render/shopify-worker-analysis.md | 4922 | 1767042507 | 50f0f9c | 99428ec031bbedb3ee7f643c3a4dde66a238a4d131bcf0b84fb09d87f09548e4 |
+| docs/deploy/render/shopify-worker-separation.md | 8092 | 1767042507 | 50f0f9c | ab109e4b394ffd7c8b082ed2f81cdd645b20e3acfccd4acb0bc1556fd067336d |
+| docs/deploy/render/verification-results.md | 5018 | 1767035081 | 4dc46db | 82dffb037b1a9acf9e46119dda8ce824784b39cd2c893fa8fb14d170713fc608 |
+| docs/deploy/render/verification-shopify-worker.md | 4572 | 1767042507 | 50f0f9c | a7e1ea23f7aadf823c2ce0e348ce20cb1ca161c6b17813794254adb030a0987c |
+| docs/deploy/render/verify-commands.md | 7579 | 1767035081 | 4dc46db | 36e9bb15a5fe60086737a104ca6fcb6ec69d83872637b0874baa1f2d0116df41 |
+| docs/deploy/render/web-service.md | 4577 | 1767035081 | 4dc46db | 2b74dfa0eef029369d78f8e6027d7beb60541efb120721e646970653bb969ef5 |
+| docs/deploy/rollback/rollback.md | 8816 | 1767035081 | 4dc46db | 06084e725e0aff13d91aaf64490d37d20969e3943a16ec4a92c7edbf2b65da25 |
+| docs/deploy/smoke/PHASE_E_COMPLETE.md | 4259 | 1767035081 | 4dc46db | ba8055c2cbb96fac30a15ee360a542f5f8f66f1ec60284885d42573b8601342c |
+| docs/deploy/smoke/observability.md | 9747 | 1767035081 | 4dc46db | 1ff4f5ba8b25bda43aabcdefb30a2a7401a0611d901030f5b56477e14c870f9c |
+| docs/deploy/smoke/smoke-matrix.md | 15136 | 1767035081 | 4dc46db | 590f3a405527ae0da2092161b44b2488499ad20b5df75d46962bb699522dd9c1 |
+| docs/deploy/worker-modes.md | 7507 | 1767045513 | a950737 | 5de737ef7dd226095601586899d0af78576d43fb453916fafbb13ef87fcd706b |
+| docs/deployment/render.md | 7955 | 1767035081 | 4dc46db | afc672c6d8220204074755d20c066abb218a597a8c134051e0315ad6bf4a7a3a |
+| docs/env-and-monorepo.md | 15864 | 1767035081 | 4dc46db | a773bdf6ee6790fadfb3b0701b3ae17ca8f928f027cb8824e34d7c0b82ed3552 |
+| docs/env/PHASE_B_ENV_PLAN_COMPLETE.md | 6553 | 1767035081 | 4dc46db | 9438d52039267b31c15cae0815e376ddabe294ab006dc2dc581f6d68f1f24f99 |
+| docs/env/audit/env-loading-and-validation.md | 5290 | 1767035081 | 4dc46db | 0651e242c3470f0dcf48a0257d2cbf5bce00322cb238db2187071125274517b8 |
+| docs/env/audit/env-usage-map.md | 15622 | 1767035081 | 4dc46db | 425dd5b880701561a73029bdb03e7507449a1f6631cf6bc36dfa1ca12c2841f3 |
+| docs/env/backward-compat.md | 5007 | 1767035081 | 4dc46db | 2ab097f75b548fe02c778405c8cb9d093c160f385047d65be3164963a5bef17b |
+| docs/env/conflicts.md | 5361 | 1767035081 | 4dc46db | 45ccea986834ca4a2077a967720c2ba17748a57dd6d3012fdd8c0ae26f3fdf03 |
+| docs/env/dev-strategy.md | 5420 | 1767035081 | 4dc46db | 504846036ff706dccfc9623c53cc6fd5e96d62cafff56c4fee91c058754f2dd3 |
+| docs/env/phaseB-completion-summary.md | 6333 | 1767035081 | 4dc46db | ace12cb72a5570221cf883cb6a37099de907131ef30d7593fa1fb42c1bcc6a5f |
+| docs/env/plan/env-examples-generated.md | 7685 | 1767035081 | 4dc46db | 11fdf2eb2e1d2372a230c59b7f82a7071f2bf413b63cf2cb1ef5b3cc397f8178 |
+| docs/env/plan/env-file-locations.md | 3464 | 1767035081 | 4dc46db | c705ce65573af8445e2b638aefca31bff2491d315917e88d0bec8f954a911251 |
+| docs/env/plan/redis-requirements.md | 4032 | 1767035081 | 4dc46db | 6a1cedbd701d4e62ccc720d3cf41649695ef01d4f9de19df3ee95e5f3b51ea31 |
+| docs/env/plan/url-shortener-strategy.md | 3512 | 1767035081 | 4dc46db | 30a4677cef550016881bdad656d045788fb551b51536ff29364e26ec18fab087 |
+| docs/env/render-env-checklist.md | 8983 | 1767035081 | 4dc46db | 7a7ad78636e529f9c47e40cc7e891150a6a37cea601e040d887c5ab937633d9f |
+| docs/env/standard-keys.md | 9815 | 1767035081 | 4dc46db | 4cae23a6ab9e5cf565993afce8e73692e6b9b2b94784be8fa73db27612a4f4b7 |
+| docs/env/usage-map.md | 10205 | 1767035081 | 4dc46db | 11ee38e254e735766cc1e80e35d067d2a9187a22f3382fa1136428e88a97aa2a |
+| docs/env/verify-env.md | 1926 | 1767035081 | 4dc46db | bb057db67b9cc09effcdc328d5de7f3fa93eab2e75d293502f20531ad1d796b6 |
+| docs/env/verify/phaseB-env-verification.md | 5283 | 1767035081 | 4dc46db | 25b98ec5cf1652a2c7d18dbbc5a0793d7d36a2bbb5026b38d8f26c6b3c933993 |
+| docs/executive-summary.md | 8994 | 1767035081 | 4dc46db | 3527d59294bae018ede15bc082db9c1559cce607bf6a835e79ae938170db4ce4 |
+| docs/frontend-endpoints-map.md | 7386 | 1767035081 | 4dc46db | 30e758f3e786306f801dbd83cbebf32a1f436e50c46cc098b309883238dcd0d0 |
+| docs/frontend-readiness.md | 15186 | 1767035081 | 4dc46db | a32095c2e96cf36b890c290f8ea1de917f27f82b211c19de4828cbad6867741a |
+| docs/frontend-unified-map.md | 8060 | 1767035081 | 4dc46db | e642404f7992224a4750a8944d91b4c3b339b06838f18258c8318f23b44e7f37 |
+| docs/frontend/astronote-onrender-routing-and-frontend-verification.md | 28876 | 1767056396 | 7bc39ca | b32e1c3093e480bf65651057db7872c86bbe6092167d462ac9700c6fd5783b34 |
+| docs/frontend/multi-service-frontend-verification.md | 23929 | 1767054445 | 303d520 | 133b5c904f10aca95f9cc89543725977b71195ea1f1b5291a4755b454ec53173 |
+| docs/frontend/production-routing-and-pages-verification.md | 19035 | 1767055565 | 1c30c37 | 69d50c88e5e792862170ecd0f49b56645f6a177dca196a17933b5a5a59a5c78f |
+| docs/frontend/retail-frontend-verification.md | 26342 | 1767053874 | bbc530b | 935cea395152fc849a24e69f587e8cac8bcb2fe128ef08d8c5c707e4f7cd0b21 |
+| docs/hardening-plan.md | 15990 | 1767035081 | 4dc46db | 9010fae5768407089195e7cc0c2e8b8c7538b302c1101e17763b982fd2a6f50c |
+| docs/migration/retail-web-legacy-to-web.confirmation.md | 18500 | 1767053874 | bbc530b | d4216d044d6dcfd910d15107acbd4f7e47fe4ea000099d8e9c666386efb54867 |
+| docs/migrations/phaseA-COMPLETE.md | 3443 | 1767035081 | 4dc46db | 6d42eeea6095d1f074d9131545d370f55044b33c8967086a146df7ad72052603 |
+| docs/migrations/phaseA-completion-summary.md | 3731 | 1767035081 | 4dc46db | 97d85686818d28470de8d4f26bc72100376aa87c732e0bffe7c57b03dfd458ae |
+| docs/migrations/phaseA-flatten-retail.md | 7396 | 1767035081 | 4dc46db | 2af5a2527361e5aee38a6731faf8e4e3809fb6f24c1953f06640e064c65a0804 |
+| docs/migrations/phaseA-verification-results.md | 3172 | 1767035081 | 4dc46db | 91805741aa1ffd5e86d22cf5c06ded74753141cfe225f4b1ba2e677970c66182 |
+| docs/monorepo-migration-summary.md | 5466 | 1767035081 | 4dc46db | 3f0e8f9c88479ef2972e79c3ec9f62a9000571097b3a32fb6e0610fe698a1d0b |
+| docs/monorepo-structure.md | 6616 | 1767035081 | 4dc46db | a5a59bf6dbc60c23deefcc3f5da89435b5fee953fb64e0c920dc6bf156087d26 |
+| docs/phase5-frontend-implementation-summary.md | 8469 | 1767035081 | 4dc46db | be4f238adb5cc741db7b95469393db6e822921f33c6409e8851b53d296fee841 |
+| docs/phase6-fixes-applied.md | 2766 | 1767035081 | 4dc46db | 83f08566fd1f363ec239812813ae3ef8fcfa4d08e82dc31633b2eb7cfb382c9c |
+| docs/phase6-production-readiness-summary.md | 7032 | 1767035081 | 4dc46db | faa3a14e2a07a9085db6cc62395a0e6c22ecc19c348df2cf9d2e2a4f57e7d1d2 |
+| docs/published-url-strategy.md | 13137 | 1767035081 | 4dc46db | 362bca1f35b45db0aec724d8924887496e1eb71f08ec870af6544340672a67c0 |
+| docs/reference/BILLING_INVOICES_PURCHASE_HISTORY_COMPLETE.md | 14530 |  |  | fd6a12d08d94edfbc0d6b40f3e42e4cc9af4d6dd52eae6df8e8297f26e0c2488 |
+| docs/reference/BILLING_INVOICES_PURCHASE_HISTORY_FIX.md | 11649 |  |  | 0e22911529302e32814a12cef5b67dd477033725717ed2cb2c12a44ab73d2a43 |
+| docs/reference/BILLING_PHASE_3.5_COMPLETE_IMPLEMENTATION.md | 12981 |  |  | 50820e6cae99fe4606cf13f794e172b1e40bcc6179465a2d995b5edc20ed58fc |
+| docs/reference/README.md | 5546 |  |  | 72b02b6665a9bdac687fc7c6c5d77a3a074c07ce0c1ced01d25ec2565677d01e |
+| docs/reference/apps__web__README.md | 2920 |  |  | 53fa56b98ee53e848396f728087f8471fa71c7f3e24d54198cdff9e47ec7da48 |
+| docs/reference/reports__billing-e2e-final-check.md | 1864 |  |  | 0c44fa726e8e395dfdb3432d3b0453935d236f22a6d9850c44166ebb0288fd0e |
+| docs/reference/reports__billing-implementation-final.md | 3331 |  |  | 445cdb13868ffb893e254df8514d5333d15b8f075a1fe1cd7e280384abf6f48f |
+| docs/reference/reports__global-templates-implementation-guide.md | 7367 |  |  | 0ddda541d6eca59d5d818241afa488b3a65b9bd59955b1124e4d64701fb81e3d |
+| docs/reference/reports__store-type-templates-complete.md | 4742 |  |  | 918fffdef21e94ea31a70b87ce31fc7f9fed97c4d7071ae9b8bda1269f4cf11e |
+| docs/reference/reports__store-type-templates-frontend-implementation.md | 8359 |  |  | b9ffcfa9a88b7c5684b0c0b5020e86464de172eb832e3a7b9945640c7540b739 |
+| docs/reference/reports__store-type-templates-implementation.md | 6063 |  |  | da7d2e7546423169d15a974561be97f22b2eae4bb6597fa96da7ed39eaec54bb |
+| docs/reference/reports__stripe-subscription-url-fix.md | 8686 |  |  | 66f5c0f930191a87ca7463d1bb0de8e780718f032761b53de9955d34729b8da2 |
+| docs/reference/reports__subscription-gating-allowance-implementation.md | 3546 |  |  | cb84119eb6fc9f31fa13cef84435c99ace0cb32d79d31396b704e6b51a14ccff |
+| docs/reference/reports__templates-seed-run-guide.md | 4722 |  |  | 2c7530d1b63a7e01c8ad734d8b7bffcb304c301e2044dad3a03e427909ab0a8e |
+| docs/reference/retail/AUTOMATIONS_IMPLEMENTATION.md | 7013 |  |  | 7e4ae4f146c66827828421bd7b9fa06b379c8ae9f2b6be9ba7a22eea45c878c4 |
+| docs/reference/retail/BULK_SMS_CODE_VALIDATION.md | 9249 |  |  | 09e6751a1cda296b0f9e092478cc0e7c2dc60e05535a82262be0fa47c2cb4f96 |
+| docs/reference/retail/BULK_SMS_FINAL_VALIDATION.md | 9336 |  |  | e258fcec2a9da4631f41c3449dd0715441102c00a74c0c3b0bc6212088a845c5 |
+| docs/reference/retail/BULK_SMS_MIGRATION_PLAN.md | 9614 |  |  | ab5089b8c3a5a5a9a75825999263ecffbe00300cecb617fc73db96fe6ca4ead3 |
+| docs/reference/retail/BULK_SMS_TESTING.md | 8795 |  |  | cf5bc16d496f0007d471ab32411f952f02b10fa07c0459ee3aba969ddc9a81fc |
+| docs/reference/retail/CAMPAIGN_SENDING_SIMPLIFICATION.md | 5623 |  |  | 4046f40be42b6025759fe530a241fbf6a75cbaa28dfe2e74831cab0ca496481f |
+| docs/reference/retail/CODEBASE_CLEANUP.md | 4041 |  |  | fc129f839577a47574c9172c8e5e74cae836b133ee379f55e68a69f282bbbd7c |
+| docs/reference/retail/CONTACT_MODEL_REFACTOR.md | 9070 |  |  | 2a2e52f5378cf5d656a213ab2349a873aed556087084e30d3342bd2153c4a0d3 |
+| docs/reference/retail/CREDIT_ENFORCEMENT.md | 5512 |  |  | 5e0aa474fc6905ce762f9fc67cbec6f5e467f6818fd9ad1ebece622b709b8a96 |
+| docs/reference/retail/ENVIRONMENT_VARIABLES.md | 17856 |  |  | bb34b771ff4bda4f2e8285d000a276363dec2a8ed405d29aac6ef999a34f0758 |
+| docs/reference/retail/ENV_VARIABLES_QUICK_REFERENCE.md | 2292 |  |  | e9d8b976c5a0d7c6a0dee7e2d5fc49ac343e55d3ebc4c28dd12453d1d7b33ddb |
+| docs/reference/retail/FINAL_INTEGRATION_CONFIRMATION.md | 8972 |  |  | 5c51f94ecf34efe7d1331a70ac4e5cb343b95d93c801aa4ba10b4ed4eddcbb90 |
+| docs/reference/retail/FRONTEND_BACKEND_INTEGRATION_VALIDATION.md | 12125 |  |  | 95e68cfecffef4a6b260f7e0db8b44cf90057c76c2ddde4fe224b797ed2bafd3 |
+| docs/reference/retail/IMPLEMENTATION_CONFIRMATION.md | 11473 |  |  | ed380236e729402000c2aa88333363c87ea4170ff64cd638d407dcfa4fa8c77c |
+| docs/reference/retail/MESSAGE_SENDING_GUIDE.md | 32770 |  |  | 6d9300e79de7abe48d745d0adc09679767a4fbcada5a79440a17f49cfde7a2ab |
+| docs/reference/retail/MESSAGING_STACK_COMPLETE_REFERENCE.md | 65326 |  |  | c7ddecd1c8081f5e6aecd6817fb6917083e3d0a3a11e613f2972ad474cd53cf5 |
+| docs/reference/retail/PHASE_2_EVALUATION_AND_RECOMMENDATIONS.md | 15184 |  |  | 07c02021d7a7c581641c3e06b9726aa3a523323be723e0189f1af91586a7642c |
+| docs/reference/retail/PHASE_2_FINAL_CONFIRMATION.md | 11147 |  |  | 2b5ee09c142de80a6de87a728b0671f889484b4d11f8af58860f3742d5a352b9 |
+| docs/reference/retail/PHASE_2_IMPLEMENTATION_COMPLETE.md | 5997 |  |  | 4e014fb44d7f1b34c9913a8cd6816913f23662a911913652e6d1b92a34eb42a0 |
+| docs/reference/retail/PHASE_2_IMPROVEMENTS_PROPOSAL.md | 11654 |  |  | 626a182a4467f1c79003886cd35db7547c872a73590be11d1f7f36971c98b041 |
+| docs/reference/retail/POSTMAN_COLLECTION.md | 5927 |  |  | b4be2ad4ac9e6fc63bf6fa9b0fa528dd2a078901925a7a6fb51be50e42d8cc36 |
+| docs/reference/retail/PRICING_MODEL_IMPLEMENTATION_GUIDE.md | 35335 |  |  | 2f4815d625dd1d4aed13a2f23842313f50776e91da123fa24a06a0cd67a07e1b |
+| docs/reference/retail/PRISMA_ENUM_FIX_RETAIL.md | 1482 |  |  | 0a3aaf825f5ee93c19d9a31bf85a8a18bc8039e40b731535b0a7445ec23c62a2 |
+| docs/reference/retail/PRISMA_GENERATE_TROUBLESHOOTING.md | 1824 |  |  | 4b9e62fa794fa66cca0a956a5fbcc628d9f07ed7881b4616c1fdb393f43efbc8 |
+| docs/reference/retail/README.md | 24788 |  |  | 64b4181d6e45b94e57d5073bd5e943be690da4141cff3059e216f3ba6682e449 |
+| docs/reference/retail/RETAIL_BILLING_EXPLAINER_GR.md | 7061 |  |  | 1792b7a51fd70422d43639b6f46d549135598f1e53d2c9670802d6c4add408d7 |
+| docs/reference/retail/apps__retail-api__docs__README.md | 4644 |  |  | ee2923db5199b28bb9d5f5afa6b66b1d3ec9f8fb75017c0e1315a09b6c0277b4 |
+| docs/reference/retail/apps__retail-api__docs__REDIS_QUEUE_INITIALIZATION_FIX.md | 4305 |  |  | 6522f7ef194231fc204de7fb6b37b2410d57762b2c3972cc6610d0a3071a449c |
+| docs/reference/retail/apps__retail-api__docs__STRIPE_INTEGRATION.md | 9036 |  |  | 6fc67464d2f1171e8b751aaecf5705384b0629d16321e10cf32a985c43c8c0be |
+| docs/reference/retail/apps__retail-api__docs__TECHNICAL.md | 19309 |  |  | 507537f354231aa17365ab9e3d15589ec74834f0f5f602bc5345d44ab8c278d3 |
+| docs/reference/retail/apps__retail-api__docs__TECHNICAL_CONFIRMATION_FINAL.md | 8131 |  |  | aaee7e357a3ac118b7e974caa6808521d8bc6035d69d6fe6aff3b09895da73ae |
+| docs/reference/retail/apps__retail-api__docs__URL_SHORTENING_IMPLEMENTATION.md | 7013 |  |  | 1f308efa704300603aad5b6837aa80b8a1530c4458ea363b61be7e147c85cefe |
+| docs/reference/retail/apps__retail-api__prisma__migrations__20250302130000_add_billing_status__README.md | 204 |  |  | 2740a4374fb86791f2f1afa2c1cb8eccfd3dbb4622ac6b4bce5408f4e3f1dd4c |
+| docs/reference/retail/apps__retail-api__prisma__migrations__20250302133000_add_delivery_tracking__README.md | 259 |  |  | f0000a4730554f23e33aebd303eda3aeebbe7c61d28a66d2cf6924102f3843ed |
+| docs/reference/retail/apps__retail-api__prisma__migrations__20250302140000_add_short_link_and_conversions__README.md | 83 |  |  | 1fa91dd31160ffda516a625d08b9e783f7199ee1b9f17e510e61985c0cb06a80 |
+| docs/reference/retail/apps__retail-api__prisma__migrations__20250302141000_link_shortlink_to_message__README.md | 58 |  |  | 46435e17f88ed5dd810342addb00f67716be1480e25834a4722b5b18f33d9974 |
+| docs/reference/retail/apps__retail-worker__README.md | 4587 |  |  | 3fed8286704d9c238fe8cd80a7f6ec1a3c62cdc777bd07212dd766a2fc25bc30 |
+| docs/reference/shopify/apps__shopify-api__CAMPAIGN_SEND_EVALUATION.md | 13243 |  |  | 5aef8366f5341be4a8c705b8b9406c8fce9a51d85c975a7f79e0511071ad98f0 |
+| docs/reference/shopify/apps__shopify-api__CAMPAIGN_SEND_IMPROVEMENT_PLAN.md | 9493 |  |  | cc9f829a833eb94cdde229fed401e88ed5b28ba5697e16c645f719c21a95f734 |
+| docs/reference/shopify/apps__shopify-api__CREDIT_RESERVATION_IMPLEMENTATION.md | 3599 |  |  | 83151964e757a0538aa7efdd7760b39051c278ccde84a805a6b54837add47b68 |
+| docs/reference/shopify/apps__shopify-api__README.md | 9698 |  |  | f823952570d668bc48385a16d1ae23361194820c0ad5e5ec7a5507dd3ac818cf |
+| docs/reference/shopify/apps__shopify-api__UNSUBSCRIBE_URL_FIX.md | 3354 |  |  | 13b9436248cb176eac85954fe7229226199129dbe4cd4ba22a21f76674d33a35 |
+| docs/reference/shopify/apps__shopify-api__dbDiagram__dbDiagram.md | 11731 |  |  | 6e9db91e52b042b08c318eba4543a4ad0e61be1e96d12f6a3e7816c6586cb245 |
+| docs/reference/shopify/apps__shopify-api__docs__automations.md | 5198 |  |  | e756b390cafa1fff0fd98cd427ae73e4758261864969917d77ed5386d4159394 |
+| docs/reference/shopify/apps__shopify-api__docs__runbooks__credit-reconciliation.md | 4026 |  |  | 4847bb84dd1552e8f19be68b8e21944aef924970efc1be360a9a112dd7f1403b |
+| docs/reference/shopify/apps__shopify-api__docs__runbooks__stuck-campaigns.md | 2909 |  |  | b05c91700227dbace122f08b327d9e8519b5be056474fac66174d57016873add |
+| docs/reference/shopify/apps__shopify-api__docs__runbooks__webhook-failures.md | 3132 |  |  | 92d581ed834f0fddcf7eff993d5c45787d75252ce2f26428d7ddc954817f7249 |
+| docs/reference/shopify/apps__shopify-api__docs__segments.md | 3848 |  |  | e5463566246d592ea7b45397bfa06da654693582b620bccf1dc997a5b1652a1f |
+| docs/reference/shopify/apps__shopify-api__docs__web-backend-contract.md | 9222 |  |  | ada73967e6596e40bb296184f04c3256811abdf45fa449201e41d2eb293e7ec2 |
+| docs/reference/shopify/apps__shopify-api__tasks__phases.md | 5273 |  |  | 70bc7c40e8ab38b43282aa12a3c3a0035b2d07034791cf36fff86b203c383869 |
+| docs/reference/shopify/apps__shopify-api__tasks__phasesDetailed.md | 13254 |  |  | 0d71de9d405719af92fd7f302f6348a78d82581ad6ecbf53baa6199347a5f70f |
+| docs/reference/shopify/apps__shopify-api__tests__README.md | 1996 |  |  | dab1e9d927f039ed0465c05e1a0d1700d39f6a2e643bd835429d70ad98c2d925 |
+| docs/reference/shopify/apps__shopify-worker__README.md | 3762 |  |  | 4990caf63c46e6a3b9741c4d09fd6122ca82e0031f923a818b9576787c2a0ffa |
+| docs/reference/shopify/reports__shopify-auth-loop-fixed.md | 2596 |  |  | 18004673d4310be97f1a2daab0f0bef86b4f324e26cbd428be788aa8fb86e92d |
+| docs/reference/shopify/reports__shopify-automations-graphql-implemented.md | 10687 |  |  | 4a47b11fa94c3fe1dd450aa0df0f3f4b757f0cc1d3b455cc69880ebe7725a651 |
+| docs/reference/shopify/reports__shopify-billing-completion-confirmation.md | 15284 |  |  | c43a7ad9e4af86ea647ae4402f26ad1fb29182790264fa2f4107273db842539e |
+| docs/reference/shopify/reports__shopify-billing-switch-policy-decision.md | 2775 |  |  | f357ff4217a66fe95cc7c2c11131e80c5d9a1aeaf35b56af0396cdffa542db46 |
+| docs/reference/shopify/reports__shopify-campaigns-list-create-implemented.md | 9702 |  |  | 92d1ee41081856551e1530c10b19af007357a9dbad5d42b634f8ac92ea64cb97 |
+| docs/reference/shopify/reports__shopify-campaigns-ui-and-api-implemented.md | 8991 |  |  | 2478778712bf29cf3bfc162ff14aeca8a64823f6da7fff159c8b8059c1f057d0 |
+| docs/reference/shopify/reports__shopify-campaigns-ui-confirmation-result.md | 8067 |  |  | 345f02b91f8d3fdf1facf3b5de226ca77d5229e786ed7f6bb21be7468327c206 |
+| docs/reference/shopify/reports__shopify-campaigns-unsubscribe-implemented.md | 8269 |  |  | 9edd4ad36da0bf423cdbac95cbbcd080840556609bf66d0100fb68209154baf6 |
+| docs/reference/shopify/reports__shopify-e2e-implemented.md | 11351 |  |  | 779690f93b4cd86249103f2e8add746a6773143b922effc8e5650f44430b87a7 |
+| docs/reference/shopify/reports__shopify-frontend-api-implemented.md | 11256 |  |  | c6a2dd4f7a16875872ed3e94363838fdb281d81c125d1948fcf4b7aea260d454 |
+| docs/reference/shopify/reports__shopify-frontend-contract-mapping.md | 14832 |  |  | 928fd53d934005766b2bcf2bfd354d64384d343a8ab1d8f7a539591e4c11ba94 |
+| docs/reference/shopify/reports__shopify-frontend-requirements-implemented.md | 11588 |  |  | 5ab370b8a1757aaba3caf4cfdee32808e1d492223e45cfd85ca43c768608776d |
+| docs/reference/shopify/reports__shopify-frontend-ui-implemented.md | 9764 |  |  | bb674a7feff3474b40ef8c8a2432b20b068d0d881ff4d2560f47c87c417edbf9 |
+| docs/reference/shopify/reports__shopify-headers-implemented.md | 12016 |  |  | 417757be406ea413ab96d58453f34edf54e9a2e0e0298ad4f08650565c3f1881 |
+| docs/reference/shopify/reports__shopify-prisma-migration-fix.md | 6727 |  |  | aea1e54ffb20a64b6661e7ef830adb603738af680dc0b4be0106afaf8771cd2c |
+| docs/reference/shopify/reports__shopify-select-empty-value-fix.md | 9824 |  |  | eae16b9341ccc8e1ab1a6393244e9326ed79fb2f260839cd86754f81d433668b |
+| docs/reference/shopify/reports__shopify-settings-implemented.md | 14399 |  |  | e603fd54e76a1c48155523295aab81ec3af0d8c44b752c1fb200e629da80fc1c |
+| docs/reference/shopify/reports__shopify-sms-campaigns-unsub-shortlinks-implemented.md | 12971 |  |  | 0878a1def7dd1724190e52fcc81fed1ced8ed5c4582241ac0258627f5fb98fd0 |
+| docs/reference/shopify/reports__shopify-styling-final.md | 9379 |  |  | 12ac5877214b0c61eea2ca066bd9f41ff842bce301c85df4611814bfbeaaf041 |
+| docs/reference/shopify/reports__shopify-subscription-gating-allowance-implementation.md | 4494 |  |  | fd504ded2997ea11322e55ddf8e9e40595265ae29af330fa9b9011a65c3ca35d |
+| docs/reference/shopify/reports__shopify-templates-seed-guide.md | 10316 |  |  | a17627387ac73f77e3e0ad3fa0ced32efcd6e231611cf2bcb9a430a66c9b2900 |
+| docs/reference/shopify/reports__shopify-ux-gap-list.md | 3663 |  |  | b7a4f9133bfa12965fc07c33d45f5804a7890ddc5b610388f5d099e961917533 |
+| docs/repo-map.md | 17218 | 1767035081 | 4dc46db | e83a786dbfc94b994367b6e59b712725cc9a5a2d7387fc639b69b0639f81711d |
+| docs/reports/BILINGUAL_IMPLEMENTATION_SUMMARY.md | 14097 |  |  | ef02111e966129f3ac41f4aad1e7c43d4efbf9f5c97fb644369452c7fe75bce2 |
+| docs/reports/BILLING_ACTION_MATRIX_PHASE_3.5_SUMMARY.md | 7297 |  |  | abe383656d2635951eb46507f8ff65b44eeb5e3aaae2920dc25cbdebb6f326a1 |
+| docs/reports/BILLING_CAPABILITY_AUDIT.md | 5466 |  |  | 0fc08366012e66f6ecceb09edb381ea9c1c4c7ac24ed0ff19c1770e202ab17cb |
+| docs/reports/BILLING_COMPLETE_IMPLEMENTATION_SUMMARY.md | 12716 |  |  | 34b678b669afc8c6e7038c2d3db58b97d5cb97c3f506b178719e548489bd1638 |
+| docs/reports/BILLING_FULL_CAPABILITY_AUDIT.md | 9832 |  |  | ce2a1011b0bc416286e385046253964ed936372a972d82bb28bab21f3d932078 |
+| docs/reports/BILLING_IMPLEMENTATION_FINAL_SUMMARY.md | 7799 |  |  | 6f4b90d331574494fd8613c5fd7c8af5a7b43acc59c9605594c677a27765f515 |
+| docs/reports/BILLING_LIVE_READINESS_FINAL_REPORT.md | 14561 |  |  | b8f5c5c526444ec93cb3e67755b9b08021e711ff9f713fcfe50db6dda1a22071 |
+| docs/reports/BILLING_LIVE_READINESS_REPORT.md | 13708 |  |  | 259785e9422f26f834cd0ae904e382d996fed25c17db39686bd18d8a7abdf564 |
+| docs/reports/BILLING_NEEDS_BASED_AUDIT.md | 8730 |  |  | 18da7bc857859dd5969a6a8e2b721f046525e94e6f72510581999a74ff890d2c |
+| docs/reports/BILLING_PROFESSIONAL_COMPLETE_SUMMARY.md | 9624 |  |  | 5a9564fc58c59735e8bc2af59d07fdb8600a03022bcc586c42fe3ad16af80738 |
+| docs/reports/BILLING_PROFESSIONAL_FIX_SUMMARY.md | 7967 |  |  | ab2d97a3ea29c73d5f9cc61c7cd15fc2620cb341b172d0f27890c51ac61c00bd |
+| docs/reports/BILLING_READINESS_REPORT.md | 12359 |  |  | 1c7d01e74c52788dd3068cd35e1e1cf71eb41d166d4006e8c6d8675fe4fa803e |
+| docs/reports/BILLING_TRANSPARENCY_AND_IMMEDIATE_CHANGES_SUMMARY.md | 8265 |  |  | f431c7794cdea1c7657dfa80b7279e0160e0ad13373dad56283abf0ae3423e51 |
+| docs/reports/FE_REVIEW_REPORT.md | 3305 |  |  | c7509201f13a44312669d79813bd7f28b00326a9c9e25b224fd25689da808685 |
+| docs/reports/PHASE_3.5_FINAL_VERIFICATION.md | 11348 |  |  | 7ef8f9e0cf5b95116442ec37bc757721f9b51c7297e29d06658ce0407d118c42 |
+| docs/reports/PHASE_3.5_REMOVE_BILLING_GATING_SUMMARY.md | 9375 |  |  | 655fc55780c4c60f0713fd00683d34b63eb3d95dddae7d32fc348a0d8e2150e9 |
+| docs/reports/PRODUCTION_READINESS_REPORT.md | 2432 |  |  | ae638ecf4a669ce009b7ac3f57f3b7b92c7502b2a8ac9445cffc031a8f826214 |
+| docs/reports/PURGE_AND_AUDIT_FINAL_REPORT.md | 7129 |  |  | cdf78bce980976011dc1b40d1e40baba68751083217e92246245ccfd45d539b8 |
+| docs/reports/PURGE_BILLING_SCRIPT_SUMMARY.md | 7102 |  |  | 936bd96a271b47355bd0103507ab0d86b7cad7e2a9fc16c9f18acbf5cc09d0b3 |
+| docs/reports/SUBSCRIPTION_DISPLAY_FIX_SUMMARY.md | 6462 |  |  | 4d078c616ebff53117782a932f7fa55cc56a7c517ef9e965ff87d60eed88061e |
+| docs/reports/reports__audits-run-and-fixed.md | 9149 |  |  | cc59c900ccc1e71a9fb7f3b397a953df6088fc9cc53e8c3262d955001e9b65be |
+| docs/reports/reports__billing-audits-run-and-fixed.md | 7347 |  |  | 8df4921c2a3a1fca7a4a3c4c99acf10b0b3cc31b81d5e6c011d39c02a7108815 |
+| docs/reports/reports__billing-e2e-verification.md | 4364 |  |  | 21c1ff81e0a05cb99546b1fe938b7bd50e2e8817d088c2cf05f226d4cf6daff0 |
+| docs/reports/reports__billing-implementation-report.md | 10474 |  |  | 4d9ac537f4611b8c541fa985b37e4342755692d5265cab9e4e7f9331778499f2 |
+| docs/reports/reports__billing-process-report.md | 33140 |  |  | b1229a4b8735a2674e4ab67a1e4f08f5b5df3526f91e9bee420e046aa5a616ee |
+| docs/reports/reports__campaign-enqueue-scheduled-audit.md | 3812 |  |  | fc87bd201e3cee7f90a907e5a4bd63b6d09997813a566cdf9ca8c44404abb9c5 |
+| docs/reports/reports__campaign-statuses-report.md | 30818 |  |  | 57e3225959f09cd647b94cc9dc00faaca79a838633aa2485340df316c2fd67ae |
+| docs/reports/reports__monorepo-audit-build-summary.md | 4954 |  |  | 63971ef6597c42fb1c2942e1af1b22f282c6d68e0b9e403bbb12d104bd7d6af8 |
+| docs/reports/reports__store-type-templates-final-summary.md | 6046 |  |  | c65076883a0086789294a9729c3466b08a923e947ddec02b2e6158a926a9b25c |
+| docs/reports/reports__verification-tests-summary.md | 4143 |  |  | 2c376ffb01402bf197027917d0339c1e515b9a042850883120f8259d42132280 |
+| docs/reports/retail/BACKEND_OPTIMIZATION_SUMMARY.md | 7722 |  |  | 00fac625fc051c852cc07e7874cc3091a460e42dfb5c48ddbb3a697985d2ff5c |
+| docs/reports/retail/BILLING_PARITY_REPORT_RETAIL.md | 21820 |  |  | a9463453e842756ebf6682f270225a498d46b4c2d9cd1acb72b3ffd54d6274b3 |
+| docs/reports/retail/BULK_SMS_IMPLEMENTATION_SUMMARY.md | 5921 |  |  | eac9430043981e2eb9823431c84f7f79ae2e96dcd06983d1db0b2233b1070dfc |
+| docs/reports/retail/BULK_SMS_READY_FOR_STAGING.md | 7823 |  |  | 2cba0315b9515ec1b60622fe2e5df7848bbe5bd3be02353a19852d3e9d956c8b |
+| docs/reports/retail/BULK_SMS_VALIDATION_AND_SUMMARY.md | 17585 |  |  | 035470a70db661ca319da649aa7ab78301436e9435876b672594c7030cf26ffd |
+| docs/reports/retail/COMPLETE_REVIEW_SUMMARY.md | 4037 |  |  | 00f49c1a043b65e166e36bd9c44ce0561ef950be324b2b2cfaacc1b92df3bfde |
+| docs/reports/retail/COMPREHENSIVE_ANALYSIS_SUMMARY.md | 14880 |  |  | a7b82c41cbcbab701a1e607bf68f06a2cd32815505441d7a39f89ca6242d8278 |
+| docs/reports/retail/COMPREHENSIVE_REVIEW_AND_CLEANUP.md | 8666 |  |  | 23ff51b1263578d8660ae35725403af6fac699a86c2f507fd7aae6f231a4f6b4 |
+| docs/reports/retail/CREDIT_ENFORCEMENT_SUMMARY.md | 4856 |  |  | 6f9aa38c295bd59c33ff41ac907e32df74283d71114a602cd439c6eac2829ad7 |
+| docs/reports/retail/CREDIT_ENFORCEMENT_VERIFICATION.md | 5670 |  |  | 931367214b8909d76332c41efa1eaed3ca9a385fd6b21fb6b8c57957627bc268 |
+| docs/reports/retail/FINAL_COMPREHENSIVE_REVIEW.md | 8846 |  |  | 468c2b4c769758c68a71a22560bc56211568dd63517f7f72f410db838e2bd577 |
+| docs/reports/retail/FINAL_HOLISTIC_REVIEW.md | 5902 |  |  | b4ff4938c763b6cf92cdfff34083eb20c1839e894967488cb06e28679da9e069 |
+| docs/reports/retail/FINAL_PRISMA_AND_CODEBASE_REVIEW.md | 11400 |  |  | 2962d8182091898f8a8d09336f2c6f220416103d68dc5eb320d5c1c3b1b29026 |
+| docs/reports/retail/FINAL_PRODUCTION_READY_REPORT.md | 9371 |  |  | a07bb02fc71306f5c324b3724652ef7fd590c154ac828064e78f140281480b21 |
+| docs/reports/retail/FINAL_RETAIL_PRODUCTION_READINESS_REPORT.md | 3975 |  |  | 57ec4044107cb8e517df84024f6ab24e80830e155213cb79d693c5f05fd299f3 |
+| docs/reports/retail/FINAL_REVIEW_COMPLETE.md | 7772 |  |  | 550f2e5b15e950b1c795cc50f875fbeff10f480b31a2eb7b5dec36cc741766ba |
+| docs/reports/retail/FINAL_REVIEW_SUMMARY.md | 6390 |  |  | 4c2fa2b667920fad55900128117ecdb060525b254faca303b5bbd979029ddcac |
+| docs/reports/retail/FINAL_STATUS.md | 2519 |  |  | ddb82a4517e03b141182d275e483677a7f96276f96a4dfd13ad4f69d1cac5316 |
+| docs/reports/retail/HOLISTIC_BACKEND_REVIEW.md | 12112 |  |  | e9e0b9d1663da6d3de43cee9f317fdb58c52a0a7831c9cd8c5212d1db0bf1b75 |
+| docs/reports/retail/HOLISTIC_REVIEW_COMPLETE.md | 5653 |  |  | d787843942927b74acc296bd40ca734bcb6e83336193aebebee8bbfebf9e8f05 |
+| docs/reports/retail/HOLISTIC_REVIEW_PLAN.md | 2045 |  |  | d25d48e05c0a6acf595e05b9215dd551d5c250c977c68b4f31383a8b81889fe2 |
+| docs/reports/retail/MITTO_CAMPAIGN_REPORTING.md | 8023 |  |  | 3dd49915be1f6fa424d7583547ba7325ab89f8cd468474ac60df6d49b8f2360a |
+| docs/reports/retail/PRISMA_MIGRATION_STATUS.md | 2262 |  |  | 56ecb0083685842d62eac035bb0cab83daa921f3fb1968a284bc84f6badc0d0e |
+| docs/reports/retail/PRISMA_REVIEW.md | 6261 |  |  | 17f8de30127ffe35360a3ca1dcedc875301c2b5bf2abc85934ac971acf1ffdf5 |
+| docs/reports/retail/PRISMA_REVIEW_COMPLETE.md | 7921 |  |  | b15ac05497fa26eeed5848e863b59e64cb065cb17771ad868f4bf240f7d44ac9 |
+| docs/reports/retail/PRISMA_REVIEW_COMPREHENSIVE.md | 10473 |  |  | 587e87e031983b31b1ed0fa8931a9a17438b64be71a0fdd3db10b42c15f2b6c0 |
+| docs/reports/retail/PRISMA_REVIEW_FINAL.md | 6554 |  |  | aaf7dea70563e2a84a324dee52c2390273d7a3b1d071d9214e54e7fb55e993dc |
+| docs/reports/retail/PRISMA_REVIEW_FINAL_2024.md | 6873 |  |  | 0caf57f2eb0e21020506165f3c05c2740779c9f10ddfe9eb6e7dfa73f2fc96e3 |
+| docs/reports/retail/PRISMA_REVIEW_FINAL_VERIFICATION.md | 7864 |  |  | 781e6a44834adbdcc08e304e2870bd92bf9f179ef2f0c2b1f97a9e5d4b4a1f0e |
+| docs/reports/retail/PRISMA_REVIEW_POST_SEGMENTATION.md | 7356 |  |  | 3d0f124611d699618ffa29779b9c4495de832c9b3c315711d08b90c5823c73d4 |
+| docs/reports/retail/PRISMA_REVIEW_PRODUCTION_READY.md | 7452 |  |  | f390e13b88c8f3695af27a35d2032c95a44a808821340a0215826bd66afdafc2 |
+| docs/reports/retail/PRISMA_REVIEW_STRIPE.md | 7438 |  |  | 3d553dd5d0f0c9d926366a6692fd5a4b3807e0df5fcc6b02cc18b80bf21ff6b3 |
+| docs/reports/retail/PRISMA_REVIEW_VERIFICATION_2024.md | 7288 |  |  | 8c1bb4de256c750d6f153439ddc1974c6ca23f39580d9071fcad0df7bf96385e |
+| docs/reports/retail/PRODUCTION_READINESS_REPORT.md | 15771 |  |  | 57ced7becebd7156e36614f8ba113a916ec1245b6d964e93a5742bd50a6455d8 |
+| docs/reports/retail/PRODUCTION_READINESS_TECHNICAL_CONFIRMATION.md | 9108 |  |  | bb07f846cc7b024419e922d39b102cf4e5fc559a5c3061640245bdefbda7646d |
+| docs/reports/retail/PRODUCTION_READY_SUMMARY.md | 6946 |  |  | 467e71d4b927a02e22c13f29be9b7e68d85387859035fa85a2c3a6a383725d4a |
+| docs/reports/retail/RETAIL_API_PARITY_REPORT.md | 1723 |  |  | 6ed8e41348af0b266f8931a057a139e960f56809ce2345426f838ff8be006c01 |
+| docs/reports/retail/RETAIL_BILLING_FIXES_REPORT.md | 2079 |  |  | b2f9d47a4d93e8d2173b0ceb227df3e3f8f6a8240796de8a6ae66ea2d9ddd120 |
+| docs/reports/retail/RETAIL_BILLING_PROD_FIXES.md | 1885 |  |  | a0377c84b26335fa37de442a7d83c98d17d7aa007e33123fcf4df73e34dd6e63 |
+| docs/reports/retail/RETAIL_BILLING_VERIFICATION.md | 5610 |  |  | bc6d2ec430b58ecaf33c254a45c230fa101c7e630c251a39c3ab4a2906c43ecd |
+| docs/reports/retail/RETAIL_FIXES_COMPLETE.md | 6284 |  |  | dc10135d3700ac7d3bda1c5aa63d1ea88a7072711e6f717f4c17e24b25e19cb5 |
+| docs/reports/retail/RETAIL_MIGRATION_PARITY_REPORTS.md | 17215 |  |  | 2f7d1cf52a219a8cc02561a3290135dc76036f013e9afef74ccbc1fda665c9a3 |
+| docs/reports/retail/RETAIL_MIGRATION_SUMMARY.md | 9947 |  |  | c0ea559c9157b6d3e18ffc0b7ea224f1ea8eaf95a18fe7a69bfb43d346e6d5c0 |
+| docs/reports/retail/RETAIL_PRISMA_PARITY_REPORT.md | 1076 |  |  | fe1fa33cdde4611091ac8104cb9945f5f5c28ebba9ca7b80f9be13d27a826464 |
+| docs/reports/retail/RETAIL_TAX_PARITY_GUARD.md | 2050 |  |  | 6af1cf49bdc46c78a19d6774d1aca6249d535d9650233d574909605d92813b01 |
+| docs/reports/retail/apps__retail-api__docs__REDIS_REVIEW_AND_OPTIMIZATION.md | 11401 |  |  | c61dbea3447f9e24b3a44e03cf3829be9b5c0331bc8f01fec464d2a8938fb468 |
+| docs/reports/retail/apps__retail-api__docs__SIMPLIFICATION_SUMMARY.md | 8040 |  |  | bab5c29137688674975bcde9ec679695090200014be5a0e29df95b87fac980f0 |
+| docs/reports/retail/reports__retail-billing-audit-report.md | 20008 |  |  | 1743f8811600734f0803117d8ffbbad4b8392fbfb2515aca51163886c5c8ecbd |
+| docs/reports/retail/reports__retail-billing-frontend-alignment-audit.md | 4270 |  |  | 635e8361fde7e977f8a5eef4da9bdc7f3f0f6392be1f341ba6bf600c1231dfe2 |
+| docs/reports/retail/reports__retail-billing-frontend-alignment-implemented.md | 1917 |  |  | 53f0eda053c161cf3ac5a7a211e336db6fcce312db40ca78ea64ed8d11a7cec5 |
+| docs/reports/retail/reports__retail-billing-parity-report.md | 828 |  |  | dddccff7fcfc00ab90e740a0e37a878f96eec891727bb9629d434d248fee5f29 |
+| docs/reports/retail/reports__shopify-vs-retail-alignment.md | 12952 |  |  | 389950e3fb5fdc11600180b850744987c1debaf2ea5e895d7e359768c89b464c |
+| docs/reports/shopify/SHOPIFY_SEND_STATUS_REVIEW.md | 6032 |  |  | 62ae7c7dd9d0d764868b35a08039fa2b8fc2d75567073f5553e250de97ad7bef |
+| docs/reports/shopify/SHOPIFY_UX_UI_REVIEW.md | 2514 |  |  | cb4653125d1fa860e0c34724fb1c119a52242a803f221cecc9bf63f0797af6e3 |
+| docs/reports/shopify/apps__shopify-api__AUTOMATIONS_IMPLEMENTATION_SUMMARY.md | 11648 |  |  | 7a80f5d97ad208a16704f013c239b2fd4e269b6b43a2543836e4b13b32bea8c3 |
+| docs/reports/shopify/apps__shopify-api__DIFF_SUMMARY.md | 434 |  |  | 0ee475b02a8b4a905f77af905062a2b45b231edfd927a080486ae77b8fc770ae |
+| docs/reports/shopify/apps__shopify-api__PRISMA_SCHEMA_REVIEW.md | 8958 |  |  | d42c585f2be12a1a5ca31fee93eb85ce076a724283a1fa21927b4524c8dade81 |
+| docs/reports/shopify/apps__shopify-api__PRODUCTION_HARDENING_REPORT.md | 16446 |  |  | cc77bf033450dd4f5d981f2631cbe53a990f055be2c85e2d48969aabaf8338e5 |
+| docs/reports/shopify/apps__shopify-api__SHOPIFY_TAX_BILLING_AUDIT.md | 7382 |  |  | c442c1f2848801c76f028d4135a0b39d61bb686f9067da9c9db321e37978ac41 |
+| docs/reports/shopify/apps__shopify-api__SHOPIFY_TAX_PARITY_IMPLEMENTATION_PLAN.md | 2072 |  |  | 69fdb7b581888031514620280c15e259d76d0add95859217ecdd0616776914b9 |
+| docs/reports/shopify/apps__shopify-api__STATUS_FIELDS_REVIEW.md | 12827 |  |  | ad9b45eafbbdffcc41f5d0e6a887065fd77121924d655db657949494de8e9023 |
+| docs/reports/shopify/apps__shopify-api__docs__dashboard-reports-shape.md | 2511 |  |  | cb21c4468f6859c7f1c843f1233e55ad1843c3768b045fd6d8c426be87780383 |
+| docs/reports/shopify/apps__shopify-api__docs__phase3-implementation-summary.md | 5754 |  |  | 8d52517d912a92ef94709c8b97e85740b541b00cd49219fce7edccd898594006 |
+| docs/reports/shopify/apps__shopify-api__docs__phase4-completion-summary.md | 6327 |  |  | 3c7e03a5acde712609e68f667cb317eb42d7b482e46220dea54a905f33d5920e |
+| docs/reports/shopify/apps__shopify-api__docs__phase4-implementation-summary.md | 7954 |  |  | 82fac0594e519237baa416f9c76b66323c21a6dcb4c0c59c3659f14354c65694 |
+| docs/reports/shopify/reports__shopify-alignment-implemented.md | 10335 |  |  | e6811b5010c8814847c09da850a03506daa68a8eb7cb42c38df38921a8975e21 |
+| docs/reports/shopify/reports__shopify-audits-final.md | 8788 |  |  | 4c3f8e5d8815d66343434ad9b8e24ebc205b8aac3f4b40a40e526cc027a0e2de |
+| docs/reports/shopify/reports__shopify-auth-loop-audit.md | 3333 |  |  | b0872efb4c73898e637ab216199eb2a0480a56b9bafb0a0382a3e455dd25b393 |
+| docs/reports/shopify/reports__shopify-automations-graphql-audit.md | 36389 |  |  | c1e7c5f28ed1d0948e33128a92a29fa5f52e2c7ccf0e3955cbd6a4ceb0704abf |
+| docs/reports/shopify/reports__shopify-billing-audit.md | 4328 |  |  | 4946d1d211751b8e002cdce342a18aa6f759c639c6799c6a2cf0b98de519da79 |
+| docs/reports/shopify/reports__shopify-billing-code-audit.md | 6339 |  |  | bfc26046214a5e31e5a7307c90a6daf8033325c6cb1b1d916c0249960c292a4d |
+| docs/reports/shopify/reports__shopify-billing-frontend-alignment-audit.md | 19911 |  |  | a854ef67173c867ce4950894f72e71000d9c4effa14da37ef345c7f5504165b3 |
+| docs/reports/shopify/reports__shopify-billing-frontend-alignment-implemented.md | 11137 |  |  | 0c63a0873e686ba2f26469658063bcf9c13a583210a40e0c3a4f0e12cd81d2bd |
+| docs/reports/shopify/reports__shopify-billing-hardening-vat-implementation.md | 4022 |  |  | c1a989e0644cac892ca865128bfcd4c480189b527557969cae9f87c294b4a86b |
+| docs/reports/shopify/reports__shopify-billing-parity-audit.md | 16752 |  |  | ed497c604270c56d84380b9ed9db53b2a5ceebd60b9b0e05ad671d922177ce83 |
+| docs/reports/shopify/reports__shopify-billing-parity-implemented.md | 13615 |  |  | 7c865060113f61c2c9fcd43e5f9afd0ab1edbe107efb2180bd13f52e69196fc5 |
+| docs/reports/shopify/reports__shopify-campaign-status-drift.md | 3632 |  |  | 694e0154c734882f701047396c0015473b4078440e2873064411749b5a78210b |
+| docs/reports/shopify/reports__shopify-campaigns-list-create-audit.md | 16097 |  |  | 9c3b6599e88383f3909f1333a727de013a16837e4ca4640abbe850daef6ad713 |
+| docs/reports/shopify/reports__shopify-campaigns-ui-and-api-audit.md | 10639 |  |  | f615903fc8d499b25f6586a8515a5c0226fa3dcc33c0d1ec435e8dfaf84c2bed |
+| docs/reports/shopify/reports__shopify-campaigns-ui-confirmation-audit.md | 7902 |  |  | 582be5ebbcd643af636ff2e69029b7e2c554f96a460354af4bb787f556959144 |
+| docs/reports/shopify/reports__shopify-campaigns-unsubscribe-audit.md | 6044 |  |  | 9f0027a7ccce2da733978d0ada95146d2616b11228d08ba727a56bf0baadaf96 |
+| docs/reports/shopify/reports__shopify-contacts-parity-audit.md | 21044 |  |  | 8b886c4ed15096f2f3781c3ff26082f2f871845c527aae80a20ebcf813af5856 |
+| docs/reports/shopify/reports__shopify-contacts-parity-implemented.md | 12095 |  |  | 8f8f9e6b65373bec839f6856f679f84364c7bb6e176cf90bfe1559446466fd67 |
+| docs/reports/shopify/reports__shopify-e2e-audit.md | 17328 |  |  | 3108181d07eaadc5eb7244b3c42ff0bfaf288aa6a883399a93aabc06d2eadd11 |
+| docs/reports/shopify/reports__shopify-frontend-api-audit.md | 16856 |  |  | fec0cf4041b0e43a7de1eba6e46e4c9e9597e02992e1ee9a3661cef893748fa6 |
+| docs/reports/shopify/reports__shopify-frontend-requirements-audit.md | 9315 |  |  | 5b01bf33577437bbcc67467ef13ec93065b147ac28b01fcfade8dfc868d07b20 |
+| docs/reports/shopify/reports__shopify-frontend-ui-audit.md | 13937 |  |  | 8c6c92f874a397b28f63bfa8bf98265587f7230ff8e1ff7d27dd2a70bd6f71ee |
+| docs/reports/shopify/reports__shopify-frontend-ux-polish-summary.md | 8584 |  |  | 2124ee65a31090ed96b11a42623f96917a20e94d70950435c28663e29550e1fe |
+| docs/reports/shopify/reports__shopify-headers-audit.md | 6283 |  |  | 1795374970386d8d1fc1c477f6b63cc25158828a1d38c728856a33318277a9c7 |
+| docs/reports/shopify/reports__shopify-mitto-campaigns-parity-audit.md | 13491 |  |  | f45771dedd4ed7761ad84eb98911118bf8af7bdab1fbcb9f0b819a4afd8a6ff8 |
+| docs/reports/shopify/reports__shopify-mitto-campaigns-parity-implemented.md | 12163 |  |  | 7ce70db70b01831cf4a5fa8cd1e5f9a6777b4b10268d7d3dd1de46975f082f92 |
+| docs/reports/shopify/reports__shopify-phase2-final-summary.md | 4429 |  |  | 9e53d06c6c23c4528f761981035efbdc0242f756f2637871565e16ae71c380a8 |
+| docs/reports/shopify/reports__shopify-phase4-summary.md | 7292 |  |  | b7cfc38f928108f01528dc0be761e88cd06ed3e87e8ac4fb65ebf19983229517 |
+| docs/reports/shopify/reports__shopify-prisma-alignment-audit.md | 8721 |  |  | e5a54551730783355eb0b50aebdd5c9857862f97b9229d8d474a4d69a5478acb |
+| docs/reports/shopify/reports__shopify-prisma-alignment-implemented.md | 11581 |  |  | 3ad509f4fafacd02c5c7f03f6877cdeeb9909df11b24c948bf47824af62041aa |
+| docs/reports/shopify/reports__shopify-prisma-api-fixes.md | 10216 |  |  | bc9d6d0a4300ed58129595210a50076bc257752ee9ea2664a03c8f89f6a0815f |
+| docs/reports/shopify/reports__shopify-prisma-db-contract-audit.md | 8285 |  |  | 7a8f873d968ea7e565c2e09863fa58bf2a3fc6efb1ee92daf350fac3dc568ffc |
+| docs/reports/shopify/reports__shopify-settings-audit.md | 18752 |  |  | 79ae9bc6bd01865443c012ec17dbeee7ec6a023785233710ff10d666c2d79677 |
+| docs/reports/shopify/reports__shopify-sms-campaigns-unsub-shortlinks-audit.md | 17017 |  |  | c5cac5ecd99d914a6f3bd2f730ba13ce1c69837a3606ab4232d41a500b032200 |
+| docs/reports/shopify/reports__shopify-stack-audit-build-fix.md | 6997 |  |  | 807e666b2520b7a526108dc5358019d5883152adcb005bd8760c5333d0aa03e9 |
+| docs/reports/shopify/reports__shopify-styling-alignment-report.md | 13192 |  |  | 8936d2e885c042793bed1503070466f1fda845a55383364e0e6ab6c39f938399 |
+| docs/reports/shopify/reports__shopify-subscription-gating-allowance-audit.md | 9927 |  |  | 67fd2ad7cb9157e4dc1f3962d3c58880ed9e9290c390d5db1ff24d200429901c |
+| docs/reports/shopify/reports__shopify-templates-parity-audit.md | 17746 |  |  | ef421381b04e4ca47b8bb4169a2e5614c9a2e86b97b1c3f6005fb9b485fb92f0 |
+| docs/reports/shopify/reports__shopify-templates-parity-implemented.md | 21045 |  |  | e99108e1b3a23e2dc4326107ea41ac419bedc3fd85dee5c9a23d6d729b74e9a1 |
+| docs/reports/shopify/reports__shopify-templates-seed-summary.md | 5230 |  |  | ec49661e756cb46d9766600533954daf65f25afd33e36125202e6e277af2f6bd |
+| docs/reports/shopify/reports__shopify-tenant-auth-audit.md | 17098 |  |  | f12888b96e879b25650f0e37b1b0404f4bec00cb74dcbc1c1a5ae8611379061a |
+| docs/reports/shopify/reports__shopify-ui-polish-inventory.md | 4550 |  |  | ede4051a2ce33e64b4ee6bf3c657c498180c0c70efc5c2a81327211ae4ca34e9 |
+| docs/reports/shopify/reports__shopify-ui-polish-summary.md | 7195 |  |  | b16852b9b5e66aea96170506dd453b0e3c7bf1e95e0b3149fef16183b3e43c35 |
+| docs/retail-join-branding.md | 3157 | 1767862833 | 9bce141 | b5275a986c2b37b3153f0b766ccf35e56c125614e281661031a8aa3bd86d29c3 |
+| docs/retail/READY_FOR_LIVE_TESTING.md | 4796 | 1767783837 | b5c05c4 | f4f12853eade2f98777035aa84e1586c30565124ccaa97f59e4e7cdb21e36e69 |
+| docs/routing-strategy-options.md | 4265 | 1767035081 | 4dc46db | e88b4b027f430b04589f5ba5a36d2cc7ace035f7f82140c7c1ec382c335cac4d |
+| docs/runbooks/BILLING_TESTS_AND_GATES_SUMMARY.md | 4669 |  |  | 98a645597a3cc32826fe7d16a7b0b81054acda8e51f8a8a0c479a810c10772ca |
+| docs/runbooks/PRISMA_PROD_GATE.md | 4988 |  |  | c60575e80637d06dd7461b643669c3d465a1beaa1a0bf9dfd17acea9fc716542 |
+| docs/runbooks/reports__deploy-build-gate.md | 5458 |  |  | e30a8a46e5884fc6b5f2c99125f67da7e903af9a876b549e8d651679cfabf74a |
+| docs/runbooks/reports__deploy-gate-prisma-audit.md | 5908 |  |  | ce33040521f42daa128c311e933f159be9ba34863008caa581deb0d8096011b6 |
+| docs/runbooks/reports__deploy-gate-prisma-implemented.md | 6544 |  |  | b9241ca471b1bb89bcffad34c1cd8f523c0330ea4e74936d54ae2b772289e7d3 |
+| docs/runbooks/reports__final-redeploy-verification.md | 6221 |  |  | d108ec8315dd9aab621eaf239fad7f1d791b03073f52307b1b9c5ee22cb3ff4b |
+| docs/runbooks/reports__full-gate-execution-report.md | 7892 |  |  | 9160498446812536df32fb03dfc32beab99fb481ad6f747b496e6230b7fc6816 |
+| docs/runbooks/reports__gate-execution-final-summary.md | 10068 |  |  | ea6841749efd1094827a6f07df66b461af2961c47baf07c08c2018b3d0542efe |
+| docs/runbooks/reports__production-readiness-gate-summary.md | 5392 |  |  | 03f50fd4e7dc7a9a76ed6307816c75ee9ea932a9576e1a84550231073fe5de32 |
+| docs/runbooks/reports__redeploy-audit-summary.md | 5529 |  |  | 16391ca6bb388f6f0ed4eac201aaf260a6b809c77663dfa699f1340040e1d154 |
+| docs/runbooks/retail/DEPLOYMENT.md | 5371 |  |  | 95fa1cfa5769f6658a5106e1c840157cc0731185b874a480ce093845b010bdfc |
+| docs/runbooks/retail/FINAL_PRODUCTION_CHECKLIST.md | 3685 |  |  | 7b3b1263fb4829880733cc78a8637ffb4119f3d1b0d7d7b463d5ef17ce675fd0 |
+| docs/runbooks/retail/RETAIL_PREDEPLOY_CHECKLIST.md | 2089 |  |  | 34cf385c1c53eed6882f238ed72c82d07dbfc5c7bec99c8e56a494536baba3c4 |
+| docs/runbooks/shopify/reports__deploy-gate-shopify-frontend-audit.md | 7802 |  |  | 87d69b240d79554ae3870703ad7c59d137be714e9140319946aca097ced1b67d |
+| docs/runbooks/shopify/reports__deploy-gate-shopify-frontend-implemented.md | 9566 |  |  | 6f919b081a661c3146e3b97ab29d7571f6a3c9856989094b0c5abc5178e94cc6 |
+| docs/runbooks/shopify/reports__final-shopify-redeploy-audit.md | 6112 |  |  | 9804ffd901f7839d21c97f887182e72fa7541be3472868c451b1dee649510b9b |
+| docs/runbooks/shopify/reports__shopify-gate-implementation-summary.md | 6999 |  |  | c94180fc2c3c15e4319e74648329afb6622107803d32b1ae7ba93c1ce6dcd309 |
+| docs/runbooks/shopify/reports__shopify-gate-run-guide.md | 1620 |  |  | 97c672c4e87a643365419058a659b7056ae997930ec35f2fdaae08509696cbcd |
+| docs/short-link-implementation-summary.md | 6941 | 1767035081 | 4dc46db | 1a7c7a7d7484a844105a9ca8c0327a16a5d9cda3c99af3530ee289c3dabef622 |
+| docs/url-shortener.md | 8278 | 1767035081 | 4dc46db | 70ebfceed9a9435c63af7f757c7ff45a6a0bdc09500225f9108de30593b6093d |
