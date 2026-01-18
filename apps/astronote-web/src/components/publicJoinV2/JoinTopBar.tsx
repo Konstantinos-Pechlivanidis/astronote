@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import { THEME } from './theme';
 import { cn } from '@/lib/utils';
 

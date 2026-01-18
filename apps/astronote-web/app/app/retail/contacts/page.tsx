@@ -95,7 +95,7 @@ export default function ContactsPage() {
       <div className="space-y-6">
         <RetailPageHeader
           title="Contacts"
-          description="Manage your customer contacts"
+          description="Manage your customer contacts and segment by gender or lists"
           actions={
             <Button onClick={handleAddClick} size="sm">
               <Plus className="mr-2 h-4 w-4" />

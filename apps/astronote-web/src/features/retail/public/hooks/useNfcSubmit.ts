@@ -7,6 +7,8 @@ export interface NfcSubmitPayload {
   email?: string;
   phoneCountryCode: string;
   phoneNational: string;
+  birthday?: string;
+  gender?: string;
   gdprConsent: boolean;
 }
 

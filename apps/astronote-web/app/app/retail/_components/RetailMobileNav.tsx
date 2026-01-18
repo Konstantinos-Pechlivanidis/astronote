@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { LogOut, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/src/components/ui/dialog';
 import { useRetailAuth } from '@/src/features/retail/auth/useRetailAuth';
+import RetailLogo from '@/logo/astronote-logo-1200x1200.png';
 import { RetailNavList } from './RetailNavList';
 
 type RetailMobileNavProps = {
@@ -20,6 +23,7 @@ const FOCUSABLE_SELECTOR =
 export function RetailMobileNav({ open, onOpenChange, pathname }: RetailMobileNavProps) {
   const { logout, user } = useRetailAuth();
   const drawerRef = useRef<HTMLDivElement>(null);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -103,8 +107,13 @@ export function RetailMobileNav({ open, onOpenChange, pathname }: RetailMobileNa
             className="flex items-center gap-2"
             onClick={() => onOpenChange(false)}
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
-              <span className="text-lg font-bold text-white">A</span>
+            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-surface">
+              <Image
+                src={RetailLogo}
+                alt="Astronote"
+                className="h-8 w-8 object-contain"
+                priority
+              />
             </div>
             <span className="text-lg font-semibold text-text-primary">Astronote Retail</span>
           </Link>
@@ -140,13 +149,34 @@ export function RetailMobileNav({ open, onOpenChange, pathname }: RetailMobileNa
           <Button
             variant="ghost"
             className="w-full justify-start text-text-secondary hover:text-text-primary"
-            onClick={handleLogout}
+            onClick={() => setLogoutConfirmOpen(true)}
           >
             <LogOut className="mr-2 h-4 w-4" />
             Sign Out
           </Button>
         </div>
       </div>
+      <Dialog
+        open={logoutConfirmOpen}
+        onClose={() => setLogoutConfirmOpen(false)}
+        title="Sign out"
+        size="sm"
+      >
+        <p className="text-sm text-text-secondary">Are you sure you want to sign out?</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setLogoutConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            className="bg-destructive text-white hover:bg-destructive/90"
+            onClick={async () => {
+              await handleLogout();
+            }}
+          >
+            Sign out
+          </Button>
+        </div>
+      </Dialog>
     </>
   );
 }

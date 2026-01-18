@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -234,15 +235,15 @@ export default function BrandingPage() {
                     {previewBranding.logoUrl ? (
                       <img src={previewBranding.logoUrl} alt={previewBranding.storeName} className="mx-auto h-12 object-contain" />
                     ) : null}
-                    <p className="text-sm text-text-secondary">{previewBranding.storeName || 'Το κατάστημα'}</p>
+                    <p className="text-sm text-text-secondary">{previewBranding.storeName || 'Your store'}</p>
                     <h3 className="text-xl font-semibold text-text-primary">
-                      {previewBranding.headline || 'Πάρε πρώτος τις προσφορές μας'}
+                      {previewBranding.headline || 'Get our offers first'}
                     </h3>
                     <p className="text-sm text-text-secondary">
-                      {previewBranding.subheadline || 'Άφησε τα στοιχεία σου για να λαμβάνεις αποκλειστικές προσφορές & ενημερώσεις.'}
+                      {previewBranding.subheadline || 'Leave your details to receive exclusive offers and updates.'}
                     </p>
                     <div className="text-left space-y-1">
-                      <p className="text-sm font-medium text-text-primary">Τι κερδίζεις</p>
+                      <p className="text-sm font-medium text-text-primary">Benefits</p>
                       <ul className="text-sm text-text-secondary space-y-1">
                         {(previewBranding.benefits || []).map((b: string, idx: number) => (
                           <li key={idx}>• {b}</li>

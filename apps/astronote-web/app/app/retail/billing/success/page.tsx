@@ -33,13 +33,13 @@ function RetailBillingSuccessContent() {
       sessionId?.includes('%7D');
 
     if (!sessionId) {
-      setError('Λείπει το checkout session. Επιστρέψτε στη χρέωση και ξαναπροσπαθήστε.');
+      setError('Checkout session is missing. Return to billing and try again.');
       return;
     }
 
     if (placeholder) {
       setError(
-        'Η πληρωμή ολοκληρώθηκε στο Stripe αλλά δεν επιστράφηκε σωστό session_id. Πάτησε "Back to Billing" και κάνε Refresh/Verify ή ξαναδοκίμασε.',
+        'Payment completed on Stripe but a placeholder session_id was returned. Click "Back to Billing" then refresh/verify or try again.',
       );
       return;
     }
@@ -141,8 +141,7 @@ function RetailBillingSuccessContent() {
                 {verifying ? 'Verifying payment' : 'Finalizing'}
               </h2>
               <p className="text-sm text-text-secondary mb-6">
-                Συγχρονίζουμε τη συνδρομή/credits και τα τιμολόγια από το Stripe. Μόλις ολοκληρωθεί θα
-                σε επιστρέψουμε αυτόματα στη σελίδα χρέωσης.
+                Syncing subscription/credits and invoices from Stripe. Once complete we will return you to the billing page automatically.
               </p>
             </div>
           </RetailCard>

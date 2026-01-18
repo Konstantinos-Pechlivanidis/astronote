@@ -162,6 +162,12 @@ function CampaignActions({
         ? `Campaign cannot be sent in its current state (${currentStatus}).`
         : 'Campaign cannot be sent in its current state.';
     }
+    if (code === 'PRISMA_SCHEMA_DRIFT') {
+      return 'Service temporarily unavailable while we sync billing data. Please retry shortly.';
+    }
+    if (code === 'QUEUE_UNAVAILABLE') {
+      return 'Messaging queue unavailable. Please try again soon.';
+    }
 
     return rawMessage;
   };
@@ -171,7 +177,6 @@ function CampaignActions({
     if (process.env.NODE_ENV !== 'production') {
       // eslint-disable-next-line no-console
       console.log('[SEND CLICK] handleEnqueue called', { subscriptionInactive, campaignId: campaign.id });
-      console.log('[SEND CLICK] before setEnqueueConfirm', enqueueConfirm);
     }
     if (subscriptionInactive) {
       // eslint-disable-next-line no-console

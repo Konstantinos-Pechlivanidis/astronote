@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -512,7 +513,7 @@ export default function NfcSignupPage() {
                           : 'text-text-secondary hover:text-text-primary'
                       }`}
                     >
-                      ΕΛ
+                      GR
                     </button>
                   </div>
                 </div>
@@ -563,39 +564,39 @@ export default function NfcSignupPage() {
                 {editLang === 'el' && (
                   <div className="space-y-4 pt-2">
                     <div>
-                      <label className="text-sm text-text-secondary">Τίτλος (ΕΛ)</label>
+                      <label className="text-sm text-text-secondary">Headline (GR)</label>
                       <Input
                         value={form.headlineEl}
                         onChange={(e) => setForm((f) => ({ ...f, headlineEl: e.target.value }))}
-                        placeholder="Εγγραφή για οφέλη μέλους"
+                        placeholder="Write the Greek headline"
                       />
                     </div>
                     <div>
-                      <label className="text-sm text-text-secondary">Υπότιτλος (ΕΛ)</label>
+                      <label className="text-sm text-text-secondary">Subheadline (GR)</label>
                       <Textarea
                         value={form.subheadlineEl}
                         onChange={(e) => setForm((f) => ({ ...f, subheadlineEl: e.target.value }))}
                         rows={2}
-                        placeholder="Λάβετε προσφορές, ενημερώσεις και αποκλειστικά προνόμια από αυτό το κατάστημα."
+                        placeholder="Describe the offer in Greek (offers, updates, perks)."
                       />
                     </div>
                     <div>
-                      <label className="text-sm text-text-secondary">Οφέλη (ΕΛ) — ένα ανά γραμμή, μορφή: Τίτλος — Περιγραφή</label>
+                      <label className="text-sm text-text-secondary">Benefits (GR) — one per line, format: Title — Description</label>
                       <Textarea
                         value={form.bulletsEl}
                         onChange={(e) => setForm((f) => ({ ...f, bulletsEl: e.target.value }))}
                         rows={5}
-                        placeholder="Αποκλειστικές εκπτώσεις — Τα μέλη έχουν καλύτερες τιμές και περιορισμένες προσφορές.&#10;Πρώτη πρόσβαση — Μάθετε πρώτοι για νέα προϊόντα."
+                        placeholder="Example: Exclusive discounts — Members get better pricing.&#10;Early access — Be first to know about new arrivals."
                       />
                     </div>
                     <div>
-                      <label className="text-sm text-text-secondary">Επιπλέον μήνυμα (ΕΛ)</label>
+                      <label className="text-sm text-text-secondary">Extra message (GR)</label>
                       <Textarea
                         value={form.merchantBlurbEl}
                         onChange={(e) => setForm((f) => ({ ...f, merchantBlurbEl: e.target.value }))}
                         rows={3}
                         maxLength={500}
-                        placeholder="Επιπλέον μήνυμα για τους πελάτες σας..."
+                        placeholder="Additional message for customers (Greek)..."
                       />
                     </div>
                   </div>

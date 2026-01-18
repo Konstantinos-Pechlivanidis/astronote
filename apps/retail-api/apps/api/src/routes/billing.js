@@ -1710,6 +1710,19 @@ async function handleVerifySubscriptionSession(req, res, next) {
       });
     }
 
+    if (
+      sessionId === '{CHECKOUT_SESSION_ID}' ||
+      sessionId === '%7BCHECKOUT_SESSION_ID%7D' ||
+      sessionId.includes('CHECKOUT_SESSION_ID') ||
+      sessionId.includes('%7B') ||
+      sessionId.includes('%7D')
+    ) {
+      return res.status(400).json({
+        message: 'Invalid checkout session placeholder. Check success_url configuration.',
+        code: 'INVALID_SUCCESS_URL_PLACEHOLDER',
+      });
+    }
+
     const { getCheckoutSession } = require('../services/stripe.service');
     const {
       activateSubscription,
@@ -1884,6 +1897,19 @@ r.post('/billing/verify-payment', requireAuth, async (req, res, next) => {
       return res.status(400).json({
         message: 'Session ID is required',
         code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (
+      sessionId === '{CHECKOUT_SESSION_ID}' ||
+      sessionId === '%7BCHECKOUT_SESSION_ID%7D' ||
+      sessionId.includes('CHECKOUT_SESSION_ID') ||
+      sessionId.includes('%7B') ||
+      sessionId.includes('%7D')
+    ) {
+      return res.status(400).json({
+        message: 'Invalid checkout session placeholder. Check success_url configuration.',
+        code: 'INVALID_SUCCESS_URL_PLACEHOLDER',
       });
     }
 

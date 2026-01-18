@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/src/components/ui/dialog';
 import { useRetailAuth } from '@/src/features/retail/auth/useRetailAuth';
 import { getActiveNavItem } from './RetailNavItems';
 
@@ -28,6 +29,7 @@ export function RetailTopbar({
 }: RetailTopbarProps) {
   const { logout, user } = useRetailAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const activeItem = getActiveNavItem(pathname);
@@ -146,7 +148,10 @@ export function RetailTopbar({
                   type="button"
                   role="menuitem"
                   className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm text-text-secondary transition-colors hover:bg-surface hover:text-text-primary"
-                  onClick={handleLogout}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setLogoutConfirmOpen(true);
+                  }}
                 >
                   <LogOut className="h-4 w-4" />
                   Sign out
@@ -156,6 +161,27 @@ export function RetailTopbar({
           </div>
         </div>
       </div>
+      <Dialog
+        open={logoutConfirmOpen}
+        onClose={() => setLogoutConfirmOpen(false)}
+        title="Sign out"
+        size="sm"
+      >
+        <p className="text-sm text-text-secondary">Are you sure you want to sign out?</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setLogoutConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            className="bg-destructive text-white hover:bg-destructive/90"
+            onClick={async () => {
+              await handleLogout();
+            }}
+          >
+            Sign out
+          </Button>
+        </div>
+      </Dialog>
     </div>
   );
 }

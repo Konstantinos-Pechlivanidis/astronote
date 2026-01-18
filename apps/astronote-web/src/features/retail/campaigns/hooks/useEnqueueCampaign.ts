@@ -111,6 +111,8 @@ export function useEnqueueCampaign() {
       queryClient.invalidateQueries({ queryKey: ['retail-kpis'] });
       queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
       queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-history'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-invoices'] });
 
       const summary = enqueuedJobs !== null
         ? `${queued} messages (${enqueuedJobs} jobs enqueued)`
@@ -147,6 +149,8 @@ export function useEnqueueCampaign() {
         toast.error('Not enough free allowance or credits. Please purchase more credits or upgrade your subscription.');
       } else if (code === 'QUEUE_UNAVAILABLE') {
         toast.error('Message queue unavailable. Please try again in a moment.');
+      } else if (code === 'PRISMA_SCHEMA_DRIFT') {
+        toast.error('Service temporarily unavailable while we sync billing data. Please retry in a moment.');
       } else if (code === 'ENQUEUE_FAILED') {
         toast.error('Failed to enqueue campaign. Please retry.');
       } else if (code === 'SUBSCRIPTION_REQUIRED' || code === 'INACTIVE_SUBSCRIPTION') {

@@ -18,6 +18,8 @@ type FormState = {
   email: string;
   phoneCountryCode: string;
   phoneNational: string;
+  birthday: string;
+  gender: string;
   gdprConsent: boolean;
 };
 
@@ -35,6 +37,8 @@ export default function NfcPage() {
     email: '',
     phoneCountryCode: '+30',
     phoneNational: '',
+    birthday: '',
+    gender: '',
     gdprConsent: true,
   });
 
@@ -48,7 +52,7 @@ export default function NfcPage() {
     }
   }, [data?.phoneDefaultCountry]);
 
-  const storeName = data?.storeName || 'Το κατάστημα';
+  const storeName = data?.storeName || 'The store';
 
   const handleChange = (key: keyof FormState, value: string | boolean) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -62,18 +66,22 @@ export default function NfcPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) return;
-    await submitMutation.mutateAsync({
+    const payload = {
       ...form,
       phoneCountryCode: form.phoneCountryCode || '+30',
       phoneNational: form.phoneNational,
-    });
+      birthday: form.birthday || undefined,
+      gender: form.gender || undefined,
+    };
+
+    await submitMutation.mutateAsync(payload);
   };
 
   if (!token) {
     return (
       <PublicLayout>
         <PublicCard>
-          <PublicError title="Μη έγκυρος σύνδεσμος" message="Το NFC link δεν είναι έγκυρο." />
+          <PublicError title="Invalid link" message="The NFC link is not valid." />
         </PublicCard>
       </PublicLayout>
     );
@@ -83,7 +91,7 @@ export default function NfcPage() {
     return (
       <PublicLayout>
         <PublicCard>
-          <PublicLoading message="Φόρτωση..." />
+          <PublicLoading message="Loading..." />
         </PublicCard>
       </PublicLayout>
     );
@@ -93,7 +101,7 @@ export default function NfcPage() {
     return (
       <PublicLayout>
         <PublicCard>
-          <PublicError title="Σφάλμα" message="Δεν βρέθηκε το κατάστημα ή το NFC link είναι ανενεργό." />
+          <PublicError title="Error" message="Store not found or NFC link inactive." />
         </PublicCard>
       </PublicLayout>
     );
@@ -104,12 +112,12 @@ export default function NfcPage() {
       <PublicLayout>
         <PublicCard>
           <PublicSuccess
-            title="Ευχαριστούμε!"
-            message="Η εγγραφή ολοκληρώθηκε."
+            title="Thank you!"
+            message="The contact was added."
           />
           <div className="mt-4">
             <Button className="w-full" onClick={() => submitMutation.reset()}>
-              Καταχώριση νέου αριθμού
+              Add another number
             </Button>
           </div>
         </PublicCard>
@@ -122,8 +130,8 @@ export default function NfcPage() {
       <PublicCard>
         <div className="space-y-6">
           <div className="space-y-1">
-            <p className="text-sm text-text-secondary">Σύνδεση πελάτη στο {storeName}</p>
-            <h1 className="text-2xl font-bold text-text-primary">Καταχώριση στοιχείων</h1>
+            <p className="text-sm text-text-secondary">Connect customer to {storeName}</p>
+            <h1 className="text-2xl font-bold text-text-primary">Add contact details</h1>
           </div>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="grid gap-3">
@@ -132,7 +140,7 @@ export default function NfcPage() {
                 name="firstName"
                 value={form.firstName}
                 onChange={(e) => handleChange('firstName', e.target.value)}
-                placeholder="Όνομα"
+                placeholder="First name"
                 className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
                 autoComplete="given-name"
               />
@@ -140,7 +148,7 @@ export default function NfcPage() {
                 name="lastName"
                 value={form.lastName}
                 onChange={(e) => handleChange('lastName', e.target.value)}
-                placeholder="Επώνυμο (προαιρετικό)"
+                placeholder="Last name (optional)"
                 className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
                 autoComplete="family-name"
               />
@@ -158,7 +166,7 @@ export default function NfcPage() {
                   name="phoneNational"
                   value={form.phoneNational}
                   onChange={(e) => handleChange('phoneNational', e.target.value)}
-                  placeholder="Κινητό"
+                  placeholder="Mobile number"
                   className="col-span-2 rounded-md border border-border bg-surface-light px-3 py-3 text-base"
                   autoComplete="tel-national"
                   inputMode="tel"
@@ -169,10 +177,33 @@ export default function NfcPage() {
                 type="email"
                 value={form.email}
                 onChange={(e) => handleChange('email', e.target.value)}
-                placeholder="Email (προαιρετικό)"
+                placeholder="Email (optional)"
                 className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
                 autoComplete="email"
               />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input
+                  name="birthday"
+                  type="date"
+                  value={form.birthday}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => handleChange('birthday', e.target.value)}
+                  placeholder="Birthday"
+                  className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                  autoComplete="bday"
+                />
+                <select
+                  name="gender"
+                  value={form.gender}
+                  onChange={(e) => handleChange('gender', e.target.value)}
+                  className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                >
+                  <option value="">Select gender (optional)</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
               <label className="flex items-start gap-2 text-sm text-text-secondary">
                 <input
                   type="checkbox"
@@ -182,7 +213,7 @@ export default function NfcPage() {
                   required
                 />
                 <span>
-                  Συμφωνώ με την αποθήκευση των στοιχείων μου για επικοινωνία (GDPR).
+                  I agree to store my details for communication (GDPR).
                 </span>
               </label>
             </div>
@@ -191,11 +222,11 @@ export default function NfcPage() {
               className="w-full"
               disabled={submitMutation.isPending}
             >
-              {submitMutation.isPending ? 'Αποστολή…' : 'Συνέχεια'}
+              {submitMutation.isPending ? 'Sending…' : 'Submit'}
             </Button>
             {submitMutation.error && (
               <p className="text-sm text-red-500">
-                {(submitMutation.error as any)?.response?.data?.message || 'Κάτι πήγε στραβά. Προσπαθήστε ξανά.'}
+                {(submitMutation.error as any)?.response?.data?.message || 'Something went wrong. Please try again.'}
               </p>
             )}
           </form>

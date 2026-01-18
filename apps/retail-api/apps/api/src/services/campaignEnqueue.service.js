@@ -514,6 +514,7 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
 
     return { ok: true, created: messagesData.length, enqueuedJobs, campaignId: camp.id };
   } catch (err) {
+    const reason = err?.code === 'P2022' || err?.message?.includes('column') ? 'prisma_schema_drift' : 'enqueue_failed';
     logger.error({
       correlationId,
       campaignId,
@@ -523,7 +524,8 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       source,
       err: err.message,
       stack: err.stack,
+      reason,
     }, 'enqueueCampaign failed');
-    throw err;
+    return { ok: false, reason, error: err.message, enqueuedJobs: 0 };
   }
 };

@@ -587,6 +587,12 @@ router.post('/campaigns/:id/enqueue', requireAuth, async (req, res, next) => {
           code: 'QUEUE_UNAVAILABLE',
         }));
       }
+      if (result.reason === 'prisma_schema_drift') {
+        return res.status(500).json(withRequestId({
+          message: 'Database schema mismatch detected. Please run pending migrations.',
+          code: 'PRISMA_SCHEMA_DRIFT',
+        }));
+      }
       if (result.reason === 'enqueue_failed') {
         return res.status(500).json(withRequestId({
           message: 'Failed to enqueue campaign jobs. Please retry.',

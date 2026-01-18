@@ -320,7 +320,7 @@ export default function NewCampaignPage() {
                       )}
                       <div className="mt-3 space-y-2 rounded-xl border border-border bg-surface-light p-3">
                         <div className="flex flex-wrap gap-2">
-                          {['firstName', 'lastName', 'discountCode'].map(v => (
+                          {['firstName', 'lastName'].map(v => (
                             <Button
                               key={v}
                               type="button"
@@ -335,22 +335,13 @@ export default function NewCampaignPage() {
                           ))}
                         </div>
                         <p className="text-xs text-text-secondary">
-                          Τα πεδία αντικαθίστανται αυτόματα όταν υπάρχει
-                          διαθέσιμη τιμή (χρησιμοποίησε ακριβώς αυτές τις
-                          μορφές).
+                          Personalization supports the variables above. Use the exact casing shown.
                         </p>
                         <p className="text-xs text-text-secondary">
-                          Το unsubscribe link προστίθεται αυτόματα στο τέλος και
-                          γίνεται short link από το σύστημα. Ο κωδικός έκπτωσης
-                          εμφανίζεται αν χρησιμοποιήσεις το{' '}
-                          <span className="font-mono text-[11px]">
-                            {'{{discountCode}}'}
-                          </span>
-                          .
+                          Unsubscribe is appended automatically at send time and shortened by the system.
                         </p>
                         <p className="text-xs text-text-tertiary">
-                          Πρόσεξε το μήκος/GSM χαρακτήρες για χρέωση SMS. Η
-                          προεπισκόπηση δείχνει counts.
+                          Keep messages concise; the preview shows length and GSM character counts.
                         </p>
                       </div>
                     </div>

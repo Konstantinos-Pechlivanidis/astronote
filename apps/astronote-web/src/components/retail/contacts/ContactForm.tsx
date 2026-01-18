@@ -188,7 +188,7 @@ export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) 
           </span>
         </label>
         <p className="mt-1 text-xs text-text-tertiary">
-          Με το opt-in επιτρέπεται η λήψη μηνυμάτων marketing (μπορεί να αλλάξει αργότερα).
+          Opted-in contacts can receive marketing messages (you can change this later).
         </p>
         {contact && (
           <p className="mt-1 text-xs text-text-tertiary">Uncheck to unsubscribe this contact.</p>

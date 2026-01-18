@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import type { ReactNode } from 'react';
 
 type JoinHeroProps = {
@@ -54,4 +55,3 @@ export function JoinHero({
     </div>
   );
 }
-

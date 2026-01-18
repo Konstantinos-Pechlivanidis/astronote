@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import type { ReactNode } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { JoinGlassCard } from './JoinGlassCard';

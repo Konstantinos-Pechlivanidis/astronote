@@ -1160,7 +1160,7 @@ export default function RetailBillingPage() {
           actions={currencySelector}
         />
         <div className="text-sm text-text-secondary">
-          Μετά την πληρωμή θα γίνει αυτόματος συγχρονισμός (verify/reconcile) και θα εμφανιστούν credits & τιμολόγια.
+          After payment we automatically verify and reconcile so credits and invoices refresh in a few moments.
         </div>
 
         <BillingHeader subscription={subscription} credits={credits} allowance={allowance} />

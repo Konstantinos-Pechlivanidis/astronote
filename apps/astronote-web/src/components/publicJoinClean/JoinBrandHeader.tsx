@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 type JoinBrandHeaderProps = {
   logoUrl?: string | null
   storeName: string
@@ -47,4 +48,3 @@ export function JoinBrandHeader({
     </div>
   );
 }
-
