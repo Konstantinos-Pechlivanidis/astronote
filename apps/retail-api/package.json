@@ -23,8 +23,10 @@
     "start:all": "cd apps/api && node src/server.js",
     "start:server-only": "cd apps/api && cross-env START_WORKER=0 node src/server.js",
     "dev": "cd apps/api && node --watch src/server.js",
-    "worker:sms": "npm run worker:sms --prefix apps/api",
-    "worker:scheduler": "npm run worker:scheduler --prefix apps/api"
+    "worker:sms": "cd apps/worker && node src/sms.worker.js",
+    "worker:scheduler": "cd apps/worker && node src/scheduler.worker.js",
+    "worker:status": "cd apps/worker && node src/statusRefresh.worker.js",
+    "worker:contact-import": "cd apps/worker && node src/contactImport.worker.js"
   },
   "keywords": [],
   "author": "Konstantinos Pechlivanidis",

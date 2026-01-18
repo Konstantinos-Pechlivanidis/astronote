@@ -9,8 +9,32 @@ const router = express.Router();
 router.get('/jobs/health', requireAuth, async (_req, res, next) => {
   try {
     const out = {};
-    if (smsQueue) {out.sms = await smsQueue.getJobCounts();}
-    else {out.sms = 'disabled';}
+    const formatRedisInfo = (queue) => {
+      if (!queue) {
+        return null;
+      }
+      const conn = queue.opts?.connection || queue.client;
+      const opts = conn?.options || conn?.opts || conn?.connector?.options || {};
+      const host =
+        opts.host ||
+        opts.hostname ||
+        (Array.isArray(opts.servers) ? opts.servers[0]?.host : undefined) ||
+        opts.path ||
+        'unknown';
+      const port = opts.port || (Array.isArray(opts.servers) ? opts.servers[0]?.port : undefined);
+      const db = typeof opts.db === 'number' ? opts.db : undefined;
+      const tls = Boolean(opts.tls);
+      return { host, port, db, tls };
+    };
+
+    if (smsQueue) {
+      out.sms = {
+        counts: await smsQueue.getJobCounts(),
+        redis: formatRedisInfo(smsQueue),
+      };
+    } else {
+      out.sms = 'disabled';
+    }
 
     if (schedulerQueue) {
       const counts = await schedulerQueue.getJobCounts();
