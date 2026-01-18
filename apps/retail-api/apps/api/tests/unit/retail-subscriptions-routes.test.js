@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const express = require('express');
 const path = require('path');
+const METHODS = { POST: 'post', GET: 'get' };
 
 function withStubbedRequire(resolvers, fn) {
   const originals = [];
@@ -23,21 +23,85 @@ function withStubbedRequire(resolvers, fn) {
     });
 }
 
-async function startAppWithBillingRouter() {
+function getRouteHandlers(pathname, method) {
   const billingRoutesPath = path.resolve(__dirname, '../../src/routes/billing.js');
   delete require.cache[billingRoutesPath];
   const billingRouter = require(billingRoutesPath);
-  const app = express();
-  app.use(express.json());
-  app.use('/api', billingRouter);
+  const methodKey = METHODS[method.toUpperCase()];
+  const layer = billingRouter.stack.find(
+    (l) => l.route && l.route.path === pathname && l.route.methods[methodKey],
+  );
+  if (!layer) {
+    throw new Error(`Route not found for ${method} ${pathname}`);
+  }
+  return layer.route.stack.map((s) => s.handle);
+}
 
-  const server = await new Promise((resolve) => {
-    const s = app.listen(0, '127.0.0.1', () => resolve(s));
-  });
-  const { port } = server.address();
-  const baseUrl = `http://127.0.0.1:${port}`;
+function createMockRes() {
+  return {
+    statusCode: 200,
+    headers: {},
+    body: null,
+    finished: false,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      this.finished = true;
+      return this;
+    },
+    send(payload) {
+      this.body = payload;
+      this.finished = true;
+      return this;
+    },
+    set(field, value) {
+      this.headers[String(field).toLowerCase()] = value;
+      return this;
+    },
+    end(payload) {
+      if (payload !== undefined) {
+        this.body = payload;
+      }
+      this.finished = true;
+      return this;
+    },
+  };
+}
 
-  return { server, baseUrl };
+async function invokeBillingRoute(pathname, method, { body, query, headers, user } = {}) {
+  const handlers = getRouteHandlers(pathname, method);
+  const req = {
+    body: body || {},
+    query: query || {},
+    headers: Object.fromEntries(
+      Object.entries(headers || {}).map(([k, v]) => [k.toLowerCase(), v]),
+    ),
+    user: user || {},
+    get(name) {
+      return this.headers[String(name).toLowerCase()];
+    },
+  };
+  const res = createMockRes();
+  const next = (err) => {
+    if (err) {
+      throw err;
+    }
+  };
+
+  for (const handler of handlers) {
+    const maybe = handler(req, res, next);
+    if (maybe && typeof maybe.then === 'function') {
+      await maybe;
+    }
+    if (res.finished) {
+      break;
+    }
+  }
+
+  return res;
 }
 
 test('POST /api/subscriptions/subscribe returns checkoutUrl (EUR)', async () => {
@@ -94,26 +158,16 @@ test('POST /api/subscriptions/subscribe returns checkoutUrl (EUR)', async () => 
       ],
     ],
     async () => {
-      const { server, baseUrl } = await startAppWithBillingRouter();
-      try {
-        const res = await fetch(`${baseUrl}/api/subscriptions/subscribe`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            planType: 'starter',
-            currency: 'EUR',
-          }),
-        });
+      const res = await invokeBillingRoute('/subscriptions/subscribe', 'post', {
+        body: { planType: 'starter', currency: 'EUR' },
+        user: { id: 123, email: 'u@example.com', company: 'Co' },
+      });
 
-        assert.equal(res.status, 201);
-        const json = await res.json();
-        assert.equal(json.ok, true);
-        assert.equal(json.checkoutUrl, 'https://stripe.example/checkout');
-        assert.equal(json.planType, 'starter');
-        assert.equal(json.currency, 'EUR');
-      } finally {
-        await new Promise((r) => server.close(r));
-      }
+      assert.equal(res.statusCode, 201);
+      assert.equal(res.body.ok, true);
+      assert.equal(res.body.checkoutUrl, 'https://stripe.example/checkout');
+      assert.equal(res.body.planType, 'starter');
+      assert.equal(res.body.currency, 'EUR');
     },
   );
 });
@@ -184,27 +238,18 @@ test('POST /api/subscriptions/switch maps interval->planType (month->starter, ye
       ],
     ],
     async () => {
-      const { server, baseUrl } = await startAppWithBillingRouter();
-      try {
-        const res = await fetch(`${baseUrl}/api/subscriptions/switch`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ interval: 'year', currency: 'EUR' }),
-        });
+      const res = await invokeBillingRoute('/subscriptions/switch', 'post', {
+        body: { interval: 'year', currency: 'EUR' },
+        user: { id: 123, email: 'u@example.com', company: 'Co' },
+      });
 
-        const json = await res.json().catch(() => null);
-        assert.equal(res.status, 200, `Expected 200, got ${res.status}. Body: ${JSON.stringify(json)}`);
-        assert.equal(json.ok, true);
-        assert.equal(json.planType, 'pro');
-        assert.equal(json.interval, 'year');
-        assert.equal(json.changeMode, 'checkout');
-        assert.equal(json.checkoutUrl, 'https://stripe.example/checkout-change');
-        assert.equal(updatedTo, null);
-      } finally {
-        await new Promise((r) => server.close(r));
-      }
+      assert.equal(res.statusCode, 200, `Expected 200, got ${res.statusCode}. Body: ${JSON.stringify(res.body)}`);
+      assert.equal(res.body.ok, true);
+      assert.equal(res.body.planType, 'pro');
+      assert.equal(res.body.interval, 'year');
+      assert.equal(res.body.changeMode, 'checkout');
+      assert.equal(res.body.checkoutUrl, 'https://stripe.example/checkout-change');
+      assert.equal(updatedTo, null);
     },
   );
 });
-
-

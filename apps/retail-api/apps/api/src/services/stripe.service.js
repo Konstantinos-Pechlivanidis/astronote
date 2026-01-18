@@ -8,6 +8,7 @@ const {
   getPackagePriceId,
 } = require('../billing/stripePrices');
 const planCatalog = require('./plan-catalog.service');
+const { resolveTaxTreatment } = require('./tax-resolver.service');
 
 const logger = pino({ name: 'stripe-service' });
 
@@ -21,7 +22,7 @@ const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY, {
 }) : null;
 
 const isStripeTaxEnabled = () =>
-  String(process.env.STRIPE_TAX_ENABLED || '').toLowerCase() === 'true';
+  String(process.env.STRIPE_TAX_ENABLED || 'true').toLowerCase() !== 'false';
 
 const isValidStripeCustomerId = (value) =>
   typeof value === 'string' && value.startsWith('cus_');
@@ -34,8 +35,34 @@ const normalizeStripeAddress = (address) => {
     city: address.city || null,
     state: address.state || null,
     postal_code: address.postalCode || address.postal_code || null,
-    country: address.country || null,
+    country: address.country ? String(address.country).toUpperCase() : null,
   };
+};
+
+const deriveTaxSettingsFromProfile = (billingProfile) => {
+  if (!billingProfile) {
+    return { taxExempt: undefined, treatment: null };
+  }
+
+  const treatment = resolveTaxTreatment({
+    billingCountry: billingProfile.billingAddress?.country || billingProfile.vatCountry || null,
+    vatId: billingProfile.vatNumber || null,
+    vatIdValidated: billingProfile.taxStatus === 'verified',
+    isBusiness: typeof billingProfile.isBusiness === 'boolean'
+      ? billingProfile.isBusiness
+      : billingProfile.vatNumber
+        ? true
+        : null,
+  });
+
+  const taxExempt =
+    treatment.mode === 'eu_reverse_charge'
+      ? 'reverse'
+      : billingProfile.taxExempt
+        ? 'exempt'
+        : 'none';
+
+  return { taxExempt, treatment };
 };
 
 async function ensureStripeCustomer({
@@ -51,20 +78,30 @@ async function ensureStripeCustomer({
   }
 
   if (isValidStripeCustomerId(stripeCustomerId)) {
+    if (billingProfile) {
+      try {
+        await syncStripeCustomerBillingProfile({ stripeCustomerId, billingProfile });
+      } catch (err) {
+        logger.warn({ stripeCustomerId, err: err.message }, 'Failed to sync Stripe customer before reuse');
+      }
+    }
     return stripeCustomerId;
   }
 
   const address = normalizeStripeAddress(billingProfile?.billingAddress);
   const email = billingProfile?.billingEmail || userEmail || undefined;
   const name = billingProfile?.legalName || userName || undefined;
+  const { taxExempt } = deriveTaxSettingsFromProfile(billingProfile);
 
   const customer = await stripe.customers.create({
     email,
     name,
     address: address || undefined,
+    tax_exempt: taxExempt || undefined,
     metadata: {
       ownerId: String(ownerId),
       billingCurrency: currency || 'EUR',
+      isBusiness: billingProfile?.isBusiness ? 'true' : 'false',
     },
   });
 
@@ -101,11 +138,13 @@ async function syncStripeCustomerBillingProfile({
   const address = normalizeStripeAddress(billingProfile?.billingAddress);
   const email = billingProfile?.billingEmail || undefined;
   const name = billingProfile?.legalName || undefined;
+  const { taxExempt } = deriveTaxSettingsFromProfile(billingProfile);
 
   await stripe.customers.update(stripeCustomerId, {
     email,
     name,
     address: address || undefined,
+    tax_exempt: taxExempt || undefined,
   });
 
   if (billingProfile?.vatNumber) {
@@ -113,6 +152,10 @@ async function syncStripeCustomerBillingProfile({
       const existing = await stripe.customers.listTaxIds(stripeCustomerId, {
         limit: 100,
       });
+      const existingVat = existing.data.find((taxId) => taxId.type === 'eu_vat');
+      if (existingVat && existingVat.value && existingVat.value !== billingProfile.vatNumber && existingVat.id) {
+        await stripe.customers.deleteTaxId(stripeCustomerId, existingVat.id).catch(() => null);
+      }
       const alreadyExists = existing.data.some(
         (taxId) => taxId.value === billingProfile.vatNumber,
       );
@@ -127,6 +170,18 @@ async function syncStripeCustomerBillingProfile({
         { stripeCustomerId, error: error.message },
         'Failed to sync Stripe customer tax ID',
       );
+    }
+  } else {
+    try {
+      const existing = await stripe.customers.listTaxIds(stripeCustomerId, {
+        limit: 20,
+      });
+      const vatIds = existing.data.filter((taxId) => taxId.type === 'eu_vat');
+      for (const taxId of vatIds) {
+        await stripe.customers.deleteTaxId(stripeCustomerId, taxId.id).catch(() => null);
+      }
+    } catch (error) {
+      logger.warn({ stripeCustomerId, error: error.message }, 'Failed to remove stale VAT IDs from Stripe customer');
     }
   }
 
@@ -331,6 +386,7 @@ async function createSubscriptionCheckoutSession({
         type: 'subscription',
         currency: currency.toUpperCase(),
       },
+      billing_address_collection: 'required',
       ...(isValidStripeCustomerId(stripeCustomerId)
         ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
         : {
@@ -416,6 +472,7 @@ async function createSubscriptionChangeCheckoutSession({
       currency: normalizedCurrency,
       previousStripeSubscriptionId: previousStripeSubscriptionId || '',
     },
+    billing_address_collection: 'required',
     ...(isValidStripeCustomerId(stripeCustomerId)
       ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
       : {

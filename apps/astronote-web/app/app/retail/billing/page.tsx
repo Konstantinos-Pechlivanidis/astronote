@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { billingApi, type Package } from '@/src/lib/retail/api/billing';
 import { subscriptionsApi } from '@/src/lib/retail/api/subscriptions';
 import api from '@/src/lib/retail/api/axios';
+import { endpoints } from '@/src/lib/retail/api/endpoints';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
@@ -1019,7 +1020,7 @@ export default function RetailBillingPage() {
   const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
     queryKey: ['retail-invoices', invoicePage],
     queryFn: async () => {
-      const res = await api.get<RetailInvoicesResponse>('/billing/invoices', {
+      const res = await api.get<RetailInvoicesResponse>(endpoints.billing.invoices, {
         params: { page: invoicePage, pageSize: 20 },
       });
       return res.data;
@@ -1031,7 +1032,7 @@ export default function RetailBillingPage() {
   const { data: billingHistoryData, isLoading: billingHistoryLoading } = useQuery({
     queryKey: ['retail-billing-history', billingHistoryPage],
     queryFn: async () => {
-      const res = await api.get<RetailBillingHistoryResponse>('/billing/billing-history', {
+      const res = await api.get<RetailBillingHistoryResponse>(endpoints.billing.billingHistory, {
         params: { page: billingHistoryPage, pageSize: 20 },
       });
       return res.data;
@@ -1042,7 +1043,7 @@ export default function RetailBillingPage() {
 
   const reconcileMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.post('/subscriptions/reconcile');
+      const res = await api.post(endpoints.subscriptions.reconcile);
       return res.data;
     },
     onSuccess: () => {
@@ -1157,6 +1158,9 @@ export default function RetailBillingPage() {
           description="Manage your subscription and credits"
           actions={currencySelector}
         />
+        <div className="text-sm text-text-secondary">
+          Μετά την πληρωμή θα γίνει αυτόματος συγχρονισμός (verify/reconcile) και θα εμφανιστούν credits & τιμολόγια.
+        </div>
 
         <BillingHeader subscription={subscription} credits={credits} allowance={allowance} />
 

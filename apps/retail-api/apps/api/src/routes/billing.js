@@ -204,10 +204,16 @@ r.get('/billing/profile', requireAuth, async (req, res, next) => {
         currency: 'EUR',
         taxStatus: null,
         taxExempt: false,
+        isBusiness: false,
+        vatValidated: false,
       });
     }
 
-    res.json(profile);
+    res.json({
+      ...profile,
+      isBusiness: profile.isBusiness ?? Boolean(profile.vatNumber),
+      vatValidated: profile.taxStatus === 'verified',
+    });
   } catch (e) { next(e); }
 });
 
@@ -236,10 +242,16 @@ r.put('/billing/profile', requireAuth, async (req, res, next) => {
       vatCountry: input.vatCountry ? String(input.vatCountry).trim().toUpperCase() : null,
       billingEmail: input.billingEmail ? String(input.billingEmail).trim() : null,
       billingAddress: input.billingAddress && typeof input.billingAddress === 'object'
-        ? input.billingAddress
+        ? {
+          ...input.billingAddress,
+          country: input.billingAddress?.country
+            ? String(input.billingAddress.country).trim().toUpperCase()
+            : input.billingAddress?.country || null,
+        }
         : null,
       ...(normalizedCurrency ? { currency: normalizedCurrency } : {}),
       taxExempt: typeof input.taxExempt === 'boolean' ? input.taxExempt : undefined,
+      isBusiness: typeof input.isBusiness === 'boolean' ? input.isBusiness : undefined,
     };
 
     const profile = await upsertBillingProfile(req.user.id, payload);
@@ -255,13 +267,19 @@ r.put('/billing/profile', requireAuth, async (req, res, next) => {
       profile.currency = normalizedCurrency;
     }
 
+    const normalizedProfile = {
+      ...profile,
+      isBusiness: profile?.isBusiness ?? Boolean(profile?.vatNumber),
+      vatValidated: profile?.taxStatus === 'verified',
+    };
+
     const subscription = await getSubscriptionStatus(req.user.id);
     await syncStripeCustomerBillingProfile({
       stripeCustomerId: subscription?.stripeCustomerId,
-      billingProfile: profile,
+      billingProfile: normalizedProfile,
     });
 
-    res.json({ ok: true, billingProfile: profile });
+    res.json({ ok: true, billingProfile: normalizedProfile });
   } catch (e) { next(e); }
 });
 
@@ -1535,12 +1553,18 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       billingProfile?.vatCountry ||
       null;
     const vatIdValidated = billingProfile?.taxStatus === 'verified';
+    const isBusiness = typeof billingProfile?.isBusiness === 'boolean'
+      ? billingProfile.isBusiness
+      : billingProfile?.vatNumber
+        ? true
+        : null;
 
     const price = calculateTopupPrice(credits, {
       currency,
       billingCountry,
       vatId: billingProfile?.vatNumber || null,
       vatIdValidated,
+      isBusiness,
       ipCountry: req.headers['cf-ipcountry'] || req.headers['x-country'] || null,
     });
 
@@ -1639,11 +1663,17 @@ r.get('/billing/topup/calculate', requireAuth, async (req, res, next) => {
       billingProfile?.vatCountry ||
       null;
     const vatIdValidated = billingProfile?.taxStatus === 'verified';
+    const isBusiness = typeof billingProfile?.isBusiness === 'boolean'
+      ? billingProfile.isBusiness
+      : billingProfile?.vatNumber
+        ? true
+        : null;
     const price = calculateTopupPrice(credits, {
       currency,
       billingCountry,
       vatId: billingProfile?.vatNumber || null,
       vatIdValidated,
+      isBusiness,
       ipCountry: req.headers['cf-ipcountry'] || req.headers['x-country'] || null,
     });
 

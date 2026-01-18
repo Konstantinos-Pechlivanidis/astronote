@@ -34,7 +34,7 @@ const normalizeAddress = (address) => {
     city: address.city || null,
     state: address.state || null,
     postalCode: address.postal_code || address.postalCode || null,
-    country: address.country || null,
+    country: address.country ? String(address.country).toUpperCase() : null,
   };
 };
 
@@ -91,6 +91,10 @@ async function syncBillingProfileFromStripe({
     const billingAddress = normalizeAddress(customerAddress);
     const billingEmail = customerDetails?.email || invoiceEmail || customer?.email || null;
     const legalName = customerDetails?.name || invoiceName || customer?.name || null;
+    const inferredBusiness =
+      taxTreatment === 'eu_reverse_charge' ||
+      taxTreatment === 'domestic_vat' ||
+      Boolean(taxId?.value);
 
     const updatePayload = {
       legalName,
@@ -99,7 +103,8 @@ async function syncBillingProfileFromStripe({
       vatNumber: normalizeVatNumber(taxId?.value),
       vatCountry: taxId?.country || billingAddress?.country || null,
       taxStatus: taxId?.status || null,
-      taxExempt: taxExempt === true ? true : undefined,
+      taxExempt: typeof taxExempt === 'boolean' ? taxExempt : undefined,
+      isBusiness: inferredBusiness ? true : undefined,
     };
 
     Object.keys(updatePayload).forEach((key) => {

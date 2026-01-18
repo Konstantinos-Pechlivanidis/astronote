@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import prisma from './prisma.js';
 import { logger } from '../utils/logger.js';
+import { resolveTaxTreatment } from './tax-resolver.js';
 
 // Initialize Stripe (only if API key is available)
 const stripe = process.env.STRIPE_SECRET_KEY
@@ -10,7 +11,7 @@ const stripe = process.env.STRIPE_SECRET_KEY
   : null;
 
 const isStripeTaxEnabled = () =>
-  String(process.env.STRIPE_TAX_ENABLED || '').toLowerCase() === 'true';
+  String(process.env.STRIPE_TAX_ENABLED || 'true').toLowerCase() !== 'false';
 
 const isValidStripeCustomerId = (value) =>
   typeof value === 'string' && value.startsWith('cus_');
@@ -23,8 +24,34 @@ const normalizeStripeAddress = (address) => {
     city: address.city || null,
     state: address.state || null,
     postal_code: address.postalCode || address.postal_code || null,
-    country: address.country || null,
+    country: address.country ? String(address.country).toUpperCase() : null,
   };
+};
+
+const deriveTaxSettingsFromProfile = (billingProfile) => {
+  if (!billingProfile) {
+    return { taxExempt: undefined, treatment: null };
+  }
+
+  const treatment = resolveTaxTreatment({
+    billingCountry: billingProfile.billingAddress?.country || billingProfile.vatCountry || null,
+    vatId: billingProfile.vatNumber || null,
+    vatIdValidated: billingProfile.taxStatus === 'verified',
+    isBusiness: typeof billingProfile.isBusiness === 'boolean'
+      ? billingProfile.isBusiness
+      : billingProfile.vatNumber
+        ? true
+        : null,
+  });
+
+  const taxExempt =
+    treatment.mode === 'eu_reverse_charge'
+      ? 'reverse'
+      : billingProfile.taxExempt
+        ? 'exempt'
+        : 'none';
+
+  return { taxExempt, treatment };
 };
 
 export async function ensureStripeCustomer({
@@ -50,11 +77,13 @@ export async function ensureStripeCustomer({
     throw new Error('Billing email is required. Please complete your billing profile before checkout.');
   }
   const name = billingProfile?.legalName || shopName || shopDomain || 'Astronote Shop';
+  const { taxExempt } = deriveTaxSettingsFromProfile(billingProfile);
 
   const customer = await stripe.customers.create({
     email: email || undefined,
     name,
     address: address || undefined,
+    tax_exempt: taxExempt || undefined,
     metadata: {
       shopId: String(shopId),
       shopDomain: shopDomain || '',
@@ -95,11 +124,13 @@ export async function syncStripeCustomerBillingProfile({
   const address = normalizeStripeAddress(billingProfile?.billingAddress);
   const email = billingProfile?.billingEmail || undefined;
   const name = billingProfile?.legalName || undefined;
+  const { taxExempt } = deriveTaxSettingsFromProfile(billingProfile);
 
   await stripe.customers.update(stripeCustomerId, {
     email,
     name,
     address: address || undefined,
+    tax_exempt: taxExempt || undefined,
   });
 
   // Sync VAT/Tax ID to Stripe (idempotent)
@@ -1217,6 +1248,9 @@ export async function updateSubscription(
       currency: String(currency).toUpperCase(),
       updatedAt: new Date().toISOString(),
     },
+    ...(isStripeTaxEnabled()
+      ? { automatic_tax: { enabled: true } }
+      : {}),
   };
 
   // If scheduling for period end, set billing_cycle_anchor

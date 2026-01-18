@@ -32,26 +32,26 @@ Routes are implemented primarily in:
 - **PUT `/billing/profile`**: update billing profile and sync to Stripe customer
 - **GET `/billing/invoices`**: invoices list (DB-first, Stripe fallback)
 - **GET `/billing/transactions`**: wallet ledger (`CreditTransaction`-style)
-- **GET `/billing/packages`**: packages list (credit packs / subscription packages depending on implementation)
-- **GET `/billing/purchases`**: purchases list (`Purchase`)
-- **GET `/billing/billing-history`**: unified billing ledger (`BillingTransaction`)
-- **POST `/billing/seed-packages`**: seeds packages (internal/admin-ish)
-- **POST `/billing/purchase`**: purchase a package (Stripe checkout)
-- **POST `/billing/topup`**: variable top-up checkout
-- **GET `/billing/topup/calculate`**: VAT/tax-aware top-up quote
-- **POST `/billing/verify-payment`**: generic verify endpoint for any checkout session type
-- **GET `/billing/verify-sync`**: diagnostic endpoint for sync (internal)
+- **GET `/api/billing/packages`**: packages list (credit packs / subscription packages depending on implementation)
+- **GET `/api/billing/purchases`**: purchases list (`Purchase`)
+- **GET `/api/billing/billing-history`**: unified billing ledger (`BillingTransaction`)
+- **POST `/api/billing/seed-packages`**: seeds packages (internal/admin-ish)
+- **POST `/api/billing/purchase`**: purchase a package (Stripe checkout)
+- **POST `/api/billing/topup`**: variable top-up checkout
+- **GET `/api/billing/topup/calculate`**: VAT/tax-aware top-up quote
+- **POST `/api/billing/verify-payment`**: generic verify endpoint for any checkout session type
+- **GET `/api/billing/verify-sync`**: diagnostic endpoint for sync (internal)
 
-#### Subscription endpoints (`/subscriptions/*`) — `apps/retail-api/apps/api/src/routes/billing.js`
-- **GET `/subscriptions/current`**: subscription status snapshot (`getSubscriptionStatusWithStripeSync`) + `plan` config
-- **POST `/subscriptions/reconcile`**: manual reconcile from Stripe (`reconcileSubscriptionFromStripe`)
-- **POST `/subscriptions/subscribe`**: create Stripe Checkout session for subscription
-- **POST `/subscriptions/update`**: update subscription plan (immediate)
-- **POST `/subscriptions/switch`**: switch plan/interval (currently maps interval→plan)
-- **POST `/subscriptions/cancel`**: cancel subscription; updates DB immediately
-- **GET `/subscriptions/portal`**: Stripe customer portal session
-- **POST `/subscriptions/verify-session`**: verify/activate subscription from checkout session (manual recovery)
-- **POST `/subscriptions/finalize`**: alias of verify-session (explicitly intended for FE success page)
+#### Subscription endpoints (`/api/subscriptions/*`) — `apps/retail-api/apps/api/src/routes/billing.js`
+- **GET `/api/subscriptions/current`**: subscription status snapshot (`getSubscriptionStatusWithStripeSync`) + `plan` config
+- **POST `/api/subscriptions/reconcile`**: manual reconcile from Stripe (`reconcileSubscriptionFromStripe`)
+- **POST `/api/subscriptions/subscribe`**: create Stripe Checkout session for subscription
+- **POST `/api/subscriptions/update`**: update subscription plan (immediate)
+- **POST `/api/subscriptions/switch`**: switch plan/interval (currently maps interval→plan)
+- **POST `/api/subscriptions/cancel`**: cancel subscription; updates DB immediately
+- **GET `/api/subscriptions/portal`**: Stripe customer portal session
+- **POST `/api/subscriptions/verify-session`**: verify/activate subscription from checkout session (manual recovery)
+- **POST `/api/subscriptions/finalize`**: alias of verify-session (explicitly intended for FE success page)
 
 ### 1.3 Stripe webhook handling
 
@@ -274,11 +274,11 @@ Below are Retail gaps against those expectations.
   - payment sessions (topups, credit packs)
 - Retail FE success page calling `/subscriptions/finalize` is subscription-only; it may fail for topup/package sessions.
 - Retail backend already provides a generic endpoint:
-  - `POST /billing/verify-payment` in `apps/retail-api/apps/api/src/routes/billing.js`
+  - `POST /api/billing/verify-payment` in `apps/retail-api/apps/api/src/routes/billing.js`
 
 **Minimal change proposal**
 - Update FE success page (`apps/astronote-web/app/app/retail/billing/success/page.tsx`):
-  - Call `POST /billing/verify-payment` first (generic)
+  - Call `POST /api/billing/verify-payment` first (generic)
   - If paymentType indicates subscription: then call `/subscriptions/finalize` (or just rely on verify result)
   - Otherwise: refresh billing page state (balance/history/invoices) without calling subscription finalize
 - Update portal return URL to include a sync hint:
@@ -331,9 +331,9 @@ Below are Retail gaps against those expectations.
 ### Redirect/finalize UX
 - **Current**:
   - FE: `apps/astronote-web/app/app/retail/billing/success/page.tsx`
-  - Backend: `apps/retail-api/apps/api/src/routes/billing.js` (`/subscriptions/finalize`, `/billing/verify-payment`)
+  - Backend: `apps/retail-api/apps/api/src/routes/billing.js` (`/api/subscriptions/finalize`, `/api/billing/verify-payment`)
 - **Proposed**:
-  - FE success page uses `/billing/verify-payment` as primary
+  - FE success page uses `/api/billing/verify-payment` as primary
   - Add `fromPortal=true` return hint and reconcile-on-return behavior
 
 ---
@@ -424,7 +424,7 @@ This section summarizes what was implemented to move Retail billing closer to th
 
 ### Frontend (Retail billing pages only)
 - **Generic success flow for all checkout types**
-  - `apps/astronote-web/app/app/retail/billing/success/page.tsx` now calls `POST /billing/verify-payment` first, then redirects to billing.
+  - `apps/astronote-web/app/app/retail/billing/success/page.tsx` now calls `POST /api/billing/verify-payment` first, then redirects to billing.
 - **Portal-return reconciliation**
   - Portal return URL now includes `fromPortal=true` (backend).
   - Billing page auto-runs reconcile once and cleans URL:
@@ -435,4 +435,3 @@ This section summarizes what was implemented to move Retail billing closer to th
 
 ### Verification doc
 - Added: `apps/retail-api/apps/api/RETAIL_BILLING_VERIFICATION.md`
-

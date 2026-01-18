@@ -483,6 +483,7 @@ function calculateTopupPrice(credits, input = 'EUR') {
   let vatId = null;
   let vatIdValidated = null;
   let ipCountry = null;
+  let isBusiness = null;
 
   if (input && typeof input === 'object') {
     currency = input.currency || 'EUR';
@@ -490,6 +491,7 @@ function calculateTopupPrice(credits, input = 'EUR') {
     vatId = input.vatId || null;
     vatIdValidated = input.vatIdValidated ?? null;
     ipCountry = input.ipCountry || null;
+    isBusiness = input.isBusiness ?? null;
   } else {
     currency = input || 'EUR';
   }
@@ -503,6 +505,7 @@ function calculateTopupPrice(credits, input = 'EUR') {
     vatId,
     vatIdValidated,
     ipCountry,
+    isBusiness,
   });
   const vatRate = Number.isFinite(treatment.taxRate) ? treatment.taxRate : fallbackRate;
 

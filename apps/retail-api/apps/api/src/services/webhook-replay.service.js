@@ -47,7 +47,7 @@ async function checkWebhookReplay(provider, eventId, payloadHash = null, ownerId
 }
 
 async function recordWebhookEvent(provider, eventId, options = {}) {
-  const { payloadHash, eventType, ownerId, payload, status } = options;
+  const { payloadHash, eventType, ownerId, payload, status, error: errorMessage } = options;
 
   try {
     return await prisma.webhookEvent.create({
@@ -59,10 +59,11 @@ async function recordWebhookEvent(provider, eventId, options = {}) {
         ownerId: ownerId || null,
         payload: payload || null,
         status: status || 'received',
+        error: errorMessage || null,
       },
     });
-  } catch (error) {
-    if (error.code === 'P2002') {
+  } catch (err) {
+    if (err.code === 'P2002') {
       const existing = await prisma.webhookEvent.findUnique({
         where: {
           provider_eventId: {
@@ -74,7 +75,7 @@ async function recordWebhookEvent(provider, eventId, options = {}) {
       logger.warn({ provider, eventId, ownerId }, 'Webhook event already exists');
       return existing;
     }
-    throw error;
+    throw err;
   }
 }
 

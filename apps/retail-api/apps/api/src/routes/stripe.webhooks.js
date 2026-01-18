@@ -85,6 +85,14 @@ const resolveOwnerIdFromStripeEvent = async (event) => {
     }
   }
 
+  const clientReferenceId = object.client_reference_id || object.client_referenceId;
+  if (clientReferenceId && typeof clientReferenceId === 'string' && clientReferenceId.startsWith('owner_')) {
+    const parsed = Number(clientReferenceId.replace('owner_', ''));
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
   const customerId =
     typeof object.customer === 'string'
       ? object.customer
@@ -1489,25 +1497,37 @@ async function handleSubscriptionUpdated(subscription) {
  */
 router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
   const signature = req.headers['stripe-signature'];
+  const requestId =
+    req.headers['x-request-id'] ||
+    req.id ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   if (!WEBHOOK_SECRET) {
-    logger.error('STRIPE_WEBHOOK_SECRET not configured');
-    return res.status(500).json({ message: 'Webhook secret not configured', code: 'WEBHOOK_CONFIG_ERROR' });
+    logger.error({ requestId }, 'STRIPE_WEBHOOK_SECRET not configured');
+    return res.status(500).json({ message: 'Webhook secret not configured', code: 'WEBHOOK_CONFIG_ERROR', requestId });
   }
 
   if (!signature) {
-    return res.status(400).json({ message: 'Missing stripe-signature header', code: 'MISSING_SIGNATURE' });
+    logger.warn({ requestId }, 'Stripe webhook missing signature header');
+    return res.status(400).json({ message: 'Missing stripe-signature header', code: 'MISSING_SIGNATURE', requestId });
+  }
+
+  const rawPayload = req.rawBody || (Buffer.isBuffer(req.body) ? req.body : null);
+  if (!rawPayload) {
+    logger.error({ requestId }, 'Stripe webhook missing raw payload for signature verification');
+    return res.status(400).json({ message: 'Missing raw body for signature verification', code: 'MISSING_RAW_BODY', requestId });
   }
 
   let event;
   try {
-    event = verifyWebhookSignature(req.body, signature, WEBHOOK_SECRET);
+    event = verifyWebhookSignature(rawPayload, signature, WEBHOOK_SECRET);
   } catch (err) {
-    logger.warn({ err: err.message }, 'Stripe webhook signature verification failed');
-    return res.status(400).json({ message: `Webhook signature verification failed: ${err.message}`, code: 'INVALID_SIGNATURE' });
+    const payloadHash = generateEventHash(rawPayload);
+    logger.warn({ requestId, err: err.message, payloadHash }, 'Stripe webhook signature verification failed');
+    return res.status(400).json({ message: `Webhook signature verification failed: ${err.message}`, code: 'INVALID_SIGNATURE', requestId });
   }
 
-  const payloadHash = generateEventHash(req.body);
+  const payloadHash = generateEventHash(rawPayload);
   const ownerId = await resolveOwnerIdFromStripeEvent(event);
 
   if (!ownerId) {
@@ -1516,9 +1536,10 @@ router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async
       payloadHash,
       payload: event.data?.object || null,
       status: 'unmatched',
+      error: 'owner_not_found',
     });
-    logger.warn({ eventType: event.type, eventId: event.id }, 'Stripe webhook could not be matched to tenant');
-    return res.json({ received: true, unmatched: true });
+    logger.warn({ requestId, eventType: event.type, eventId: event.id, payloadHash }, 'Stripe webhook could not be matched to tenant');
+    return res.json({ received: true, unmatched: true, requestId });
   }
 
   try {
@@ -1582,7 +1603,7 @@ router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async
 
     return res.json({ received: true });
   } catch (err) {
-    logger.error({ err, eventType: event.type, errMessage: err.message, errStack: err.stack }, 'Error processing Stripe webhook');
+    logger.error({ requestId, err, eventType: event.type, errMessage: err.message, errStack: err.stack }, 'Error processing Stripe webhook');
 
     // Determine if error is retryable
     // Retryable errors: database connection issues, temporary service unavailability
@@ -1597,13 +1618,13 @@ router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async
 
     if (isRetryable) {
       // Return 500 to allow Stripe to retry
-      logger.warn({ eventType: event.type, err: err.message }, 'Retryable error - returning 500 for Stripe retry');
-      return res.status(500).json({ message: 'Temporary error processing webhook', code: 'WEBHOOK_PROCESSING_ERROR', retryable: true });
+      logger.warn({ requestId, eventType: event.type, err: err.message }, 'Retryable error - returning 500 for Stripe retry');
+      return res.status(500).json({ message: 'Temporary error processing webhook', code: 'WEBHOOK_PROCESSING_ERROR', retryable: true, requestId });
     } else {
       // Return 200 for non-retryable errors (acknowledge to prevent infinite retries)
       // Log for manual investigation
-      logger.error({ eventType: event.type, err: err.message }, 'Non-retryable error - acknowledging to prevent retries');
-      return res.status(200).json({ received: true, message: 'Processing failed but acknowledged', code: 'WEBHOOK_PROCESSING_FAILED', retryable: false });
+      logger.error({ requestId, eventType: event.type, err: err.message }, 'Non-retryable error - acknowledging to prevent retries');
+      return res.status(200).json({ received: true, message: 'Processing failed but acknowledged', code: 'WEBHOOK_PROCESSING_FAILED', retryable: false, requestId });
     }
   }
 });

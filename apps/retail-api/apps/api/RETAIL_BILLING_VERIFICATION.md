@@ -16,7 +16,7 @@ Parity checklist reference: `apps/retail-api/BILLING_PARITY_REPORT_RETAIL.md`
 2. API creates Stripe Checkout session (mode `subscription`).
 3. User completes checkout.
 4. Stripe webhook (`POST /webhooks/stripe`) activates subscription and resets allowance (idempotent).
-5. FE success page calls `POST /billing/verify-payment` (generic) and then redirects to billing.
+5. FE success page calls `POST /api/billing/verify-payment` (generic) and then redirects to billing.
 
 ### B) Switch (policy-based)
 Endpoint: `POST /api/subscriptions/switch`
@@ -121,7 +121,7 @@ Notes:
    - Confirm billing page triggers reconcile once (`fromPortal=true`) and then cleans URL.
 6. **Top-up / credit pack success page**:
    - Complete a top-up or pack purchase checkout.
-   - Confirm success page uses `POST /billing/verify-payment` and redirects back with `paymentSuccess=1`.
+  - Confirm success page uses `POST /api/billing/verify-payment` and redirects back with `paymentSuccess=1`.
 
 ---
 
@@ -148,4 +148,3 @@ At the time of writing, `npm -w @astronote/retail-api run prisma:migrate:dev` fa
 - `P3006` / shadow DB apply failure (`Contact` table missing while replaying early migrations)
 
 This is a **legacy migration replayability issue** (shadow DB starts empty) and does not affect `migrate deploy`.
-

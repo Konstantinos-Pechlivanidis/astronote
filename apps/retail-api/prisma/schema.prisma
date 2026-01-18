@@ -600,6 +600,7 @@ model BillingProfile {
   currency       BillingCurrency @default(EUR)
   taxStatus      String?  @db.VarChar(32)
   taxExempt      Boolean  @default(false)
+  isBusiness     Boolean?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

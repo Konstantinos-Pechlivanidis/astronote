@@ -30,6 +30,9 @@ export const endpoints = {
     purchase: '/api/billing/purchase',
     topup: '/api/billing/topup',
     topupCalculate: '/api/billing/topup/calculate',
+    invoices: '/api/billing/invoices',
+    billingHistory: '/api/billing/billing-history',
+    verifyPayment: '/api/billing/verify-payment',
   },
 
   // Subscriptions
@@ -40,6 +43,8 @@ export const endpoints = {
     switch: '/api/subscriptions/switch',
     cancel: '/api/subscriptions/cancel',
     portal: '/api/subscriptions/portal',
+    reconcile: '/api/subscriptions/reconcile',
+    finalize: '/api/subscriptions/finalize',
   },
 
   // Campaigns
