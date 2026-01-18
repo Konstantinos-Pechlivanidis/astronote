@@ -3,6 +3,7 @@ const express = require('express');
 const requireAuth = require('../middleware/requireAuth');
 const smsQueue = require('../queues/sms.queue');
 const schedulerQueue = require('../queues/scheduler.queue');
+const statusRefreshQueue = require('../queues/statusRefresh.queue');
 const router = express.Router();
 
 router.get('/jobs/health', requireAuth, async (_req, res, next) => {
@@ -42,6 +43,13 @@ router.get('/jobs/health', requireAuth, async (_req, res, next) => {
       };
     } else {
       out.scheduler = 'disabled';
+    }
+
+    if (statusRefreshQueue) {
+      const counts = await statusRefreshQueue.getJobCounts();
+      out.statusRefresh = counts;
+    } else {
+      out.statusRefresh = 'disabled';
     }
 
     res.json(out);
