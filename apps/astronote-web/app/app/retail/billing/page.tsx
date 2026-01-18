@@ -330,7 +330,8 @@ function SubscriptionCard({
     },
     onSuccess: (data) => {
       if (data.portalUrl || data.url) {
-        window.location.assign(data.portalUrl || data.url!);
+        const target = data.portalUrl || data.url!;
+        window.open(target, '_blank', 'noopener,noreferrer');
       } else {
         toast.error('No portal URL received from server');
       }

@@ -25,8 +25,22 @@ function RetailBillingSuccessContent() {
   const sessionId = searchParams.get('session_id');
 
   useEffect(() => {
-    if (!sessionId || sessionId.includes('{') || sessionId.includes('CHECKOUT_SESSION_ID')) {
-      setError('Invalid checkout session. Please complete the checkout process.');
+    const placeholder =
+      sessionId === '{CHECKOUT_SESSION_ID}' ||
+      sessionId === '%7BCHECKOUT_SESSION_ID%7D' ||
+      sessionId?.includes('CHECKOUT_SESSION_ID') ||
+      sessionId?.includes('%7B') ||
+      sessionId?.includes('%7D');
+
+    if (!sessionId) {
+      setError('Λείπει το checkout session. Επιστρέψτε στη χρέωση και ξαναπροσπαθήστε.');
+      return;
+    }
+
+    if (placeholder) {
+      setError(
+        'Η πληρωμή ολοκληρώθηκε στο Stripe αλλά δεν επιστράφηκε σωστό session_id. Πάτησε "Back to Billing" και κάνε Refresh/Verify ή ξαναδοκίμασε.',
+      );
       return;
     }
 

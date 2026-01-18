@@ -18,11 +18,11 @@ const normalizeRetailBaseUrl = (baseUrl) => {
   return normalized;
 };
 
-const buildRetailFrontendUrl = (path, baseUrl = null, query = null) => {
+const getRetailFrontendBaseUrl = (baseUrl = null) => {
   const fallbackBase =
     process.env.FRONTEND_URL ||
     process.env.APP_URL ||
-    'https://astronote-retail-frontend.onrender.com';
+    'https://astronote.onrender.com';
   const base = normalizeRetailBaseUrl(baseUrl || fallbackBase);
   const validBase = normalizeBaseUrl(base);
 
@@ -32,6 +32,11 @@ const buildRetailFrontendUrl = (path, baseUrl = null, query = null) => {
     );
   }
 
+  return validBase.replace(/\/+$/, '');
+};
+
+const buildRetailFrontendUrl = (path, baseUrl = null, query = null) => {
+  const validBase = getRetailFrontendBaseUrl(baseUrl);
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const finalPath =
     normalizedPath.startsWith('/retail') ||
@@ -42,7 +47,30 @@ const buildRetailFrontendUrl = (path, baseUrl = null, query = null) => {
   return buildUrl(validBase, finalPath, query);
 };
 
+const buildRetailSuccessUrl = (baseUrl = null) =>
+  `${getRetailFrontendBaseUrl(baseUrl)}/app/retail/billing/success?session_id={CHECKOUT_SESSION_ID}`;
+
+const buildRetailCancelUrl = (baseUrl = null) =>
+  `${getRetailFrontendBaseUrl(baseUrl)}/app/retail/billing/cancel`;
+
+const warnIfEncodedCheckoutPlaceholder = (label, url) => {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+  if (!url) {
+    return;
+  }
+  if (url.includes('%7B') || url.includes('%7D')) {
+    // eslint-disable-next-line no-console
+    console.warn(`[billing-url] ${label} contains encoded braces: ${url}`);
+  }
+};
+
 module.exports = {
   normalizeRetailBaseUrl,
   buildRetailFrontendUrl,
+  getRetailFrontendBaseUrl,
+  buildRetailSuccessUrl,
+  buildRetailCancelUrl,
+  warnIfEncodedCheckoutPlaceholder,
 };

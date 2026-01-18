@@ -1,7 +1,12 @@
 // apps/api/src/routes/billing.js
 const { Router } = require('express');
 const prisma = require('../lib/prisma');
-const { buildRetailFrontendUrl } = require('../lib/frontendUrl');
+const {
+  buildRetailFrontendUrl,
+  buildRetailSuccessUrl,
+  buildRetailCancelUrl,
+  warnIfEncodedCheckoutPlaceholder,
+} = require('../lib/frontendUrl');
 const { isValidAbsoluteUrl } = require('../lib/url-helpers');
 const requireAuth = require('../middleware/requireAuth');
 const { getBalance } = require('../services/wallet.service');
@@ -657,10 +662,9 @@ r.post('/billing/purchase', requireAuth, async (req, res, next) => {
       billingProfile,
     });
 
-    const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
-      session_id: '{CHECKOUT_SESSION_ID}',
-    });
-    const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
+    const successUrl = buildRetailSuccessUrl();
+    const cancelUrl = buildRetailCancelUrl();
+    warnIfEncodedCheckoutPlaceholder('package-purchase', successUrl);
 
     if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
       return res.status(500).json({
@@ -825,10 +829,9 @@ r.post('/subscriptions/subscribe', requireAuth, async (req, res, next) => {
       billingProfile,
     });
 
-    const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
-      session_id: '{CHECKOUT_SESSION_ID}',
-    });
-    const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
+    const successUrl = buildRetailSuccessUrl();
+    const cancelUrl = buildRetailCancelUrl();
+    warnIfEncodedCheckoutPlaceholder('subscription-subscribe', successUrl);
 
     if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
       return res.status(500).json({
@@ -972,10 +975,9 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
         billingProfile,
       });
 
-      const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
-        session_id: '{CHECKOUT_SESSION_ID}',
-      });
-      const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
+      const successUrl = buildRetailSuccessUrl();
+      const cancelUrl = buildRetailCancelUrl();
+      warnIfEncodedCheckoutPlaceholder('subscription-change', successUrl);
       if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
         return res.status(500).json({
           message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',
@@ -1177,10 +1179,9 @@ r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
         billingProfile,
       });
 
-      const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
-        session_id: '{CHECKOUT_SESSION_ID}',
-      });
-      const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
+      const successUrl = buildRetailSuccessUrl();
+      const cancelUrl = buildRetailCancelUrl();
+      warnIfEncodedCheckoutPlaceholder('subscription-change', successUrl);
       if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
         return res.status(500).json({
           message: 'Invalid frontend URL configuration. Check FRONTEND_URL/APP_URL.',
@@ -1577,10 +1578,9 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       billingProfile,
     });
 
-    const successUrl = buildRetailFrontendUrl('/app/retail/billing/success', null, {
-      session_id: '{CHECKOUT_SESSION_ID}',
-    });
-    const cancelUrl = buildRetailFrontendUrl('/app/retail/billing/cancel');
+    const successUrl = buildRetailSuccessUrl();
+    const cancelUrl = buildRetailCancelUrl();
+    warnIfEncodedCheckoutPlaceholder('credit-topup', successUrl);
 
     if (!isValidAbsoluteUrl(successUrl) || !isValidAbsoluteUrl(cancelUrl)) {
       return res.status(500).json({
