@@ -411,7 +411,8 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
     });
 
     // Unique run token per enqueue attempt to avoid jobId collisions blocking jobs
-    const runToken = `run:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`;
+    // BullMQ forbids ":" in custom job ids; keep token URL-safe.
+    const runToken = `run-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
     let enqueuedJobs = 0;
     if (toEnqueue.length > 0) {
@@ -426,7 +427,7 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
         batches.push(toEnqueue.slice(i, i + BATCH_SIZE).map(m => m.id));
       }
 
-      const jobIds = batches.map((_b, idx) => `campaign:${camp.id}:${runToken}:batch:${idx}`);
+      const jobIds = batches.map((_b, idx) => `campaign-${camp.id}-${runToken}-batch-${idx}`);
       logger.info({
         ...baseContext,
         step,
@@ -439,7 +440,7 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
 
       // Enqueue batch jobs
       const enqueuePromises = batches.map((messageIds, batchIndex) => {
-        const jobId = `campaign:${camp.id}:${runToken}:batch:${batchIndex}`;
+        const jobId = `campaign-${camp.id}-${runToken}-batch-${batchIndex}`;
         return smsQueue.add('sendBulkSMS', {
           campaignId: camp.id,
           ownerId: camp.ownerId,
