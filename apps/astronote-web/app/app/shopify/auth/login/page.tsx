@@ -85,77 +85,93 @@ function ShopifyLoginPageContent() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
-      <div className="w-full max-w-md">
-        <RetailCard className="p-6 sm:p-8 lg:p-10">
-          <div className="flex flex-col items-center space-y-4 text-center">
-            <div className="flex items-center justify-center">
-              <Logo size="lg" />
-            </div>
-            <div className="space-y-2">
-              <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">
-                Shopify Login
-              </h1>
-              <p className="text-sm text-text-secondary sm:text-base">
-                Connect your Shopify store to get started
-              </p>
-            </div>
-          </div>
-
-          {isLoading ? (
-            <div className="mt-6 text-center">
-              <div className="mb-4 flex justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+    <div className="relative min-h-screen overflow-hidden bg-[#05070b] text-white">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-60"
+        style={{
+          backgroundImage: `
+            radial-gradient(circle at 20% 20%, rgba(34, 211, 238, 0.18), transparent 25%),
+            radial-gradient(circle at 80% 0%, rgba(34, 211, 238, 0.12), transparent 25%),
+            radial-gradient(circle at 50% 80%, rgba(34, 211, 238, 0.1), transparent 25%),
+            radial-gradient(1px 1px at 10% 30%, rgba(34, 211, 238, 0.6), transparent 0),
+            radial-gradient(1px 1px at 30% 70%, rgba(34, 211, 238, 0.4), transparent 0),
+            radial-gradient(1px 1px at 70% 40%, rgba(34, 211, 238, 0.5), transparent 0),
+            radial-gradient(1px 1px at 90% 80%, rgba(34, 211, 238, 0.35), transparent 0)
+          `,
+        }}
+      />
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+        <div className="w-full max-w-md">
+          <RetailCard className="p-6 sm:p-8 lg:p-10">
+            <div className="flex flex-col items-center space-y-4 text-center">
+              <div className="flex items-center justify-center">
+                <Logo size="lg" />
               </div>
-              <p className="text-sm text-text-secondary">Authenticating...</p>
-            </div>
-          ) : (
-            <div className="mt-6 space-y-6">
-              {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50/80 p-4 backdrop-blur-sm">
-                  <p className="text-sm font-medium text-red-800">{error}</p>
-                </div>
-              )}
-
               <div className="space-y-2">
-                <label htmlFor="shop" className="block text-sm font-medium text-text-secondary">
-                  Shop Domain
-                </label>
-                <Input
-                  id="shop"
-                  type="text"
-                  value={shopDomain}
-                  onChange={(e) => setShopDomain(e.target.value)}
-                  placeholder="example.myshopify.com"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleLogin();
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="pt-2">
-                <Button
-                  onClick={handleLogin}
-                  className="w-full h-12 text-base font-semibold shadow-sm"
-                  size="lg"
-                >
-                  Log in with Shopify
-                </Button>
-              </div>
-
-              <div className="pt-1 text-center">
-                <Link
-                  href="/"
-                  className="text-sm text-text-tertiary underline-offset-4 hover:text-text-secondary hover:underline"
-                >
-                  Back to website
-                </Link>
+                <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">
+                  Shopify Login
+                </h1>
+                <p className="text-sm text-text-secondary sm:text-base">
+                  Connect your Shopify store to get started
+                </p>
               </div>
             </div>
-          )}
-        </RetailCard>
+
+            {isLoading ? (
+              <div className="mt-6 text-center">
+                <div className="mb-4 flex justify-center">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                </div>
+                <p className="text-sm text-text-secondary">Authenticating...</p>
+              </div>
+            ) : (
+              <div className="mt-6 space-y-6">
+                {error && (
+                  <div className="rounded-xl border border-red-200 bg-red-50/80 p-4 backdrop-blur-sm">
+                    <p className="text-sm font-medium text-red-800">{error}</p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label htmlFor="shop" className="block text-sm font-medium text-text-secondary">
+                    Shop Domain
+                  </label>
+                  <Input
+                    id="shop"
+                    type="text"
+                    value={shopDomain}
+                    onChange={(e) => setShopDomain(e.target.value)}
+                    placeholder="example.myshopify.com"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleLogin();
+                      }
+                    }}
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <Button
+                    onClick={handleLogin}
+                    className="h-12 w-full text-base font-semibold shadow-sm"
+                    size="lg"
+                  >
+                    Log in with Shopify
+                  </Button>
+                </div>
+
+                <div className="pt-1 text-center">
+                  <Link
+                    href="/"
+                    className="text-sm text-text-tertiary underline-offset-4 hover:text-text-secondary hover:underline"
+                  >
+                    Back to website
+                  </Link>
+                </div>
+              </div>
+            )}
+          </RetailCard>
+        </div>
       </div>
     </div>
   );
@@ -169,23 +185,39 @@ export default function ShopifyLoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
-          <div className="w-full max-w-md">
-            <RetailCard className="p-6 sm:p-8 lg:p-10">
-              <div className="flex flex-col items-center space-y-4 text-center">
-                <div className="flex items-center justify-center">
-                  <Logo size="lg" />
+        <div className="relative min-h-screen overflow-hidden bg-[#05070b] text-white">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-60"
+            style={{
+              backgroundImage: `
+                radial-gradient(circle at 20% 20%, rgba(34, 211, 238, 0.18), transparent 25%),
+                radial-gradient(circle at 80% 0%, rgba(34, 211, 238, 0.12), transparent 25%),
+                radial-gradient(circle at 50% 80%, rgba(34, 211, 238, 0.1), transparent 25%),
+                radial-gradient(1px 1px at 10% 30%, rgba(34, 211, 238, 0.6), transparent 0),
+                radial-gradient(1px 1px at 30% 70%, rgba(34, 211, 238, 0.4), transparent 0),
+                radial-gradient(1px 1px at 70% 40%, rgba(34, 211, 238, 0.5), transparent 0),
+                radial-gradient(1px 1px at 90% 80%, rgba(34, 211, 238, 0.35), transparent 0)
+              `,
+            }}
+          />
+          <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+            <div className="w-full max-w-md">
+              <RetailCard className="p-6 sm:p-8 lg:p-10">
+                <div className="flex flex-col items-center space-y-4 text-center">
+                  <div className="flex items-center justify-center">
+                    <Logo size="lg" />
+                  </div>
+                  <div className="space-y-2">
+                    <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">
+                      Shopify Login
+                    </h1>
+                    <p className="text-sm text-text-secondary sm:text-base">
+                      Loading...
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <h1 className="text-3xl font-bold text-text-primary sm:text-4xl">
-                    Shopify Login
-                  </h1>
-                  <p className="text-sm text-text-secondary sm:text-base">
-                    Loading...
-                  </p>
-                </div>
-              </div>
-            </RetailCard>
+              </RetailCard>
+            </div>
           </div>
         </div>
       }

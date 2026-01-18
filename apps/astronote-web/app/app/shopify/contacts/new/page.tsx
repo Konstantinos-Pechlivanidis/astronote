@@ -29,7 +29,7 @@ export default function NewContactPage() {
     email: '',
     gender: UI_NOT_SPECIFIED as 'male' | 'female' | 'other' | typeof UI_NOT_SPECIFIED,
     birthDate: '',
-    smsConsent: 'unknown' as 'opted_in' | 'opted_out' | 'unknown',
+    smsConsent: 'opted_in' as 'opted_in' | 'opted_out' | 'unknown',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -238,6 +238,9 @@ export default function NewContactPage() {
                     <SelectItem value="unknown">Unknown</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="mt-2 text-xs text-text-tertiary">
+                  Προεπιλογή σε opt-in ώστε να επιτρέπεται η αποστολή SMS. Μπορείς να το απενεργοποιήσεις αν δεν έχεις συγκατάθεση.
+                </p>
               </div>
 
               {/* Actions */}
@@ -259,4 +262,3 @@ export default function NewContactPage() {
     </RetailPageLayout>
   );
 }
-

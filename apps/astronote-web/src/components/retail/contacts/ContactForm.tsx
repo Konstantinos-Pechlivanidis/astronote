@@ -175,21 +175,25 @@ export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) 
         )}
       </div>
 
-      {contact && (
-        <div>
-          <label className="flex items-center gap-2">
-            <input
-              {...register('isSubscribed')}
-              type="checkbox"
-              className="w-4 h-4 text-accent border-border rounded focus:ring-accent"
-            />
-            <span className="text-sm font-medium text-text-secondary">Subscribed to SMS</span>
-          </label>
-          <p className="mt-1 text-xs text-text-tertiary">
-            Uncheck to unsubscribe this contact
-          </p>
-        </div>
-      )}
+      <div>
+        <label className="flex items-center gap-2">
+          <input
+            {...register('isSubscribed')}
+            type="checkbox"
+            className="w-4 h-4 text-accent border-border rounded focus:ring-accent"
+            defaultChecked={!contact}
+          />
+          <span className="text-sm font-medium text-text-secondary">
+            Subscribed to SMS
+          </span>
+        </label>
+        <p className="mt-1 text-xs text-text-tertiary">
+          Με το opt-in επιτρέπεται η λήψη μηνυμάτων marketing (μπορεί να αλλάξει αργότερα).
+        </p>
+        {contact && (
+          <p className="mt-1 text-xs text-text-tertiary">Uncheck to unsubscribe this contact.</p>
+        )}
+      </div>
 
       <div className="flex justify-end gap-3 pt-4">
         <Button
@@ -203,4 +207,3 @@ export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) 
     </form>
   );
 }
-

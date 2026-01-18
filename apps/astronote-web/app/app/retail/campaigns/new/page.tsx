@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { campaignSchema } from '@/src/lib/retail/validators';
@@ -12,7 +12,13 @@ import { SmsInPhonePreview } from '@/src/components/phone/SmsInPhonePreview';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Controller } from 'react-hook-form';
 import { ChevronRight, ChevronLeft, Check } from 'lucide-react';
 
@@ -27,6 +33,8 @@ export default function NewCampaignPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
+  const messageRef = useRef<HTMLTextAreaElement | null>(null);
 
   const {
     register,
@@ -48,6 +56,8 @@ export default function NewCampaignPage() {
     } as z.infer<typeof campaignSchema>,
   });
 
+  const messageRegister = register('messageText');
+
   const createMutation = useCreateCampaign();
 
   const currentFilters = {
@@ -62,24 +72,38 @@ export default function NewCampaignPage() {
       if (isValid) setCurrentStep(2);
       return;
     }
-    if (currentStep < 4) setCurrentStep((s) => s + 1);
+    if (currentStep < 4) setCurrentStep(s => s + 1);
   };
 
   const handleBack = () => {
-    if (currentStep > 1) setCurrentStep((s) => s - 1);
+    if (currentStep > 1) setCurrentStep(s => s - 1);
   };
 
   const onSubmit = (data: any) => {
     if (isSubmitting || createMutation.isPending) return;
 
+    const scheduleFields =
+      data.scheduleType === 'later' &&
+      data.scheduledDate &&
+      data.scheduledTime
+        ? {
+          scheduledDate: data.scheduledDate,
+          scheduledTime: data.scheduledTime,
+        }
+        : {};
+
     const submitData = {
       name: data.name,
       messageText: data.messageText || null,
-      filterGender: data.filterGender && data.filterGender.trim() ? data.filterGender : null,
-      filterAgeGroup: data.filterAgeGroup && data.filterAgeGroup.trim() ? data.filterAgeGroup : null,
-      ...(data.scheduleType === 'later' && data.scheduledDate && data.scheduledTime
-        ? { scheduledDate: data.scheduledDate, scheduledTime: data.scheduledTime }
-        : {}),
+      filterGender:
+        data.filterGender && data.filterGender.trim()
+          ? data.filterGender
+          : null,
+      filterAgeGroup:
+        data.filterAgeGroup && data.filterAgeGroup.trim()
+          ? data.filterAgeGroup
+          : null,
+      ...scheduleFields,
     };
 
     setIsSubmitting(true);
@@ -89,11 +113,35 @@ export default function NewCampaignPage() {
     });
   };
 
+  const insertVariable = (variable: string) => {
+    const token = `{{${variable}}}`;
+    const current = watch('messageText') || '';
+    const el = messageRef.current;
+    if (el && typeof el.selectionStart === 'number') {
+      const start = el.selectionStart;
+      const end = el.selectionEnd ?? start;
+      const next = `${current.slice(0, start)}${token}${current.slice(end)}`;
+      setValue('messageText', next, { shouldDirty: true, shouldTouch: true });
+      setTimeout(() => {
+        el.focus();
+        const pos = start + token.length;
+        el.setSelectionRange(pos, pos);
+      }, 0);
+      return;
+    }
+    setValue('messageText', current + token, {
+      shouldDirty: true,
+      shouldTouch: true,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="space-y-1">
-        <h1 className="text-3xl font-semibold tracking-tight text-text-primary">Create Campaign</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-text-primary">
+          Create Campaign
+        </h1>
         <p className="text-sm text-text-secondary">
           Set up a new SMS campaign in a few simple steps.
         </p>
@@ -116,7 +164,11 @@ export default function NewCampaignPage() {
                     <div
                       className={[
                         'hidden sm:block h-[2px] flex-1 rounded-full',
-                        isFirst ? 'bg-transparent' : isDone ? 'bg-green-500' : 'bg-border',
+                        isFirst
+                          ? 'bg-transparent'
+                          : isDone
+                            ? 'bg-green-500'
+                            : 'bg-border',
                       ].join(' ')}
                     />
 
@@ -133,19 +185,27 @@ export default function NewCampaignPage() {
                               : 'bg-surface-light text-text-tertiary ring-border',
                         ].join(' ')}
                       >
-                        {isDone ? <Check className="h-5 w-5" /> : <span>{step.id}</span>}
+                        {isDone ? (
+                          <Check className="h-5 w-5" />
+                        ) : (
+                          <span>{step.id}</span>
+                        )}
                       </div>
 
                       <div className="min-w-0">
                         <div
                           className={[
                             'text-sm font-semibold',
-                            isActive ? 'text-text-primary' : 'text-text-secondary',
+                            isActive
+                              ? 'text-text-primary'
+                              : 'text-text-secondary',
                           ].join(' ')}
                         >
                           {step.name}
                         </div>
-                        <div className="text-xs text-text-tertiary">{step.description}</div>
+                        <div className="text-xs text-text-tertiary">
+                          {step.description}
+                        </div>
                       </div>
                     </div>
 
@@ -153,7 +213,11 @@ export default function NewCampaignPage() {
                     <div
                       className={[
                         'hidden sm:block h-[2px] flex-1 rounded-full',
-                        isLast ? 'bg-transparent' : isDone ? 'bg-green-500' : 'bg-border',
+                        isLast
+                          ? 'bg-transparent'
+                          : isDone
+                            ? 'bg-green-500'
+                            : 'bg-border',
                       ].join(' ')}
                     />
                   </li>
@@ -167,65 +231,162 @@ export default function NewCampaignPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Step 1: Basics */}
             {currentStep === 1 && (
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                {/* Form Column */}
-                <div className="lg:col-span-2 space-y-4 min-w-0">
-                  <div className="space-y-1">
-                    <h3 className="text-lg font-semibold text-text-primary">Campaign Basics</h3>
-                    <p className="text-sm text-text-secondary">
-                      Give your campaign a clear name and write your SMS message.
-                    </p>
-                  </div>
+              <div className="space-y-4">
+                <div className="lg:hidden flex items-center gap-2 rounded-xl border border-border bg-surface-light px-3 py-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={mobileTab === 'edit' ? 'default' : 'ghost'}
+                    className="flex-1"
+                    onClick={() => setMobileTab('edit')}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={mobileTab === 'preview' ? 'default' : 'ghost'}
+                    className="flex-1"
+                    onClick={() => setMobileTab('preview')}
+                  >
+                    Preview
+                  </Button>
+                </div>
 
-                  <div>
-                    <label htmlFor="name" className="mb-2 block text-sm font-medium text-text-secondary">
-                      Campaign Name <span className="text-red-400">*</span>
-                    </label>
-                    <Input {...register('name')} type="text" id="name" maxLength={200} placeholder="Summer Sale 2025" />
-                    {errors.name && <p className="mt-1 text-sm text-red-400">{(errors.name as any).message}</p>}
-                  </div>
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                  {/* Form Column */}
+                  <div
+                    className={`lg:col-span-2 space-y-4 min-w-0 ${
+                      mobileTab === 'preview' ? 'hidden lg:block' : ''
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-semibold text-text-primary">
+                        Campaign Basics
+                      </h3>
+                      <p className="text-sm text-text-secondary">
+                        Give your campaign a clear name and write your SMS
+                        message.
+                      </p>
+                    </div>
 
-                  <div>
-                    <label htmlFor="messageText" className="mb-2 block text-sm font-medium text-text-secondary">
-                      Message Text <span className="text-red-400">*</span>
-                    </label>
-                    <Textarea
-                      {...register('messageText')}
-                      id="messageText"
-                      rows={6}
-                      maxLength={2000}
-                      placeholder="Enter your SMS message here. Use {{firstName}} for personalization."
-                    />
-                    <p className="mt-1 text-xs text-text-tertiary">
-                      Max 2000 characters. Use variables like {'{{'}firstName{'}}'} for personalization.
-                    </p>
-                    {errors.messageText && (
-                      <p className="mt-1 text-sm text-red-400">{(errors.messageText as any).message}</p>
+                    <div>
+                      <label
+                        htmlFor="name"
+                        className="mb-2 block text-sm font-medium text-text-secondary"
+                      >
+                        Campaign Name <span className="text-red-400">*</span>
+                      </label>
+                      <Input
+                        {...register('name')}
+                        type="text"
+                        id="name"
+                        maxLength={200}
+                        placeholder="Summer Sale 2025"
+                      />
+                      {errors.name && (
+                        <p className="mt-1 text-sm text-red-400">
+                          {(errors.name as any).message}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="messageText"
+                        className="mb-2 block text-sm font-medium text-text-secondary"
+                      >
+                        Message Text <span className="text-red-400">*</span>
+                      </label>
+                      <Textarea
+                        {...messageRegister}
+                        id="messageText"
+                        rows={6}
+                        maxLength={2000}
+                        placeholder="Enter your SMS message here. Use {{firstName}} for personalization."
+                        ref={el => {
+                          messageRegister.ref(el);
+                          messageRef.current = el;
+                        }}
+                      />
+                      <p className="mt-1 text-xs text-text-tertiary">
+                        Max 2000 characters. Use variables like {'{{'}firstName
+                        {'}}'} for personalization.
+                      </p>
+                      {errors.messageText && (
+                        <p className="mt-1 text-sm text-red-400">
+                          {(errors.messageText as any).message}
+                        </p>
+                      )}
+                      <div className="mt-3 space-y-2 rounded-xl border border-border bg-surface-light p-3">
+                        <div className="flex flex-wrap gap-2">
+                          {['firstName', 'lastName', 'discountCode'].map(v => (
+                            <Button
+                              key={v}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => insertVariable(v)}
+                            >
+                              {'{{'}
+                              {v}
+                              {'}}'}
+                            </Button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-text-secondary">
+                          Τα πεδία αντικαθίστανται αυτόματα όταν υπάρχει
+                          διαθέσιμη τιμή (χρησιμοποίησε ακριβώς αυτές τις
+                          μορφές).
+                        </p>
+                        <p className="text-xs text-text-secondary">
+                          Το unsubscribe link προστίθεται αυτόματα στο τέλος και
+                          γίνεται short link από το σύστημα. Ο κωδικός έκπτωσης
+                          εμφανίζεται αν χρησιμοποιήσεις το{' '}
+                          <span className="font-mono text-[11px]">
+                            {'{{discountCode}}'}
+                          </span>
+                          .
+                        </p>
+                        <p className="text-xs text-text-tertiary">
+                          Πρόσεξε το μήκος/GSM χαρακτήρες για χρέωση SMS. Η
+                          προεπισκόπηση δείχνει counts.
+                        </p>
+                      </div>
+                    </div>
+
+                    {Object.keys(errors).length > 0 &&
+                      (errors.name || errors.messageText) && (
+                      <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
+                        <p className="text-sm text-red-400">
+                          Please fix the errors above before proceeding.
+                        </p>
+                      </div>
                     )}
                   </div>
 
-                  {Object.keys(errors).length > 0 && (errors.name || errors.messageText) && (
-                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
-                      <p className="text-sm text-red-400">Please fix the errors above before proceeding.</p>
+                  {/* Preview Column (Desktop: Sticky, Mobile: Below) */}
+                  <div
+                    className={`lg:col-span-1 min-w-0 ${
+                      mobileTab === 'edit' ? 'hidden lg:block' : ''
+                    }`}
+                  >
+                    <div className="lg:sticky lg:top-24 max-w-full overflow-hidden">
+                      <RetailCard className="p-6">
+                        <h3 className="text-lg font-semibold text-text-primary mb-4">
+                          Message Preview
+                        </h3>
+                        <div className="flex justify-center lg:justify-start">
+                          <SmsInPhonePreview
+                            message={watch('messageText') || ''}
+                            senderName="Astronote"
+                            variant="retail"
+                            size="md"
+                            showCounts={true}
+                          />
+                        </div>
+                      </RetailCard>
                     </div>
-                  )}
-                </div>
-
-                {/* Preview Column (Desktop: Sticky, Mobile: Below) */}
-                <div className="lg:col-span-1 min-w-0">
-                  <div className="lg:sticky lg:top-24 max-w-full overflow-hidden">
-                    <RetailCard className="p-6">
-                      <h3 className="text-lg font-semibold text-text-primary mb-4">Message Preview</h3>
-                      <div className="flex justify-center lg:justify-start">
-                        <SmsInPhonePreview
-                          message={watch('messageText') || ''}
-                          senderName="Astronote"
-                          variant="retail"
-                          size="md"
-                          showCounts={true}
-                        />
-                      </div>
-                    </RetailCard>
                   </div>
                 </div>
               </div>
@@ -235,7 +396,9 @@ export default function NewCampaignPage() {
             {currentStep === 2 && (
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <h3 className="text-lg font-semibold text-text-primary">Target Audience</h3>
+                  <h3 className="text-lg font-semibold text-text-primary">
+                    Target Audience
+                  </h3>
                   <p className="text-sm text-text-secondary">
                     Narrow down who should receive this message.
                   </p>
@@ -243,7 +406,10 @@ export default function NewCampaignPage() {
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="min-w-0">
-                    <label htmlFor="filterGender" className="mb-2 block text-sm font-medium text-text-secondary">
+                    <label
+                      htmlFor="filterGender"
+                      className="mb-2 block text-sm font-medium text-text-secondary"
+                    >
                       Gender Filter
                     </label>
                     <Controller
@@ -252,7 +418,7 @@ export default function NewCampaignPage() {
                       render={({ field }) => (
                         <Select
                           value={field.value || undefined}
-                          onValueChange={(value) => {
+                          onValueChange={value => {
                             field.onChange(value || null);
                           }}
                         >
@@ -270,7 +436,10 @@ export default function NewCampaignPage() {
                   </div>
 
                   <div className="min-w-0">
-                    <label htmlFor="filterAgeGroup" className="mb-2 block text-sm font-medium text-text-secondary">
+                    <label
+                      htmlFor="filterAgeGroup"
+                      className="mb-2 block text-sm font-medium text-text-secondary"
+                    >
                       Age Group Filter
                     </label>
                     <Controller
@@ -279,7 +448,7 @@ export default function NewCampaignPage() {
                       render={({ field }) => (
                         <Select
                           value={field.value || undefined}
-                          onValueChange={(value) => {
+                          onValueChange={value => {
                             field.onChange(value || null);
                           }}
                         >
@@ -297,7 +466,10 @@ export default function NewCampaignPage() {
                   </div>
                 </div>
 
-                <AudiencePreviewPanel filters={currentFilters} onCountResolved={setAudienceCount} />
+                <AudiencePreviewPanel
+                  filters={currentFilters}
+                  onCountResolved={setAudienceCount}
+                />
               </div>
             )}
 
@@ -305,7 +477,9 @@ export default function NewCampaignPage() {
             {currentStep === 3 && (
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <h3 className="text-lg font-semibold text-text-primary">Schedule</h3>
+                  <h3 className="text-lg font-semibold text-text-primary">
+                    Schedule
+                  </h3>
                   <p className="text-sm text-text-secondary">
                     Save as draft or schedule a send time.
                   </p>
@@ -318,7 +492,7 @@ export default function NewCampaignPage() {
                       {...register('scheduleType')}
                       value="now"
                       defaultChecked
-                      onChange={(e) => {
+                      onChange={e => {
                         if (e.target.checked) {
                           setValue('scheduledDate', '');
                           setValue('scheduledTime', '');
@@ -326,7 +500,9 @@ export default function NewCampaignPage() {
                       }}
                       className="h-4 w-4 accent-[var(--accent)]"
                     />
-                    <span className="text-sm font-medium text-text-primary">Save as draft (send later)</span>
+                    <span className="text-sm font-medium text-text-primary">
+                      Save as draft (send later)
+                    </span>
                   </label>
 
                   <label className="flex items-center gap-2">
@@ -336,14 +512,19 @@ export default function NewCampaignPage() {
                       value="later"
                       className="h-4 w-4 accent-[var(--accent)]"
                     />
-                    <span className="text-sm font-medium text-text-primary">Schedule for later</span>
+                    <span className="text-sm font-medium text-text-primary">
+                      Schedule for later
+                    </span>
                   </label>
                 </div>
 
                 {watch('scheduleType') === 'later' && (
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="min-w-0">
-                      <label htmlFor="scheduledDate" className="mb-2 block text-sm font-medium text-text-secondary">
+                      <label
+                        htmlFor="scheduledDate"
+                        className="mb-2 block text-sm font-medium text-text-secondary"
+                      >
                         Date
                       </label>
                       <Input
@@ -353,17 +534,28 @@ export default function NewCampaignPage() {
                         min={new Date().toISOString().split('T')[0]}
                       />
                       {errors.scheduledDate && (
-                        <p className="mt-1 text-sm text-red-400">{(errors.scheduledDate as any).message}</p>
+                        <p className="mt-1 text-sm text-red-400">
+                          {(errors.scheduledDate as any).message}
+                        </p>
                       )}
                     </div>
 
                     <div className="min-w-0">
-                      <label htmlFor="scheduledTime" className="mb-2 block text-sm font-medium text-text-secondary">
+                      <label
+                        htmlFor="scheduledTime"
+                        className="mb-2 block text-sm font-medium text-text-secondary"
+                      >
                         Time
                       </label>
-                      <Input {...register('scheduledTime')} type="time" id="scheduledTime" />
+                      <Input
+                        {...register('scheduledTime')}
+                        type="time"
+                        id="scheduledTime"
+                      />
                       {errors.scheduledTime && (
-                        <p className="mt-1 text-sm text-red-400">{(errors.scheduledTime as any).message}</p>
+                        <p className="mt-1 text-sm text-red-400">
+                          {(errors.scheduledTime as any).message}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -375,8 +567,12 @@ export default function NewCampaignPage() {
             {currentStep === 4 && (
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <h3 className="text-lg font-semibold text-text-primary">Review & Create</h3>
-                  <p className="text-sm text-text-secondary">Double-check details before creating.</p>
+                  <h3 className="text-lg font-semibold text-text-primary">
+                    Review & Create
+                  </h3>
+                  <p className="text-sm text-text-secondary">
+                    Double-check details before creating.
+                  </p>
                 </div>
 
                 {createMutation.isError && (
@@ -390,12 +586,18 @@ export default function NewCampaignPage() {
 
                 <div className="rounded-xl border border-border bg-surface-light p-4 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-text-secondary">Campaign Name:</span>
-                    <span className="text-sm text-text-primary">{watch('name') || '—'}</span>
+                    <span className="text-sm font-medium text-text-secondary">
+                      Campaign Name:
+                    </span>
+                    <span className="text-sm text-text-primary">
+                      {watch('name') || '—'}
+                    </span>
                   </div>
 
                   <div>
-                    <span className="text-sm font-medium text-text-secondary">Message:</span>
+                    <span className="text-sm font-medium text-text-secondary">
+                      Message:
+                    </span>
                     <div className="mt-2 whitespace-pre-wrap rounded-lg border border-border bg-background p-3 text-sm text-text-primary">
                       {watch('messageText') || '—'}
                     </div>
@@ -403,27 +605,41 @@ export default function NewCampaignPage() {
 
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-text-secondary">Gender Filter:</span>
-                      <span className="text-sm text-text-primary capitalize">{watch('filterGender') || 'All'}</span>
+                      <span className="text-sm font-medium text-text-secondary">
+                        Gender Filter:
+                      </span>
+                      <span className="text-sm text-text-primary capitalize">
+                        {watch('filterGender') || 'All'}
+                      </span>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-text-secondary">Age Group:</span>
+                      <span className="text-sm font-medium text-text-secondary">
+                        Age Group:
+                      </span>
                       <span className="text-sm text-text-primary">
-                        {watch('filterAgeGroup') ? watch('filterAgeGroup')?.replace('_', '-') : 'All'}
+                        {watch('filterAgeGroup')
+                          ? watch('filterAgeGroup')?.replace('_', '-')
+                          : 'All'}
                       </span>
                     </div>
                   </div>
 
                   {audienceCount !== null && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-text-secondary">Recipients:</span>
-                      <span className="text-sm text-text-primary">{audienceCount.toLocaleString()}</span>
+                      <span className="text-sm font-medium text-text-secondary">
+                        Recipients:
+                      </span>
+                      <span className="text-sm text-text-primary">
+                        {audienceCount.toLocaleString()}
+                      </span>
                     </div>
                   )}
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-text-secondary">Schedule:</span>
+                    <span className="text-sm font-medium text-text-secondary">
+                      Schedule:
+                    </span>
                     <span className="text-sm text-text-primary">
                       {watch('scheduledDate') && watch('scheduledTime')
                         ? `${watch('scheduledDate')} at ${watch('scheduledTime')}`
@@ -436,7 +652,12 @@ export default function NewCampaignPage() {
 
             {/* Navigation buttons */}
             <div className="flex items-center justify-between border-t border-border pt-6">
-              <Button type="button" onClick={handleBack} disabled={currentStep === 1} variant="outline">
+              <Button
+                type="button"
+                onClick={handleBack}
+                disabled={currentStep === 1}
+                variant="outline"
+              >
                 <ChevronLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
@@ -447,8 +668,13 @@ export default function NewCampaignPage() {
                   <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : (
-                <Button type="submit" disabled={isSubmitting || createMutation.isPending}>
-                  {isSubmitting || createMutation.isPending ? 'Creating...' : 'Create Campaign'}
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || createMutation.isPending}
+                >
+                  {isSubmitting || createMutation.isPending
+                    ? 'Creating...'
+                    : 'Create Campaign'}
                 </Button>
               )}
             </div>

@@ -35,6 +35,7 @@ export default function NewCampaignPage() {
   const { data: subscriptionData } = useSubscriptionStatus();
   const messageRef = useRef<HTMLTextAreaElement | null>(null);
   const [submitAction, setSubmitAction] = useState<null | 'draft' | 'send' | 'schedule'>(null);
+  const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -209,9 +210,32 @@ export default function NewCampaignPage() {
           backHref="/app/shopify/campaigns"
         />
 
+        <div className="flex items-center gap-2 lg:hidden">
+          <Button
+            size="sm"
+            variant={mobileTab === 'edit' ? 'default' : 'outline'}
+            onClick={() => setMobileTab('edit')}
+            className="min-w-[96px]"
+          >
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant={mobileTab === 'preview' ? 'default' : 'outline'}
+            onClick={() => setMobileTab('preview')}
+            className="min-w-[96px]"
+          >
+            Preview
+          </Button>
+        </div>
+
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {/* Form */}
-          <div className="lg:col-span-2">
+          <div
+            className={`lg:col-span-2 ${
+              mobileTab === 'preview' ? 'hidden lg:block' : ''
+            }`}
+          >
             <RetailCard className="p-6">
               <form
                 onSubmit={(e) => {
@@ -517,7 +541,11 @@ export default function NewCampaignPage() {
           </div>
 
           {/* Preview/Info Sidebar */}
-          <div className="lg:col-span-1">
+          <div
+            className={`lg:col-span-1 ${
+              mobileTab === 'edit' ? 'hidden lg:block' : ''
+            }`}
+          >
             <div className="lg:sticky lg:top-24 space-y-6">
               {/* Phone Preview */}
               <RetailCard className="p-6">

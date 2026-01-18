@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "NODE_ENV=production next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "gate": "npm run lint && npm run build"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

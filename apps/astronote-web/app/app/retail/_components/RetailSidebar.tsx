@@ -1,9 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/src/components/ui/dialog';
 import { useRetailAuth } from '@/src/features/retail/auth/useRetailAuth';
 import { RetailNavList } from './RetailNavList';
 
@@ -22,6 +24,7 @@ export function RetailSidebar({
   className,
 }: RetailSidebarProps) {
   const { logout, user } = useRetailAuth();
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -78,11 +81,32 @@ export function RetailSidebar({
             'w-full justify-start text-text-secondary hover:text-text-primary',
             collapsed && 'justify-center',
           )}
-          onClick={handleLogout}
+          onClick={() => setLogoutOpen(true)}
         >
           <LogOut className={cn('h-4 w-4', collapsed ? '' : 'mr-2')} />
           {!collapsed && 'Sign Out'}
         </Button>
+        <Dialog
+          open={logoutOpen}
+          onClose={() => setLogoutOpen(false)}
+          title="Αποσύνδεση"
+          size="sm"
+        >
+          <p className="text-sm text-text-secondary">Θέλεις σίγουρα να αποσυνδεθείς;</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setLogoutOpen(false)}>
+              Ακύρωση
+            </Button>
+            <Button
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={async () => {
+                await handleLogout();
+              }}
+            >
+              Αποσύνδεση
+            </Button>
+          </div>
+        </Dialog>
       </div>
     </aside>
   );

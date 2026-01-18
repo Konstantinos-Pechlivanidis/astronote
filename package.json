@@ -77,7 +77,8 @@
     "shopify:gate": "node scripts/shopify-gate.mjs",
     "retail:gate": "node scripts/retail-gate.mjs",
     "prisma:gate": "bash apps/shopify-api/scripts/gate-prisma.sh && bash apps/retail-api/apps/api/scripts/gate-prisma.sh",
-    "install:all": "npm install"
+    "install:all": "npm install",
+    "gate": "npm -w @astronote/web-next run gate && npm -w @astronote/shopify-api run gate && npm -w @astronote/retail-api run gate"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

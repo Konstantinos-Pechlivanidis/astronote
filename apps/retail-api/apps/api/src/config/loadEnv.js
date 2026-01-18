@@ -18,10 +18,10 @@ const path = require('path');
 function loadEnv() {
   // Determine paths
   // From apps/retail-api/apps/api/src/config/loadEnv.js
-  // To root: ../../../../ (4 levels up)
-  // To apps/retail-api: ../../.. (3 levels up)
-  const monorepoRoot = path.resolve(__dirname, '../../../../');
-  const retailApiRoot = path.resolve(__dirname, '../../..');
+  // To repo root: ../../../../../ (5 levels up)
+  // To apps/retail-api root: ../../../../ (4 levels up)
+  const monorepoRoot = path.resolve(__dirname, '../../../../../');
+  const retailApiRoot = path.resolve(__dirname, '../../../../');
 
   // Load in priority order (later overrides earlier)
   // 1. Root .env (shared)
@@ -49,4 +49,3 @@ function loadEnv() {
 }
 
 module.exports = loadEnv;
-

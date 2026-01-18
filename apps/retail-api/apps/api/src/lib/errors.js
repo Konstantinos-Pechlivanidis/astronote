@@ -28,7 +28,16 @@ function handleError(error, req, res, defaultMessage = 'Internal Server Error') 
     method: req.method,
     requestId: req.id,
     userId: req.user?.id,
+    rootCauseHint: undefined,
   };
+
+  if (error?.code === 'CONFIG_MISSING_PRICE_ID') {
+    errorDetails.rootCauseHint = 'Missing Stripe price env vars';
+  } else if (error?.code === 'INVALID_CURRENCY') {
+    errorDetails.rootCauseHint = 'Unsupported currency parameter';
+  } else if (error?.message?.includes('Stripe is not configured')) {
+    errorDetails.rootCauseHint = 'Stripe keys missing/invalid';
+  }
 
   if (req.log) {
     req.log.error({ err: error, details: errorDetails }, 'Request error');

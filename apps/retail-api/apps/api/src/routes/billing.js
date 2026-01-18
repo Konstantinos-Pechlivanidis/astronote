@@ -857,7 +857,7 @@ r.post('/subscriptions/subscribe', requireAuth, async (req, res, next) => {
   } catch (e) {
     // Handle specific error cases
     if (e?.code === CONFIG_ERROR_CODE) {
-      return res.status(500).json({
+      return res.status(400).json({
         message: e.message,
         code: CONFIG_ERROR_CODE,
       });
@@ -1683,6 +1683,12 @@ r.get('/billing/topup/calculate', requireAuth, async (req, res, next) => {
       return res.status(400).json({
         message: e.message || 'An error occurred while calculating the price',
         code: 'PRICE_CALCULATION_ERROR',
+      });
+    }
+    if (e?.code === 'INVALID_CURRENCY') {
+      return res.status(400).json({
+        message: e.message || 'Unsupported currency',
+        code: 'INVALID_CURRENCY',
       });
     }
     next(e);
