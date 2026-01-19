@@ -18,7 +18,8 @@ const { sendSingle } = require('../../api/src/services/mitto.service');
 const { sendBulkSMSWithCredits } = require('../../api/src/services/smsBulk.service');
 const { consumeMessageBilling, isSubscriptionActive } = require('../../api/src/services/subscription.service');
 const { generateUnsubscribeToken } = require('../../api/src/services/token.service');
-const { shortenUrl, shortenUrlsInText } = require('../../api/src/services/urlShortener.service');
+const { shortenUrlsInText, ShortenerError } = require('../../api/src/services/urlShortener.service');
+const { buildOfferShortUrl, buildUnsubscribeShortUrl } = require('../../api/src/services/publicLinkBuilder.service');
 const crypto = require('crypto');
 
 const DEBUG_SEND = process.env.SMS_SEND_DEBUG === '1';
@@ -38,33 +39,6 @@ function formatRedisInfo(connection) {
   return { host, port, db, tls };
 }
 
-// Normalize base URL (remove trailing slash)
-function normalizeBase(url) {
-  if (!url) return '';
-  return url.trim().replace(/\/$/, '');
-}
-
-function sha256Hex(input) {
-  return crypto.createHash('sha256').update(String(input)).digest('hex');
-}
-
-async function getCache(key) {
-  try {
-    return await connection.get(key);
-  } catch (e) {
-    return null;
-  }
-}
-
-async function setCacheEx(key, seconds, value) {
-  try {
-    await connection.set(key, String(value), 'EX', Number(seconds));
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
 async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, ctx = null }) {
   let output = text || '';
   try {
@@ -82,7 +56,10 @@ async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, ctx = null 
         'SHORTEN_START',
       );
     }
-    output = await shortenUrlsInText(output);
+    output = await shortenUrlsInText(output, {
+      ownerId: ctx?.ownerId || null,
+      kind: 'message',
+    });
   } catch (e) {
     if (DEBUG_SEND) {
       logger.warn(
@@ -105,12 +82,13 @@ async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, ctx = null 
 
   // Remove any existing offer/unsubscribe blocks or short URLs
   const linePatterns = [
-    /^ *view offer:.*$/gim,
+    /^ *(view|claim) offer:.*$/gim,
     /^ *to unsubscribe.*$/gim,
   ];
   const urlPatterns = [
     /https?:\/\/\S*\/o\/[^\s]+/gi,
     /https?:\/\/\S*\/retail\/o\/[^\s]+/gi,
+    /https?:\/\/\S*\/tracking\/offer\/[^\s]+/gi,
     /https?:\/\/\S*\/s\/[^\s]+/gi,
     /https?:\/\/\S*\/retail\/s\/[^\s]+/gi,
     /https?:\/\/\S*\/unsubscribe\/[^\s]+/gi
@@ -129,7 +107,7 @@ async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, ctx = null 
   const safeUnsubUrl = unsubscribeUrl || null;
 
   if (safeOfferUrl) {
-    appended.push(`View offer: ${safeOfferUrl}`);
+    appended.push(`Claim Offer: ${safeOfferUrl}`);
   }
   if (safeUnsubUrl) {
     appended.push(`To unsubscribe, tap: ${safeUnsubUrl}`);
@@ -140,16 +118,26 @@ async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, ctx = null 
   }
 
   output = output.replace(/\n{3,}/g, '\n\n').trim();
-  return output;
+  const appendedLinks = {
+    offer: Boolean(safeOfferUrl),
+    unsubscribe: Boolean(safeUnsubUrl),
+  };
+  if (DEBUG_SEND) {
+    logger.info(
+      {
+        tag: 'FINALIZE_LINKS',
+        jobId: ctx?.jobId,
+        attempt: ctx?.attempt,
+        campaignId: ctx?.campaignId,
+        ownerId: ctx?.ownerId,
+        messageId: ctx?.messageId,
+        appendedLinks,
+      },
+      'FINALIZE_LINKS',
+    );
+  }
+  return { text: output, appended: appendedLinks };
 }
-
-// Base URL for public retail links
-const PUBLIC_RETAIL_BASE_URL = normalizeBase(
-  process.env.PUBLIC_RETAIL_BASE_URL ||
-  process.env.PUBLIC_WEB_BASE_URL ||
-  process.env.FRONTEND_URL ||
-  'https://astronote-retail-frontend.onrender.com'
-);
 
 const connection = getRedisClient();
 
@@ -197,6 +185,73 @@ function isRetryable(err) {
   if (status >= 500) return true; // provider/server error
   if (status === 429) return true; // rate limited (HTTP 429)
   return false;                    // 4xx hard fail
+}
+
+async function renderMessageWithLinks(msg, jobCtx = {}) {
+  if (!msg?.campaign || !msg?.contact) {
+    throw new ShortenerError('Missing campaign or contact for message rendering', { messageId: msg?.id });
+  }
+
+  const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
+  const unsubscribe = await buildUnsubscribeShortUrl({
+    token: unsubscribeToken,
+    ownerId: msg.campaign.ownerId,
+    campaignId: msg.campaign.id,
+    campaignMessageId: msg.id,
+  });
+
+  const offer = msg.trackingId
+    ? await buildOfferShortUrl({
+      trackingId: msg.trackingId,
+      ownerId: msg.campaign.ownerId,
+      campaignId: msg.campaign.id,
+      campaignMessageId: msg.id,
+    })
+    : null;
+
+  const { text, appended } = await finalizeMessageText(msg.text, {
+    offerUrl: offer?.shortUrl || null,
+    unsubscribeUrl: unsubscribe?.shortUrl || null,
+    ctx: {
+      ...jobCtx,
+      messageId: msg.id,
+      campaignId: msg.campaign.id,
+      ownerId: msg.campaign.ownerId,
+    },
+  });
+
+  return {
+    text,
+    appended,
+    shortLinks: {
+      offer: offer?.shortUrl || null,
+      unsubscribe: unsubscribe?.shortUrl || null,
+    },
+    targets: {
+      offer: offer?.longUrl || null,
+      unsubscribe: unsubscribe?.longUrl || null,
+    },
+  };
+}
+
+async function markShortenerFailure(messageId, ownerId, campaignId, err) {
+  const message = err?.message || 'Short link generation failed';
+  const errorCode = err?.code || 'SHORTENER_FAILED';
+  try {
+    await prisma.campaignMessage.update({
+      where: { id: messageId },
+      data: {
+        status: 'failed',
+        failedAt: new Date(),
+        error: `${errorCode}:${message}`,
+        sendClaimedAt: null,
+        sendClaimToken: null,
+      },
+    });
+  } catch (updateErr) {
+    logger.warn({ messageId, err: updateErr?.message }, 'Failed to mark message as failed after shortener error');
+  }
+  logger.error({ messageId, ownerId, campaignId, err: message }, 'Shortener failure — message not sent');
 }
 
 const worker = new Worker(
@@ -281,155 +336,16 @@ async function processIndividualJob(messageId, job) {
         return;
       }
 
-      // Ensure unsubscribe link and offer link are present (safety check - should already be added in enqueue)
       let finalText = msg.text || '';
       try {
-        if (DEBUG_SEND) {
-          logger.info(
-            {
-              tag: 'SHORTEN_START',
-              kind: 'message',
-              jobId: job.id,
-              attempt: job.attemptsMade || 0,
-              campaignId: msg.campaign.id,
-              ownerId: msg.campaign.ownerId,
-              messageId: msg.id,
-            },
-            'SHORTEN_START',
-          );
-        }
-        finalText = await shortenUrlsInText(finalText); // Shorten any URLs in message
-      } catch (e) {
-        if (DEBUG_SEND) {
-          logger.warn(
-            {
-              tag: 'SHORTEN_FAIL',
-              kind: 'message',
-              jobId: job.id,
-              attempt: job.attemptsMade || 0,
-              campaignId: msg.campaign.id,
-              ownerId: msg.campaign.ownerId,
-              messageId: msg.id,
-              err: e?.message || String(e),
-            },
-            'SHORTEN_FAIL',
-          );
-        }
-        logger.warn({ messageId: msg.id, err: e?.message || String(e) }, 'SHORTEN_FAIL (pre-send) — continuing with unshortened message');
-        finalText = msg.text || '';
-      }
-      let needsUnsubscribeLink = !finalText.includes('/unsubscribe/');
-      let needsOfferLink = !finalText.includes('/o/');
-
-      if (needsUnsubscribeLink) {
-        // Generate unsubscribe token if not present
-        try {
-          const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
-          const unsubscribeUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-          const ttlSeconds = Number(process.env.UNSUBSCRIBE_SHORT_CACHE_TTL_SECONDS || 30 * 24 * 60 * 60);
-          const cacheKey = `unsubscribe:short:${msg.campaign.ownerId || 'na'}:${sha256Hex(unsubscribeUrl).slice(0, 16)}`;
-          let shortenedUnsubscribeUrl = await getCache(cacheKey);
-          if (!shortenedUnsubscribeUrl) {
-            try {
-              if (DEBUG_SEND) {
-                logger.info(
-                  {
-                    tag: 'SHORTEN_START',
-                    kind: 'unsubscribe',
-                    jobId: job.id,
-                    attempt: job.attemptsMade || 0,
-                    campaignId: msg.campaign.id,
-                    ownerId: msg.campaign.ownerId,
-                    messageId: msg.id,
-                  },
-                  'SHORTEN_START',
-                );
-              }
-              shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl, {
-                ownerId: msg.campaign.ownerId,
-                campaignId: msg.campaign.id,
-                kind: 'unsubscribe',
-                type: 'unsubscribe',
-                targetUrl: unsubscribeUrl,
-                forceShort: true,
-              });
-              await setCacheEx(cacheKey, ttlSeconds, shortenedUnsubscribeUrl);
-            } catch (shortErr) {
-              if (DEBUG_SEND) {
-                logger.warn(
-                  {
-                    tag: 'SHORTEN_FAIL',
-                    kind: 'unsubscribe',
-                    jobId: job.id,
-                    attempt: job.attemptsMade || 0,
-                    campaignId: msg.campaign.id,
-                    ownerId: msg.campaign.ownerId,
-                    messageId: msg.id,
-                    err: shortErr?.message || String(shortErr),
-                  },
-                  'SHORTEN_FAIL',
-                );
-              }
-              logger.warn({ messageId: msg.id, err: shortErr?.message || String(shortErr) }, 'SHORTEN_FAIL (unsubscribe) — continuing with long URL');
-              shortenedUnsubscribeUrl = unsubscribeUrl;
-            }
-          }
-          finalText += `\n\nTo unsubscribe, tap: ${shortenedUnsubscribeUrl}`;
-          logger.warn({ messageId: msg.id }, 'Unsubscribe link was missing, appended before send');
-        } catch (tokenErr) {
-          logger.error({ messageId: msg.id, err: tokenErr.message }, 'Failed to generate unsubscribe token, sending without link');
-          // Continue without unsubscribe link if token generation fails
-        }
-      }
-
-      if (needsOfferLink && msg.trackingId) {
-        // Generate offer link if not present (should already be there, but safety check)
-        try {
-          const baseOfferUrl = process.env.OFFER_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
-          const OFFER_BASE_URL = ensureRetailPath(baseOfferUrl);
-          const offerUrl = `${OFFER_BASE_URL}/o/${msg.trackingId}`;
-          let shortenedOfferUrl = offerUrl;
-          try {
-            if (DEBUG_SEND) {
-              logger.info(
-                {
-                  tag: 'SHORTEN_START',
-                  kind: 'offer',
-                  jobId: job.id,
-                  attempt: job.attemptsMade || 0,
-                  campaignId: msg.campaign.id,
-                  ownerId: msg.campaign.ownerId,
-                  messageId: msg.id,
-                },
-                'SHORTEN_START',
-              );
-            }
-            shortenedOfferUrl = await shortenUrl(offerUrl);
-          } catch (shortErr) {
-            if (DEBUG_SEND) {
-              logger.warn(
-                {
-                  tag: 'SHORTEN_FAIL',
-                  kind: 'offer',
-                  jobId: job.id,
-                  attempt: job.attemptsMade || 0,
-                  campaignId: msg.campaign.id,
-                  ownerId: msg.campaign.ownerId,
-                  messageId: msg.id,
-                  err: shortErr?.message || String(shortErr),
-                },
-                'SHORTEN_FAIL',
-              );
-            }
-            logger.warn({ messageId: msg.id, err: shortErr?.message || String(shortErr) }, 'SHORTEN_FAIL (offer) — continuing with long URL');
-            shortenedOfferUrl = offerUrl;
-          }
-          finalText += `\n\nView offer: ${shortenedOfferUrl}`;
-          logger.warn({ messageId: msg.id }, 'Offer link was missing, appended before send');
-        } catch (err) {
-          logger.error({ messageId: msg.id, err: err.message }, 'Failed to append offer link');
-          // Continue without offer link if generation fails
-        }
+        const rendered = await renderMessageWithLinks(msg, {
+          jobId: job.id,
+          attempt: job.attemptsMade || 0,
+        });
+        finalText = rendered.text;
+      } catch (linkErr) {
+        await markShortenerFailure(msg.id, msg.campaign.ownerId, msg.campaign.id, linkErr);
+        return;
       }
 
       if (DEBUG_SEND) {
@@ -702,136 +618,64 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       );
     }
 
-    // Prepare messages for bulk sending
-    const bulkMessages = await Promise.all(unsentMessages.map(async (msg) => {
-      // Finalize message text exactly once (remove duplicate links, append single offer/unsubscribe)
-      const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
-      const unsubscribeUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-      const offerTargetUrl = msg.trackingId ? `${PUBLIC_RETAIL_BASE_URL}/tracking/offer/${msg.trackingId}` : null;
+    const bulkMessages = [];
+    const shortenerFailures = [];
 
-      // Unsubscribe shortening: best-effort with cache; must never throw
-      const ttlSeconds = Number(process.env.UNSUBSCRIBE_SHORT_CACHE_TTL_SECONDS || 30 * 24 * 60 * 60);
-      const cacheKey = `unsubscribe:short:${msg.campaign.ownerId || 'na'}:${sha256Hex(unsubscribeUrl).slice(0, 16)}`;
-      let shortenedUnsubscribeUrl = await getCache(cacheKey);
-      if (!shortenedUnsubscribeUrl) {
-        try {
-          if (DEBUG_SEND) {
-            logger.info(
-              {
-                tag: 'SHORTEN_START',
-                kind: 'unsubscribe',
-                jobId: job.id,
-                attempt: job.attemptsMade || 0,
-                campaignId,
-                ownerId,
-                messageId: msg.id,
-              },
-              'SHORTEN_START',
-            );
-          }
-          shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl, {
-            ownerId,
-            campaignId,
-            kind: 'unsubscribe',
-            type: 'unsubscribe',
-            targetUrl: unsubscribeUrl,
-            forceShort: true,
-          });
-          await setCacheEx(cacheKey, ttlSeconds, shortenedUnsubscribeUrl);
-        } catch (e) {
-          if (DEBUG_SEND) {
-            logger.warn(
-              {
-                tag: 'SHORTEN_FAIL',
-                kind: 'unsubscribe',
-                jobId: job.id,
-                attempt: job.attemptsMade || 0,
-                campaignId,
-                ownerId,
-                messageId: msg.id,
-                err: e?.message || String(e),
-              },
-              'SHORTEN_FAIL',
-            );
-          }
-          logger.warn({ messageId: msg.id, err: e?.message || String(e) }, 'SHORTEN_FAIL (unsubscribe) — continuing with long URL');
-          shortenedUnsubscribeUrl = unsubscribeUrl;
-        }
-      }
-
-      // Offer shortening: best-effort; must never throw
-      let shortenedOfferUrl = offerTargetUrl;
-      if (offerTargetUrl) {
-        try {
-          if (DEBUG_SEND) {
-            logger.info(
-              {
-                tag: 'SHORTEN_START',
-                kind: 'offer',
-                jobId: job.id,
-                attempt: job.attemptsMade || 0,
-                campaignId,
-                ownerId,
-                messageId: msg.id,
-              },
-              'SHORTEN_START',
-            );
-          }
-          shortenedOfferUrl = await shortenUrl(offerTargetUrl, {
-            ownerId,
-            campaignId,
-            kind: 'offer',
-            type: 'offer',
-            targetUrl: offerTargetUrl,
-            forceShort: true,
-          });
-        } catch (e) {
-          if (DEBUG_SEND) {
-            logger.warn(
-              {
-                tag: 'SHORTEN_FAIL',
-                kind: 'offer',
-                jobId: job.id,
-                attempt: job.attemptsMade || 0,
-                campaignId,
-                ownerId,
-                messageId: msg.id,
-                err: e?.message || String(e),
-              },
-              'SHORTEN_FAIL',
-            );
-          }
-          logger.warn({ messageId: msg.id, err: e?.message || String(e) }, 'SHORTEN_FAIL (offer) — continuing with long URL');
-          shortenedOfferUrl = offerUrl;
-        }
-      }
-
-      const finalText = await finalizeMessageText(msg.text, {
-        offerUrl: shortenedOfferUrl,
-        unsubscribeUrl: shortenedUnsubscribeUrl,
-        ctx: {
+    for (const msg of unsentMessages) {
+      try {
+        const rendered = await renderMessageWithLinks(msg, {
           jobId: job.id,
           attempt: job.attemptsMade || 0,
           campaignId,
           ownerId,
+        });
+
+        bulkMessages.push({
+          ownerId: msg.campaign.ownerId,
+          destination: msg.to,
+          text: rendered.text,
+          contactId: msg.contact.id,
+          createdById: msg.campaign.createdById,
+          internalMessageId: msg.id,
+          meta: {
+            reason: `sms:send:campaign:${msg.campaign.id}`,
+            campaignId: msg.campaign.id,
+            messageId: msg.id
+          }
+        });
+      } catch (err) {
+        logger.error({
+          campaignId,
+          ownerId,
           messageId: msg.id,
+          err: err?.message || String(err),
+        }, 'Short link generation failed for message in batch');
+        shortenerFailures.push({ id: msg.id, err });
+      }
+    }
+
+    if (shortenerFailures.length) {
+      await prisma.campaignMessage.updateMany({
+        where: { id: { in: shortenerFailures.map(s => s.id) } },
+        data: {
+          status: 'failed',
+          failedAt: new Date(),
+          error: 'SHORTENER_FAILED',
+          sendClaimedAt: null,
+          sendClaimToken: null,
         },
       });
+      logger.error({
+        campaignId,
+        ownerId,
+        failedCount: shortenerFailures.length,
+      }, 'Short link generation failed for some messages in batch');
+    }
 
-      return {
-        ownerId: msg.campaign.ownerId,
-        destination: msg.to,
-        text: finalText,
-        contactId: msg.contact.id,
-        createdById: msg.campaign.createdById,
-        internalMessageId: msg.id,
-        meta: {
-          reason: `sms:send:campaign:${msg.campaign.id}`,
-          campaignId: msg.campaign.id,
-          messageId: msg.id
-        }
-      };
-    }));
+    if (!bulkMessages.length) {
+      logger.warn({ campaignId, ownerId, jobId: job.id }, 'No messages to send after shortener failures');
+      return;
+    }
 
     if (DEBUG_SEND) {
       logger.info(

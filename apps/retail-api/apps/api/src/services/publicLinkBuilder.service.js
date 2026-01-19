@@ -1,39 +1,74 @@
+const { buildRetailFrontendUrl } = require('../lib/frontendUrl');
 const { shortenUrl } = require('./urlShortener.service');
 
-const PUBLIC_BASE_URL =
-  (process.env.PUBLIC_WEB_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com').replace(/\/$/, '');
-const PUBLIC_RETAIL_PREFIX = (process.env.PUBLIC_RETAIL_PREFIX || '/retail').replace(/\/$/, '');
-
-function buildBase(path) {
-  return `${PUBLIC_BASE_URL}${PUBLIC_RETAIL_PREFIX}${path}`;
+function buildOfferUrl(trackingId) {
+  return buildRetailFrontendUrl(`/tracking/offer/${trackingId}`);
 }
 
-function offerUrl(trackingId) {
-  return buildBase(`/o/${trackingId}`);
+function buildRedeemUrl(trackingId) {
+  return buildRetailFrontendUrl(`/tracking/redeem/${trackingId}`);
 }
 
-function unsubscribeUrl(token) {
-  return buildBase(`/unsubscribe/${token}`);
+function buildUnsubscribeUrl(token) {
+  return buildRetailFrontendUrl(`/unsubscribe/${token}`);
 }
 
-function redeemUrl(trackingId) {
-  return buildBase(`/tracking/redeem/${trackingId}`);
+async function buildOfferShortUrl({ trackingId, ownerId = null, campaignId = null, campaignMessageId = null }) {
+  if (!trackingId) {
+    return null;
+  }
+  const longUrl = buildOfferUrl(trackingId);
+  const shortUrl = await shortenUrl(longUrl, {
+    ownerId,
+    campaignId,
+    campaignMessageId,
+    kind: 'offer',
+    targetUrl: longUrl,
+    forceShort: true,
+    requireShort: true,
+  });
+  return { longUrl, shortUrl };
 }
 
-async function buildPublicLinks({ trackingId, unsubscribeToken, ownerId, campaignId }) {
-  const offer = offerUrl(trackingId);
-  const unsubLong = unsubscribeUrl(unsubscribeToken);
-  const unsubShort = await shortenUrl(unsubLong, { ownerId, campaignId });
+async function buildUnsubscribeShortUrl({ token, ownerId = null, campaignId = null, campaignMessageId = null }) {
+  if (!token) {
+    return null;
+  }
+  const longUrl = buildUnsubscribeUrl(token);
+  const shortUrl = await shortenUrl(longUrl, {
+    ownerId,
+    campaignId,
+    campaignMessageId,
+    kind: 'unsubscribe',
+    targetUrl: longUrl,
+    forceShort: true,
+    requireShort: true,
+  });
+  return { longUrl, shortUrl };
+}
+
+async function buildPublicLinks({ trackingId, unsubscribeToken, ownerId, campaignId, campaignMessageId = null }) {
+  const offer = trackingId ? await buildOfferShortUrl({ trackingId, ownerId, campaignId, campaignMessageId }) : null;
+  const unsub = unsubscribeToken
+    ? await buildUnsubscribeShortUrl({ token: unsubscribeToken, ownerId, campaignId, campaignMessageId })
+    : null;
+
   return {
-    offerUrl: offer,
-    unsubscribeUrl: unsubShort || unsubLong,
-    redeemUrl: redeemUrl(trackingId),
+    offerUrl: offer?.shortUrl || (trackingId ? buildOfferUrl(trackingId) : null),
+    unsubscribeUrl: unsub?.shortUrl || (unsubscribeToken ? buildUnsubscribeUrl(unsubscribeToken) : null),
+    redeemUrl: trackingId ? buildRedeemUrl(trackingId) : null,
+    raw: {
+      offerLong: offer?.longUrl || (trackingId ? buildOfferUrl(trackingId) : null),
+      unsubscribeLong: unsub?.longUrl || (unsubscribeToken ? buildUnsubscribeUrl(unsubscribeToken) : null),
+    },
   };
 }
 
 module.exports = {
+  buildOfferUrl,
+  buildRedeemUrl,
+  buildUnsubscribeUrl,
+  buildOfferShortUrl,
+  buildUnsubscribeShortUrl,
   buildPublicLinks,
-  offerUrl,
-  unsubscribeUrl,
-  redeemUrl,
 };

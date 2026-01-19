@@ -275,7 +275,7 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       let messageText = render(messageTemplate, contact);
 
       // Shorten any URLs in the message text first
-      messageText = await shortenUrlsInText(messageText);
+      messageText = await shortenUrlsInText(messageText, { ownerId, kind: 'message' });
 
       // Generate tracking ID for offer link (actual offer/unsubscribe links are appended at send time)
       const trackingId = newTrackingId();

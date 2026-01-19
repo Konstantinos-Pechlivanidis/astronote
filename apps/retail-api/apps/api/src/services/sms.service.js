@@ -4,28 +4,12 @@
 const { sendSingle } = require('./mitto.service');
 const { getBalance, debit } = require('./wallet.service');
 const { generateUnsubscribeToken } = require('./token.service');
-const { shortenUrl, shortenUrlsInText } = require('./urlShortener.service');
+const { shortenUrlsInText } = require('./urlShortener.service');
+const { buildUnsubscribeShortUrl } = require('./publicLinkBuilder.service');
 const { isSubscriptionActive } = require('./subscription.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'sms-service' });
-
-// Helper function to ensure base URL includes /retail path
-function ensureRetailPath(url) {
-  if (!url) {
-    return url;
-  }
-  const trimmed = url.trim().replace(/\/$/, ''); // Remove trailing slash
-  // If URL doesn't end with /retail, add it
-  if (!trimmed.endsWith('/retail')) {
-    return `${trimmed}/retail`;
-  }
-  return trimmed;
-}
-
-// Base URL for unsubscribe links (from env or default)
-const baseFrontendUrl = process.env.UNSUBSCRIBE_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
-const UNSUBSCRIBE_BASE_URL = ensureRetailPath(baseFrontendUrl);
 
 /**
  * Send SMS with credit enforcement
@@ -64,24 +48,27 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
   }
 
   // 3. Shorten any URLs in the message text first
-  let finalText = await shortenUrlsInText(text);
+  let finalText = await shortenUrlsInText(text, { ownerId, kind: 'message' });
 
   // 4. Append unsubscribe link if contactId is provided (for automations)
   if (contactId) {
     try {
       const unsubscribeToken = generateUnsubscribeToken(contactId, ownerId, meta.campaignId || null);
-      const unsubscribeUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-      const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl, {
+      const unsubscribe = await buildUnsubscribeShortUrl({
+        token: unsubscribeToken,
         ownerId,
-        kind: 'unsubscribe',
-        type: 'unsubscribe',
-        targetUrl: unsubscribeUrl,
-        forceShort: true,
+        campaignId: meta.campaignId || null,
+        campaignMessageId: meta.messageId || null,
       });
-      finalText += `\n\nTo unsubscribe, tap: ${shortenedUnsubscribeUrl}`;
+      finalText += `\n\nTo unsubscribe, tap: ${unsubscribe?.shortUrl}`;
     } catch (tokenErr) {
-      logger.warn({ ownerId, contactId, err: tokenErr.message }, 'Failed to generate unsubscribe token, sending without link');
-      // Continue without unsubscribe link if token generation fails
+      const errMsg = tokenErr?.message || 'Unable to shorten unsubscribe link';
+      logger.error({ ownerId, contactId, err: errMsg }, 'Failed to build unsubscribe short link');
+      return {
+        sent: false,
+        reason: 'shortener_failed',
+        error: errMsg,
+      };
     }
   }
 

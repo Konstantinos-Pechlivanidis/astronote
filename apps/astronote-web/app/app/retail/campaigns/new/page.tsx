@@ -338,7 +338,7 @@ export default function NewCampaignPage() {
                           Personalization supports the variables above. Use the exact casing shown.
                         </p>
                         <p className="text-xs text-text-secondary">
-                          Unsubscribe is appended automatically at send time and shortened by the system.
+                          Offer link and unsubscribe are added automatically at send time, shortened by the system, and use the Claim Offer label.
                         </p>
                         <p className="text-xs text-text-tertiary">
                           Keep messages concise; the preview shows length and GSM character counts.

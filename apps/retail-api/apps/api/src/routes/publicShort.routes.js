@@ -30,6 +30,7 @@ router.get('/public/s/:shortCode', rateLimitByIp(shortLimiter), async (req, res,
       data: {
         clickCount: { increment: 1 },
         lastClickedAt: new Date(),
+        lastUsedAt: new Date(),
       },
     });
 
@@ -64,6 +65,7 @@ router.get('/public/o/:shortCode', rateLimitByIp(shortLimiter), async (req, res,
       data: {
         clickCount: { increment: 1 },
         lastClickedAt: new Date(),
+        lastUsedAt: new Date(),
       },
     });
 

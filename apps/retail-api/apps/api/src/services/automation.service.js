@@ -3,29 +3,12 @@
 
 const prisma = require('../lib/prisma');
 const { sendSMSWithCredits } = require('./sms.service');
-const { shortenUrl } = require('./urlShortener.service');
+const { buildOfferShortUrl } = require('./publicLinkBuilder.service');
 const { render } = require('../lib/template');
 const crypto = require('node:crypto');
 const pino = require('pino');
 
 const logger = pino({ name: 'automation-service' });
-
-// Helper function to ensure base URL includes /retail path
-function ensureRetailPath(url) {
-  if (!url) {
-    return url;
-  }
-  const trimmed = url.trim().replace(/\/$/, ''); // Remove trailing slash
-  // If URL doesn't end with /retail, add it
-  if (!trimmed.endsWith('/retail')) {
-    return `${trimmed}/retail`;
-  }
-  return trimmed;
-}
-
-// Base URL for offer links (from env or default)
-const baseOfferUrl = process.env.OFFER_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com';
-const OFFER_BASE_URL = ensureRetailPath(baseOfferUrl);
 
 function newTrackingId() {
   return crypto.randomBytes(9).toString('base64url');
@@ -184,11 +167,17 @@ async function triggerWelcomeAutomation(ownerId, contact) {
 
   // Generate trackingId and offer link
   const trackingId = newTrackingId();
-  const offerUrl = `${OFFER_BASE_URL}/o/${trackingId}`;
-  const shortenedOfferUrl = await shortenUrl(offerUrl);
+  let shortenedOfferUrl;
+  try {
+    const offer = await buildOfferShortUrl({ trackingId, ownerId });
+    shortenedOfferUrl = offer?.shortUrl || offer?.longUrl;
+  } catch (err) {
+    logger.error({ ownerId, contactId: contact.id, err: err?.message || String(err) }, 'Failed to shorten offer link for welcome automation');
+    return { sent: false, reason: 'shortener_failed', error: 'Unable to shorten offer link' };
+  }
 
   // Append offer link to message (with shortened URL)
-  messageText += `\n\nView offer: ${shortenedOfferUrl}`;
+  messageText += `\n\nClaim Offer: ${shortenedOfferUrl}`;
 
   // Get sender name (using resolveSender which handles user lookup internally)
   const { resolveSender } = require('./mitto.service');
@@ -416,11 +405,22 @@ async function processBirthdayAutomations() {
 
         // Generate trackingId and offer link
         const trackingId = newTrackingId();
-        const offerUrl = `${OFFER_BASE_URL}/o/${trackingId}`;
-        const shortenedOfferUrl = await shortenUrl(offerUrl);
+        let shortenedOfferUrl;
+        try {
+          const offer = await buildOfferShortUrl({ trackingId, ownerId: automation.ownerId });
+          shortenedOfferUrl = offer?.shortUrl || offer?.longUrl;
+        } catch (err) {
+          logger.error({
+            ownerId: automation.ownerId,
+            contactId: contact.id,
+            err: err?.message || String(err),
+          }, 'Failed to shorten offer link for birthday automation');
+          totalFailed++;
+          continue;
+        }
 
         // Append offer link to message (with shortened URL)
-        messageText += `\n\nView offer: ${shortenedOfferUrl}`;
+        messageText += `\n\nClaim Offer: ${shortenedOfferUrl}`;
 
         // Send SMS via Mitto with credit enforcement
         const result = await sendSMSWithCredits({
@@ -541,4 +541,3 @@ module.exports = {
   processBirthdayAutomations,
   AUTOMATION_TYPES,
 };
-
