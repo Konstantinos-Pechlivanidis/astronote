@@ -345,7 +345,14 @@ async function processIndividualJob(messageId, job) {
                   'SHORTEN_START',
                 );
               }
-              shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
+              shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl, {
+                ownerId: msg.campaign.ownerId,
+                campaignId: msg.campaign.id,
+                kind: 'unsubscribe',
+                type: 'unsubscribe',
+                targetUrl: unsubscribeUrl,
+                forceShort: true,
+              });
               await setCacheEx(cacheKey, ttlSeconds, shortenedUnsubscribeUrl);
             } catch (shortErr) {
               if (DEBUG_SEND) {
@@ -722,7 +729,14 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
               'SHORTEN_START',
             );
           }
-          shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
+          shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl, {
+            ownerId,
+            campaignId,
+            kind: 'unsubscribe',
+            type: 'unsubscribe',
+            targetUrl: unsubscribeUrl,
+            forceShort: true,
+          });
           await setCacheEx(cacheKey, ttlSeconds, shortenedUnsubscribeUrl);
         } catch (e) {
           if (DEBUG_SEND) {

@@ -6,7 +6,7 @@ const SHOPIFY_API_BASE = process.env.SHOPIFY_API_BASE_URL || 'https://astronote-
 type Attempt = { service: 'retail' | 'shopify'; url: string; status?: number; location?: string | null; bodySnippet?: string | null };
 
 async function resolveRedirect(token: string, base: string, path: 'o' | 's', service: Attempt['service']): Promise<{ location: string | null; attempt: Attempt }> {
-  const attempt: Attempt = { service, url: `${base}/api/public/${path}/${encodeURIComponent(token)}` };
+  const attempt: Attempt = { service, url: `${base}/public/${path}/${encodeURIComponent(token)}` };
   try {
     const res = await fetch(attempt.url, {
       redirect: 'manual',
@@ -49,14 +49,12 @@ export async function GET(req: NextRequest, { params }: { params: { shortCode: s
     return NextResponse.json({ type: 's', token, attempts, final: 'redirected', location: shopify.location }, { status: 200 });
   }
 
-  const fallbackUnsub = `${process.env.FRONTEND_URL || 'https://astronote.onrender.com'}/unsubscribe/${encodeURIComponent(token)}`;
-
   if (debug) {
-    return NextResponse.json({ type: 's', token, attempts, final: 'not_found', fallback: fallbackUnsub }, { status: 404 });
+    return NextResponse.json({ type: 's', token, attempts, final: 'not_found' }, { status: 404 });
   }
 
   const fallback = new URL('/link-not-available', 'https://astronote.onrender.com');
   fallback.searchParams.set('type', 's');
   fallback.searchParams.set('token', token);
-  return NextResponse.redirect(fallbackUnsub || fallback.toString(), 302);
+  return NextResponse.redirect(fallback.toString(), 302);
 }

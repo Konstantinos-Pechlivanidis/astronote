@@ -19,7 +19,7 @@ const SHORTENER_BASE_URL =
   process.env.PUBLIC_WEB_BASE_URL ||
   process.env.URL_SHORTENER_BASE_URL ||
   process.env.FRONTEND_URL ||
-  'https://astronote-retail-frontend.onrender.com';
+  'https://astronote.onrender.com';
 const BITLY_API_TOKEN = process.env.BITLY_API_TOKEN;
 const TINYURL_API_KEY = process.env.TINYURL_API_KEY;
 const URL_SHORTENER_TIMEOUT_MS = Number(process.env.URL_SHORTENER_TIMEOUT_MS || 1200);
@@ -193,8 +193,10 @@ async function shortenUrl(originalUrl, opts = {}) {
     return originalUrl;
   }
 
+  const forceShort = Boolean(opts.forceShort);
+
   // Skip shortening if URL is already short (heuristic: less than 50 chars)
-  if (originalUrl.length < 50) {
+  if (!forceShort && originalUrl.length < 50) {
     return originalUrl;
   }
 

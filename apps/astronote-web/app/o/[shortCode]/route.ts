@@ -6,7 +6,7 @@ const SHOPIFY_API_BASE = process.env.SHOPIFY_API_BASE_URL || 'https://astronote-
 type Attempt = { service: 'retail' | 'shopify'; url: string; status?: number; location?: string | null; bodySnippet?: string | null };
 
 async function resolveRedirect(token: string, base: string, path: 'o' | 's', service: Attempt['service']): Promise<{ location: string | null; attempt: Attempt }> {
-  const attempt: Attempt = { service, url: `${base}/api/public/${path}/${encodeURIComponent(token)}` };
+  const attempt: Attempt = { service, url: `${base}/public/${path}/${encodeURIComponent(token)}` };
   try {
     const res = await fetch(attempt.url, {
       redirect: 'manual',

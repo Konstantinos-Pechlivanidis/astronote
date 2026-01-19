@@ -21,9 +21,8 @@ router.get('/public/s/:shortCode', rateLimitByIp(shortLimiter), async (req, res,
 
     const link = await prisma.shortLink.findUnique({ where: { shortCode } });
     if (!link) {
-      // Fallback: treat shortCode as unsubscribe token and redirect to long form
-      const fallbackUnsub = `${process.env.PUBLIC_RETAIL_BASE_URL || process.env.PUBLIC_WEB_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com'}/unsubscribe/${encodeURIComponent(shortCode)}`;
-      return res.redirect(302, fallbackUnsub);
+      logger.warn({ shortCode }, 'Short link not found');
+      return res.status(404).json({ message: 'Short link not found', code: 'NOT_FOUND' });
     }
 
     await prisma.shortLink.update({
@@ -56,9 +55,8 @@ router.get('/public/o/:shortCode', rateLimitByIp(shortLimiter), async (req, res,
 
     const link = await prisma.shortLink.findUnique({ where: { shortCode } });
     if (!link) {
-      // Fallback: treat token as trackingId and redirect to offer page
-      const fallbackOffer = `${process.env.PUBLIC_RETAIL_BASE_URL || process.env.PUBLIC_WEB_BASE_URL || process.env.FRONTEND_URL || 'https://astronote-retail-frontend.onrender.com'}/tracking/offer/${encodeURIComponent(shortCode)}`;
-      return res.redirect(302, fallbackOffer);
+      logger.warn({ shortCode }, 'Short link not found');
+      return res.status(404).json({ message: 'Short link not found', code: 'NOT_FOUND' });
     }
 
     await prisma.shortLink.update({

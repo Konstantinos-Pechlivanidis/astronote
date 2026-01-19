@@ -1,8 +1,7 @@
 // apps/api/src/services/campaignEnqueue.service.js
 const prisma = require('../lib/prisma');
 const { render } = require('../lib/template');
-const { generateUnsubscribeToken } = require('./token.service');
-const { shortenUrl, shortenUrlsInText } = require('./urlShortener.service');
+const { shortenUrlsInText } = require('./urlShortener.service');
 const crypto = require('node:crypto');
 const pino = require('pino');
 
@@ -25,14 +24,6 @@ function formatRedisInfo(connection) {
 
   return { host, port, db, tls };
 }
-
-// Base URL for public retail links (canonical)
-const PUBLIC_RETAIL_BASE_URL = (
-  process.env.PUBLIC_RETAIL_BASE_URL ||
-  process.env.PUBLIC_WEB_BASE_URL ||
-  process.env.FRONTEND_URL ||
-  'https://astronote-retail-frontend.onrender.com'
-).replace(/\/$/, '');
 
 function newTrackingId() {
   return crypto.randomBytes(9).toString('base64url');
@@ -286,29 +277,8 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       // Shorten any URLs in the message text first
       messageText = await shortenUrlsInText(messageText);
 
-      // Generate tracking ID for offer link
+      // Generate tracking ID for offer link (actual offer/unsubscribe links are appended at send time)
       const trackingId = newTrackingId();
-      const targetOfferUrl = `${PUBLIC_RETAIL_BASE_URL}/tracking/offer/${trackingId}`;
-      const shortOffer = await shortenUrl(targetOfferUrl, {
-        ownerId,
-        campaignId: camp.id,
-        kind: 'offer',
-        targetUrl: targetOfferUrl,
-        type: 'offer',
-      });
-      const offerUrl = shortOffer;
-
-      // Generate unsubscribe token
-      const unsubscribeToken = generateUnsubscribeToken(contact.id, ownerId, camp.id);
-      const targetUnsubUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-      const shortUnsub = await shortenUrl(targetUnsubUrl, {
-        ownerId,
-        campaignId: camp.id,
-        kind: 'unsubscribe',
-        targetUrl: targetUnsubUrl,
-        type: 'unsubscribe',
-      });
-      const unsubscribeUrl = shortUnsub;
 
       return {
         ownerId,

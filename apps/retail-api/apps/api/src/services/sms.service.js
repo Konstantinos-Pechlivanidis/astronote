@@ -71,7 +71,13 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
     try {
       const unsubscribeToken = generateUnsubscribeToken(contactId, ownerId, meta.campaignId || null);
       const unsubscribeUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-      const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl);
+      const shortenedUnsubscribeUrl = await shortenUrl(unsubscribeUrl, {
+        ownerId,
+        kind: 'unsubscribe',
+        type: 'unsubscribe',
+        targetUrl: unsubscribeUrl,
+        forceShort: true,
+      });
       finalText += `\n\nTo unsubscribe, tap: ${shortenedUnsubscribeUrl}`;
     } catch (tokenErr) {
       logger.warn({ ownerId, contactId, err: tokenErr.message }, 'Failed to generate unsubscribe token, sending without link');
@@ -160,4 +166,3 @@ module.exports = {
   sendSMSWithCredits,
   isRetryableError,
 };
-
