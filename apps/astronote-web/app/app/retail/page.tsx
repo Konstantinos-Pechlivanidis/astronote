@@ -49,9 +49,18 @@ export default function RetailDashboardPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="mb-1 text-sm text-text-secondary">Credits Balance</p>
-                <p className="text-2xl font-bold">
-                  {balanceLoading ? '...' : balance?.balance?.toLocaleString() || 0}
-                </p>
+                {(() => {
+                  const b: any = balance;
+                  const totalCredits =
+                    b?.totalCredits ??
+                    (b?.balance || 0) +
+                      (b?.allowance?.remainingThisPeriod || 0);
+                  return (
+                    <p className="text-2xl font-bold">
+                      {balanceLoading ? '...' : totalCredits.toLocaleString()}
+                    </p>
+                  );
+                })()}
               </div>
               <CreditCard className="h-8 w-8 text-accent" />
             </div>

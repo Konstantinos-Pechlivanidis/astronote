@@ -1141,7 +1141,9 @@ export default function RetailBillingPage() {
 
   const subscription =
     subscriptionCurrent || summaryData?.subscription || { active: false, planType: null };
-  const credits = summaryData?.credits || 0;
+  const credits =
+    summaryData?.totalCredits ??
+    (summaryData?.credits || 0) + (summaryData?.allowance?.remainingThisPeriod || 0);
   const allowance = summaryData?.allowance || {
     includedPerPeriod: 0,
     usedThisPeriod: 0,

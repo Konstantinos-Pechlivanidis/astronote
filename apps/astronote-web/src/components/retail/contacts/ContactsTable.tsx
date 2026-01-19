@@ -39,12 +39,6 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                     Phone
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
-                    Gender
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
-                    Birthday
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
@@ -67,14 +61,6 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-text-primary">{maskPhone(contact.phone)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-text-primary capitalize">{contact.gender || '—'}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-text-primary">
-                        {contact.birthday ? format(new Date(contact.birthday), 'MMM d, yyyy') : '—'}
-                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <SubscriptionBadge isSubscribed={contact.isSubscribed} />
@@ -131,10 +117,6 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                 <SubscriptionBadge isSubscribed={contact.isSubscribed} />
               </div>
               <div className="flex flex-wrap gap-3 text-xs text-text-secondary">
-                {contact.gender && <span className="capitalize">Gender: {contact.gender}</span>}
-                {contact.birthday && (
-                  <span>Birthday: {format(new Date(contact.birthday), 'MMM d, yyyy')}</span>
-                )}
                 {contact.createdAt && (
                   <span>Created: {format(new Date(contact.createdAt), 'MMM d, yyyy')}</span>
                 )}

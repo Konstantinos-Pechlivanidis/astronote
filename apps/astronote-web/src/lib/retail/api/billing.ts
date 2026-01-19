@@ -32,6 +32,7 @@ export interface BalanceResponse {
   billingCurrency?: string
   subscription?: SubscriptionSummary
   allowance?: AllowanceSummary
+  totalCredits?: number
 }
 
 export interface BillingSummaryResponse {
@@ -39,6 +40,7 @@ export interface BillingSummaryResponse {
   subscription?: SubscriptionSummary
   allowance?: AllowanceSummary
   billingCurrency?: string
+  totalCredits?: number
 }
 
 export interface Package {
@@ -98,8 +100,13 @@ export interface TransactionsResponse {
 export function normalizeBalanceResponse(data: BalanceResponse | null) {
   if (!data) return null;
 
+  const balance = data.balance || 0;
+  const allowanceRemaining = data.allowance?.remainingThisPeriod || 0;
+  const totalCredits = balance + allowanceRemaining;
+
   return {
-    credits: data.balance || 0,
+    credits: balance,
+    totalCredits,
     subscription: data.subscription || { active: false, planType: null },
     allowance: data.allowance || {
       includedPerPeriod: 0,
@@ -117,8 +124,13 @@ export function normalizeBalanceResponse(data: BalanceResponse | null) {
 export function normalizeSummaryResponse(data: BillingSummaryResponse | null) {
   if (!data) return null;
 
+  const balance = data.credits?.balance || 0;
+  const allowanceRemaining = data.allowance?.remainingThisPeriod || 0;
+  const totalCredits = balance + allowanceRemaining;
+
   return {
-    credits: data.credits?.balance || 0,
+    credits: balance,
+    totalCredits,
     subscription: data.subscription || { active: false, planType: null },
     allowance: data.allowance || {
       includedPerPeriod: 0,

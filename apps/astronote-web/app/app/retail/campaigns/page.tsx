@@ -91,6 +91,7 @@ export default function CampaignsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [activePoll, setActivePoll] = useState(false);
+  // Default page size is 20; backend clamps at 100 to prevent overly large pages.
   const pageSize = 20;
 
   const { data, isLoading, error, refetch } = useCampaigns({

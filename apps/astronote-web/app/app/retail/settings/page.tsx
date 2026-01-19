@@ -107,14 +107,16 @@ export default function SettingsPage() {
                       <p className="text-sm text-text-secondary">NFC Link</p>
                       <p className="text-base font-medium text-text-primary">Customer Login</p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => rotateNfc.mutate()}
-                      disabled={rotateNfc.isPending}
-                    >
-                      Rotate
-                    </Button>
+                    {process.env.NEXT_PUBLIC_FEATURE_NFC_ROTATE === '1' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => rotateNfc.mutate()}
+                        disabled={rotateNfc.isPending}
+                      >
+                        {rotateNfc.isPending ? 'Rotating...' : 'Rotate'}
+                      </Button>
+                    )}
                   </div>
                   <div className="rounded-md border border-border bg-surface-light p-3 text-sm break-all">
                     {nfc?.nfcUrl || '—'}
