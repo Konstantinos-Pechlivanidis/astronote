@@ -21,7 +21,7 @@ router.get('/public/s/:shortCode', rateLimitByIp(shortLimiter), async (req, res,
 
     const link = await prisma.shortLink.findUnique({ where: { shortCode } });
     if (!link) {
-      logger.warn({ shortCode }, 'Short link not found');
+      logger.warn({ shortCode }, 'shortlink_not_found');
       return res.status(404).json({ message: 'Short link not found', code: 'NOT_FOUND' });
     }
 
@@ -56,7 +56,7 @@ router.get('/public/o/:shortCode', rateLimitByIp(shortLimiter), async (req, res,
 
     const link = await prisma.shortLink.findUnique({ where: { shortCode } });
     if (!link) {
-      logger.warn({ shortCode }, 'Short link not found');
+      logger.warn({ shortCode }, 'shortlink_not_found');
       return res.status(404).json({ message: 'Short link not found', code: 'NOT_FOUND' });
     }
 

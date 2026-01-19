@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { PublicLayout } from '@/src/components/retail/public/PublicLayout';
 import { PublicCard } from '@/src/components/retail/public/PublicCard';
 import { PublicLoading } from '@/src/components/retail/public/PublicLoading';
@@ -13,7 +13,9 @@ import { Button } from '@/components/ui/button';
 
 function UnsubscribeContent() {
   const searchParams = useSearchParams();
-  const pageToken = searchParams.get('pt') || searchParams.get('token') || null;
+  const params = useParams();
+  const pathToken = typeof params?.token === 'string' ? params.token : null;
+  const pageToken = pathToken || searchParams.get('pt') || searchParams.get('token') || null;
   const [confirmed, setConfirmed] = useState(false);
 
   const { data: preferences, isLoading, error } = usePreferences(pageToken);
@@ -105,10 +107,9 @@ function UnsubscribeContent() {
     <PublicLayout>
       <PublicCard>
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-text-primary mb-4">Unsubscribe</h1>
+          <h1 className="text-2xl font-bold text-text-primary mb-4">Stay in the loop or unsubscribe</h1>
           <p className="text-sm text-text-secondary mb-6">
-            {contactName ? `Hi ${contactName}, ` : ''}Do you want to stop receiving SMS messages
-            from <strong>{storeName}</strong>?
+            {contactName ? `Hi ${contactName}, ` : ''}we send offers and updates from <strong>{storeName}</strong>. You can opt out below and we’ll respect your choice.
           </p>
           <div className="space-y-4">
             <Button
@@ -118,9 +119,10 @@ function UnsubscribeContent() {
             >
               {unsubscribeMutation.isPending ? 'Processing...' : 'Yes, Unsubscribe Me'}
             </Button>
-            <p className="text-xs text-text-tertiary">
-              You can resubscribe at any time by contacting the store.
-            </p>
+            <div className="text-xs text-text-tertiary space-y-2">
+              <p>You can unsubscribe anytime; we’ll stop messages right away.</p>
+              <p>If you change your mind, contact the store to resubscribe.</p>
+            </div>
           </div>
         </div>
       </PublicCard>
