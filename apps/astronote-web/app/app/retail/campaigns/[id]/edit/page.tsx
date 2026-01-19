@@ -67,7 +67,7 @@ export default function EditCampaignPage() {
   }, [campaign, reset]);
 
   const onSubmit = (formData: z.infer<typeof campaignSchema>) => {
-    // Convert empty strings to null for filters (to allow "Any" option)
+    // Convert empty strings to null for filters (representing "All")
     const submitData = {
       name: formData.name,
       messageText: formData.messageText || undefined,
@@ -256,7 +256,7 @@ export default function EditCampaignPage() {
                               }}
                             >
                               <SelectTrigger id="filterGender">
-                                <SelectValue placeholder="Any" />
+                                <SelectValue placeholder="All" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="male">Male</SelectItem>
@@ -282,7 +282,7 @@ export default function EditCampaignPage() {
                               }}
                             >
                               <SelectTrigger id="filterAgeGroup">
-                                <SelectValue placeholder="Any" />
+                                <SelectValue placeholder="All" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="18_24">18-24</SelectItem>
@@ -389,4 +389,3 @@ export default function EditCampaignPage() {
     </RetailPageLayout>
   );
 }
-

@@ -83,7 +83,9 @@ function CreditsCard() {
     );
   }
 
-  const balance = data?.credits || 0;
+  const balance =
+    (data as any)?.totalCredits ??
+    (data?.credits || 0) + (data?.allowance?.remainingThisPeriod || 0);
   const subscription = data?.subscription || { active: false, planType: null };
 
   return (

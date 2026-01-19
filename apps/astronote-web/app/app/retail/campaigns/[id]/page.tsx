@@ -561,13 +561,13 @@ export default function CampaignDetailPage() {
               <div>
                 <span className="text-sm text-text-secondary">Gender</span>
                 <div className="text-lg font-medium capitalize text-text-primary">
-                  {campaign.filterGender || 'Any'}
+                  {campaign.filterGender || 'All'}
                 </div>
               </div>
               <div>
                 <span className="text-sm text-text-secondary">Age Group</span>
                 <div className="text-lg font-medium text-text-primary">
-                  {campaign.filterAgeGroup || 'Any'}
+                  {campaign.filterAgeGroup || 'All'}
                 </div>
               </div>
             </div>

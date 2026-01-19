@@ -13,7 +13,10 @@ export function useBillingGate() {
   });
 
   const subscription = data?.subscription || { active: false, planType: null };
-  const credits = data?.credits || 0;
+  const credits =
+    (data as any)?.totalCredits ??
+    (data?.credits || 0) +
+      (data?.allowance?.remainingThisPeriod || 0);
   const canSendCampaigns = subscription.active === true;
 
   const reason = canSendCampaigns
