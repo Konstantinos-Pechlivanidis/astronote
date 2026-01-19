@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-const API_BASE = process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = (process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '').replace(/\/api$/i, '');
 const LANDING_PAGE_URL = process.env.NEXT_PUBLIC_LANDING_PAGE_URL || 'https://astronote.app';
 const DEFAULT_OG_IMAGE = process.env.NEXT_PUBLIC_JOIN_OG_URL || `${LANDING_PAGE_URL}/og.png`;
 

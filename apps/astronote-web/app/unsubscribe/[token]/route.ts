@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const RETAIL_API_BASE = process.env.RETAIL_API_BASE_URL || 'https://astronote-retail.onrender.com';
+function sanitizeBase(raw?: string | null) {
+  const base = (raw || 'https://astronote-retail.onrender.com').trim().replace(/\/+$/, '');
+  if (base.toLowerCase().endsWith('/api')) {
+    console.warn('[unsubscribe-proxy] RETAIL_API_BASE_URL contained /api; stripping for public unsubscribe');
+    return base.slice(0, -4);
+  }
+  return base;
+}
+
+const RETAIL_API_BASE = sanitizeBase(process.env.RETAIL_API_BASE_URL);
 
 export async function GET(req: NextRequest, { params }: { params: { token: string } }) {
   const token = params?.token;

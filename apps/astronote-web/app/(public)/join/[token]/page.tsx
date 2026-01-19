@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { JoinPageV2Client } from './JoinPageV2Client';
 
-const API_BASE = process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = (process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '').replace(/\/api$/i, '');
 const LANDING_PAGE_URL = process.env.NEXT_PUBLIC_LANDING_PAGE_URL || 'https://astronote.app';
 
 type JoinInfoResponse = {

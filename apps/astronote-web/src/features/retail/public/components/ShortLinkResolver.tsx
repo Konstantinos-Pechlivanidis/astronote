@@ -19,7 +19,7 @@ export function ShortLinkResolver() {
   const shortCode = (params.shortCode as string | undefined)?.trim();
   const [state, setState] = useState<ResolveState>('idle');
   const baseUrl = useMemo(
-    () => (process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001').replace(/\/$/, ''),
+    () => (process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '').replace(/\/api$/i, ''),
     [],
   );
 

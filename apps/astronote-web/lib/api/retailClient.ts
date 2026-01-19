@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
-const BASE_URL = process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001';
+const BASE_URL = (process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '').replace(/\/api$/i, '');
 
 export interface RetailAuthResponse {
   accessToken: string
@@ -209,4 +209,3 @@ class RetailClient {
 }
 
 export const retailClient = new RetailClient();
-

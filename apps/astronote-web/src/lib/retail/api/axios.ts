@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosError } from 'axios';
 
-const BASE_URL = process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001';
+const rawBase = process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001';
+const BASE_URL = rawBase.replace(/\/+$/, '').replace(/\/api$/i, '');
 
 // Endpoints for auth detection
 const AUTH_ENDPOINTS = [
@@ -159,4 +160,3 @@ api.interceptors.response.use(
 );
 
 export default api;
-

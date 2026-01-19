@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { endpoints } from './endpoints';
 
-const BASE_URL = process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001';
+const rawBase = process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001';
+const BASE_URL = rawBase.replace(/\/+$/, '').replace(/\/api$/i, '');
 
 // Public API client (no auth required)
 const publicClient = axios.create({

@@ -15,7 +15,7 @@ export default function RetailDashboardPage() {
     queryFn: async () => {
       const axios = require('axios');
       const token = localStorage.getItem('retail_access_token');
-      const baseUrl = process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001';
+      const baseUrl = (process.env.NEXT_PUBLIC_RETAIL_API_BASE_URL || 'http://localhost:3001').replace(/\/+$/, '').replace(/\/api$/i, '');
       const response = await axios.get(`${baseUrl}/api/dashboard/kpis`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         withCredentials: true,

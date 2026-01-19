@@ -191,6 +191,9 @@ async function renderMessageWithLinks(msg, jobCtx = {}) {
   if (!msg?.campaign || !msg?.contact) {
     throw new ShortenerError('Missing campaign or contact for message rendering', { messageId: msg?.id });
   }
+  if (!msg.campaign.ownerId) {
+    throw new ShortenerError('Missing ownerId for message rendering', { messageId: msg?.id });
+  }
 
   const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
   const unsubscribe = await buildUnsubscribeShortUrl({

@@ -1,18 +1,23 @@
 export const dynamic = 'force-dynamic';
 
+import { PublicLayout } from '@/src/components/retail/public/PublicLayout';
+import { PublicCard } from '@/src/components/retail/public/PublicCard';
+import { Button } from '@/components/ui/button';
+
 export default function LinkNotAvailablePage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-6 text-center">
-      <h1 className="text-2xl font-semibold text-white">Link not available</h1>
-      <p className="mt-3 text-sm text-zinc-200">
-        The link you followed is no longer valid. Please contact the sender or return to the home page.
-      </p>
-      <a
-        href="https://astronote.onrender.com"
-        className="mt-6 inline-flex rounded-md bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20"
-      >
-        Go to homepage
-      </a>
-    </main>
+    <PublicLayout>
+      <PublicCard className="text-center space-y-4">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold text-text-primary">This link is no longer available.</h1>
+          <p className="text-sm text-text-secondary">
+            The link may have expired or been replaced. Please contact the store for a fresh link or return to the home page.
+          </p>
+        </div>
+        <Button type="button" onClick={() => { window.location.href = 'https://astronote.onrender.com'; }}>
+          Go to homepage
+        </Button>
+      </PublicCard>
+    </PublicLayout>
   );
 }

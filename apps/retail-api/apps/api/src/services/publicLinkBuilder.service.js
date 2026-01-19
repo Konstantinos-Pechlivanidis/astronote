@@ -17,34 +17,52 @@ async function buildOfferShortUrl({ trackingId, ownerId = null, campaignId = nul
   if (!trackingId) {
     return null;
   }
+  if (!ownerId) {
+    throw new (require('./urlShortener.service').ShortenerError)('Missing ownerId for offer short link', { trackingId });
+  }
   const longUrl = buildOfferUrl(trackingId);
-  const shortUrl = await shortenUrl(longUrl, {
-    ownerId,
-    campaignId,
-    campaignMessageId,
-    kind: 'offer',
-    targetUrl: longUrl,
-    forceShort: true,
-    requireShort: true,
-  });
-  return { longUrl, shortUrl };
+  try {
+    const shortUrl = await shortenUrl(longUrl, {
+      ownerId,
+      campaignId,
+      campaignMessageId,
+      kind: 'offer',
+      targetUrl: longUrl,
+      forceShort: true,
+      requireShort: true,
+    });
+    return { longUrl, shortUrl };
+  } catch (err) {
+    const logger = require('pino')({ name: 'public-link-builder' });
+    logger.error({ trackingId, ownerId, campaignId, err: err?.message || String(err) }, 'shortlink_fallback_used:offer');
+    return { longUrl, shortUrl: longUrl };
+  }
 }
 
 async function buildUnsubscribeShortUrl({ token, ownerId = null, campaignId = null, campaignMessageId = null }) {
   if (!token) {
     return null;
   }
+  if (!ownerId) {
+    throw new (require('./urlShortener.service').ShortenerError)('Missing ownerId for unsubscribe short link');
+  }
   const longUrl = buildUnsubscribeUrl(token);
-  const shortUrl = await shortenUrl(longUrl, {
-    ownerId,
-    campaignId,
-    campaignMessageId,
-    kind: 'unsubscribe',
-    targetUrl: longUrl,
-    forceShort: true,
-    requireShort: true,
-  });
-  return { longUrl, shortUrl };
+  try {
+    const shortUrl = await shortenUrl(longUrl, {
+      ownerId,
+      campaignId,
+      campaignMessageId,
+      kind: 'unsubscribe',
+      targetUrl: longUrl,
+      forceShort: true,
+      requireShort: true,
+    });
+    return { longUrl, shortUrl };
+  } catch (err) {
+    const logger = require('pino')({ name: 'public-link-builder' });
+    logger.error({ ownerId, campaignId, err: err?.message || String(err) }, 'shortlink_fallback_used:unsubscribe');
+    return { longUrl, shortUrl: longUrl };
+  }
 }
 
 async function buildPublicLinks({ trackingId, unsubscribeToken, ownerId, campaignId, campaignMessageId = null }) {

@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const RETAIL_API_BASE = process.env.RETAIL_API_BASE_URL || 'https://astronote-retail.onrender.com';
+function sanitizeBase(raw?: string | null) {
+  const base = (raw || 'https://astronote-retail.onrender.com').trim().replace(/\/+$/, '');
+  if (base.toLowerCase().endsWith('/api')) {
+    console.warn('[shortlink-resolver] RETAIL_API_BASE_URL contained /api; stripping for public resolver');
+    return base.slice(0, -4);
+  }
+  return base;
+}
+
+const RETAIL_API_BASE = sanitizeBase(process.env.RETAIL_API_BASE_URL);
 
 type Attempt = { service: 'retail'; url: string; status?: number; location?: string | null; bodySnippet?: string | null };
 
 async function resolveRedirect(token: string, base: string, path: 'o' | 's', service: Attempt['service']): Promise<{ location: string | null; attempt: Attempt }> {
   const attempt: Attempt = { service, url: `${base}/public/${path}/${encodeURIComponent(token)}` };
   try {
-    const res = await fetch(attempt.url, {
-      redirect: 'manual',
-      headers: { 'User-Agent': 'astronote-shortlink-resolver' },
-    });
+    const res = await fetch(attempt.url, { redirect: 'manual' });
     attempt.status = res.status;
     attempt.location = res.headers.get('location');
     if (!attempt.location) {
@@ -38,11 +44,11 @@ export async function GET(req: NextRequest, { params }: { params: { shortCode: s
   attempts.push(retail.attempt);
   if (retail.location && !debug) return NextResponse.redirect(retail.location, 302);
   if (retail.location && debug) {
-    return NextResponse.json({ type: 'o', token, attempts, final: 'redirected', location: retail.location }, { status: 200 });
+    return NextResponse.json({ type: 'o', token, attempts, final: 'redirected', location: retail.location, base: RETAIL_API_BASE }, { status: 200 });
   }
 
   if (debug) {
-    return NextResponse.json({ type: 'o', token, attempts, final: 'not_found' }, { status: 404 });
+    return NextResponse.json({ type: 'o', token, attempts, final: 'not_found', base: RETAIL_API_BASE }, { status: 404 });
   }
 
   const fallback = new URL('/link-not-available', 'https://astronote.onrender.com');

@@ -7,9 +7,9 @@ const pino = require('pino');
 const logger = pino({ name: 'url-shortener-service' });
 
 const SHORTENER_TYPE = process.env.URL_SHORTENER_TYPE || 'custom'; // 'custom', 'bitly', 'tinyurl', 'none'
-const SHORTENER_BASE_URL =
-  process.env.PUBLIC_RETAIL_BASE_URL ||
+const PUBLIC_WEB_BASE =
   process.env.PUBLIC_WEB_BASE_URL ||
+  process.env.PUBLIC_RETAIL_BASE_URL ||
   process.env.URL_SHORTENER_BASE_URL ||
   process.env.FRONTEND_URL ||
   'https://astronote.onrender.com';
@@ -55,7 +55,14 @@ async function fetchWithTimeout(fetchFn, url, init = {}, timeoutMs = 1200) {
 // Helper function to ensure base URL includes no trailing slash
 function normalizeBase(url) {
   if (!url) {return '';}
-  return url.trim().replace(/\/$/, '');
+  let out = url.trim();
+  out = out.replace(/\/+$/, '');
+  // strip trailing /api to avoid mispointing short links
+  if (out.toLowerCase().endsWith('/api')) {
+    out = out.slice(0, -4);
+    logger.warn({ base: url }, 'SHORTENER_BASE_URL contained /api; stripped for short links');
+  }
+  return out;
 }
 
 function normalizeUrl(input) {
@@ -114,7 +121,7 @@ function remember(key, value) {
 }
 
 function buildShortUrl(shortCode) {
-  const baseUrl = normalizeBase(SHORTENER_BASE_URL);
+  const baseUrl = normalizeBase(PUBLIC_WEB_BASE);
   return `${baseUrl}/s/${shortCode}`;
 }
 
