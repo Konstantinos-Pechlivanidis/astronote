@@ -49,12 +49,14 @@ export async function GET(req: NextRequest, { params }: { params: { shortCode: s
     return NextResponse.json({ type: 's', token, attempts, final: 'redirected', location: shopify.location }, { status: 200 });
   }
 
+  const fallbackUnsub = `${process.env.FRONTEND_URL || 'https://astronote.onrender.com'}/unsubscribe/${encodeURIComponent(token)}`;
+
   if (debug) {
-    return NextResponse.json({ type: 's', token, attempts, final: 'not_found' }, { status: 404 });
+    return NextResponse.json({ type: 's', token, attempts, final: 'not_found', fallback: fallbackUnsub }, { status: 404 });
   }
 
   const fallback = new URL('/link-not-available', 'https://astronote.onrender.com');
   fallback.searchParams.set('type', 's');
   fallback.searchParams.set('token', token);
-  return NextResponse.redirect(fallback.toString(), 302);
+  return NextResponse.redirect(fallbackUnsub || fallback.toString(), 302);
 }

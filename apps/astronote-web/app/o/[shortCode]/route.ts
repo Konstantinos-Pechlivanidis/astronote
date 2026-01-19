@@ -28,8 +28,8 @@ async function resolveRedirect(token: string, base: string, path: 'o' | 's', ser
   }
 }
 
-export async function GET(req: NextRequest, { params }: { params: { trackingId: string } }) {
-  const token = params?.trackingId;
+export async function GET(req: NextRequest, { params }: { params: { shortCode: string } }) {
+  const token = params?.shortCode;
   if (!token) return NextResponse.redirect('https://astronote.onrender.com', 302);
   const debug = req.nextUrl.searchParams.get('debug') === '1';
 

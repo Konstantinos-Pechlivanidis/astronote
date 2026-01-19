@@ -69,7 +69,7 @@ function generateShortCode() {
  */
 async function shortenCustom(originalUrl, opts = {}) {
   try {
-    const shortCode = generateShortCode();
+    const shortCode = opts.shortCode || generateShortCode();
     const baseUrl = normalizeBase(SHORTENER_BASE_URL);
     const shortUrl = `${baseUrl}/s/${shortCode}`;
 
@@ -83,6 +83,7 @@ async function shortenCustom(originalUrl, opts = {}) {
           kind: opts.kind || null,
           ownerId: opts.ownerId || null,
           campaignId: opts.campaignId || null,
+          type: opts.type || null,
         },
         create: {
           shortCode,
@@ -91,6 +92,7 @@ async function shortenCustom(originalUrl, opts = {}) {
           kind: opts.kind || null,
           ownerId: opts.ownerId || null,
           campaignId: opts.campaignId || null,
+          type: opts.type || null,
         },
       }),
       URL_SHORTENER_TIMEOUT_MS,

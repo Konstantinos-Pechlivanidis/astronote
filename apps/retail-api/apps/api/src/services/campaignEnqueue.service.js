@@ -288,23 +288,27 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
 
       // Generate tracking ID for offer link
       const trackingId = newTrackingId();
-      const offerUrl = `${PUBLIC_RETAIL_BASE_URL}/o/${trackingId}`;
-      await shortenUrl(offerUrl, {
+      const targetOfferUrl = `${PUBLIC_RETAIL_BASE_URL}/tracking/offer/${trackingId}`;
+      const shortOffer = await shortenUrl(targetOfferUrl, {
         ownerId,
         campaignId: camp.id,
         kind: 'offer',
-        targetUrl: offerUrl,
+        targetUrl: targetOfferUrl,
+        type: 'offer',
       });
+      const offerUrl = shortOffer;
 
       // Generate unsubscribe token
       const unsubscribeToken = generateUnsubscribeToken(contact.id, ownerId, camp.id);
-      const unsubscribeUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-      await shortenUrl(unsubscribeUrl, {
+      const targetUnsubUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
+      const shortUnsub = await shortenUrl(targetUnsubUrl, {
         ownerId,
         campaignId: camp.id,
         kind: 'unsubscribe',
-        targetUrl: unsubscribeUrl,
+        targetUrl: targetUnsubUrl,
+        type: 'unsubscribe',
       });
+      const unsubscribeUrl = shortUnsub;
 
       return {
         ownerId,
