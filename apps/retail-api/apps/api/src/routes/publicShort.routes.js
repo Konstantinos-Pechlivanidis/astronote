@@ -44,4 +44,37 @@ router.get('/public/s/:shortCode', rateLimitByIp(shortLimiter), async (req, res,
   }
 });
 
+// GET /public/o/:shortCode -> same resolver as /public/s (offer/tracking links)
+router.get('/public/o/:shortCode', rateLimitByIp(shortLimiter), async (req, res, next) => {
+  try {
+    const { shortCode } = req.params;
+    if (!shortCode || !isValidShortCode(shortCode)) {
+      return res.status(400).json({ message: 'shortCode required', code: 'VALIDATION_ERROR' });
+    }
+
+    const link = await prisma.shortLink.findUnique({ where: { shortCode } });
+    if (!link) {
+      return res.status(404).json({ message: 'Short link not found', code: 'NOT_FOUND' });
+    }
+
+    await prisma.shortLink.update({
+      where: { shortCode },
+      data: {
+        clickCount: { increment: 1 },
+        lastClickedAt: new Date(),
+      },
+    });
+
+    const target = link.targetUrl || link.originalUrl;
+    if (!target) {
+      logger.warn({ shortCode }, 'Short link missing targetUrl/originalUrl');
+      return res.status(404).json({ message: 'Short link not found', code: 'NOT_FOUND' });
+    }
+
+    return res.redirect(302, target);
+  } catch (e) {
+    next(e);
+  }
+});
+
 module.exports = router;
