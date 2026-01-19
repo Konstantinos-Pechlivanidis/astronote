@@ -1,16 +1,29 @@
-const { buildRetailFrontendUrl } = require('../lib/frontendUrl');
 const { shortenUrl } = require('./urlShortener.service');
+const pino = require('pino');
+
+const logger = pino({ name: 'public-link-builder' });
+
+const PUBLIC_WEB_BASE =
+  (process.env.PUBLIC_WEB_BASE_URL ||
+   process.env.PUBLIC_RETAIL_BASE_URL ||
+   process.env.FRONTEND_URL ||
+   'https://astronote.onrender.com').trim().replace(/\/+$/, '').replace(/\/api$/i, '');
+
+function buildBase(path) {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${PUBLIC_WEB_BASE}${normalized}`;
+}
 
 function buildOfferUrl(trackingId) {
-  return buildRetailFrontendUrl(`/tracking/offer/${trackingId}`);
+  return buildBase(`/tracking/offer/${trackingId}`);
 }
 
 function buildRedeemUrl(trackingId) {
-  return buildRetailFrontendUrl(`/tracking/redeem/${trackingId}`);
+  return buildBase(`/tracking/redeem/${trackingId}`);
 }
 
 function buildUnsubscribeUrl(token) {
-  return buildRetailFrontendUrl(`/unsubscribe/${token}`);
+  return buildBase(`/unsubscribe/${token}`);
 }
 
 async function buildOfferShortUrl({ trackingId, ownerId = null, campaignId = null, campaignMessageId = null }) {
@@ -33,7 +46,6 @@ async function buildOfferShortUrl({ trackingId, ownerId = null, campaignId = nul
     });
     return { longUrl, shortUrl };
   } catch (err) {
-    const logger = require('pino')({ name: 'public-link-builder' });
     logger.error({ trackingId, ownerId, campaignId, err: err?.message || String(err) }, 'shortlink_fallback_used:offer');
     return { longUrl, shortUrl: longUrl };
   }
@@ -59,7 +71,6 @@ async function buildUnsubscribeShortUrl({ token, ownerId = null, campaignId = nu
     });
     return { longUrl, shortUrl };
   } catch (err) {
-    const logger = require('pino')({ name: 'public-link-builder' });
     logger.error({ ownerId, campaignId, err: err?.message || String(err) }, 'shortlink_fallback_used:unsubscribe');
     return { longUrl, shortUrl: longUrl };
   }

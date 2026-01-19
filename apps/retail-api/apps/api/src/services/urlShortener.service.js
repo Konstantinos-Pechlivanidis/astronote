@@ -120,9 +120,10 @@ function remember(key, value) {
   return value;
 }
 
-function buildShortUrl(shortCode) {
+function buildShortUrl(shortCode, kind = 'generic') {
   const baseUrl = normalizeBase(PUBLIC_WEB_BASE);
-  return `${baseUrl}/s/${shortCode}`;
+  const prefix = kind === 'offer' ? '/o/' : '/s/';
+  return `${baseUrl}${prefix}${shortCode}`;
 }
 
 function generateShortCode() {
@@ -151,7 +152,7 @@ async function getOrCreateShortLink(originalUrl, opts = {}) {
   });
 
   if (existing) {
-    const shortUrl = buildShortUrl(existing.shortCode);
+    const shortUrl = buildShortUrl(existing.shortCode, kind);
     remember(cacheKey({ ownerId, kind, hash }), shortUrl);
     prisma.shortLink.update({
       where: { id: existing.id },
@@ -185,7 +186,7 @@ async function getOrCreateShortLink(originalUrl, opts = {}) {
       URL_SHORTENER_TIMEOUT_MS,
       'prisma.shortLink.create',
     );
-    const shortUrl = buildShortUrl(created.shortCode);
+    const shortUrl = buildShortUrl(created.shortCode, kind);
     remember(cacheKey({ ownerId, kind, hash }), shortUrl);
     return shortUrl;
   } catch (error) {
@@ -195,7 +196,7 @@ async function getOrCreateShortLink(originalUrl, opts = {}) {
         orderBy: { createdAt: 'desc' },
       });
       if (retry) {
-        const shortUrl = buildShortUrl(retry.shortCode);
+        const shortUrl = buildShortUrl(retry.shortCode, kind);
         remember(cacheKey({ ownerId, kind, hash }), shortUrl);
         return shortUrl;
       }

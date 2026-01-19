@@ -11,7 +11,7 @@ const { normalizeUrl, hashUrl } = require('../src/services/urlShortener.service'
 
 async function main() {
   const ownerId = Number(process.env.SELF_TEST_OWNER_ID || 999999);
-  const targetUrl = process.env.SELF_TEST_TARGET_URL || 'https://astronote.onrender.com/retail/tracking/offer/self-test';
+  const targetUrl = process.env.SELF_TEST_TARGET_URL || 'https://astronote.onrender.com/tracking/offer/self-test';
   const publicWebBase =
     (process.env.PUBLIC_WEB_BASE_URL ||
      process.env.PUBLIC_RETAIL_BASE_URL ||

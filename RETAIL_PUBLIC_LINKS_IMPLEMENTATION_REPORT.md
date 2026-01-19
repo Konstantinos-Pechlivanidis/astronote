@@ -4,16 +4,16 @@ Retail Public Links Implementation Report (Claim Offer + Unsubscribe)
 Checklist
 - ✅ /o and /s resolvers use sanitized API base (no `/api`), surface debug, and fall back to branded link-not-available.
 - ✅ Public short endpoints reachable at `/public/o|s/:code` (no `/api`); `/api/public/*` returns 404 (not mounted).
-- ✅ Shortener emits public web host URLs (strips `/api`), requires ownerId for offer/unsubscribe; logs `shortlink_fallback_used:*` on failure.
+- ✅ Shortener emits public web host URLs (strips `/api`), now uses `/o/<code>` for offers and `/s/<code>` for unsubscribe; requires ownerId; logs `shortlink_fallback_used:*` on failure.
 - ✅ Link-not-available uses PublicLayout/PublicCard with clear messaging/CTA.
 - ✅ Unsubscribe page is a real UX (marketing + confirm unsubscribe) and accepts path tokens.
 - ✅ Offer page is a real public page with offer details + QR to redeem URL.
 - ✅ Builds/lint (retail-api + web-next) pass.
 
 Files changed (high level)
-- API base sanitation & resolvers: `apps/astronote-web/app/o/[shortCode]/route.ts`, `apps/astronote-web/app/s/[shortCode]/route.ts`, `apps/astronote-web/app/unsubscribe/[token]/route.ts`, retail API clients under `src/lib/retail/api/*`, public join/meta helpers.
-- Public pages: `apps/astronote-web/app/link-not-available/page.tsx` (PublicLayout), `apps/astronote-web/app/(retail)/unsubscribe/page.tsx` (real UX with path token), offer page already live at `apps/astronote-web/app/(retail)/tracking/offer/[trackingId]/page.tsx`.
-- Shortener/base: `apps/retail-api/apps/api/src/services/urlShortener.service.js` (PUBLIC_WEB_BASE, strip `/api`), `apps/retail-api/apps/api/src/services/publicLinkBuilder.service.js` (ownerId required, fallbacks logged), `apps/retail-api/apps/worker/src/sms.worker.js` (ownerId guard).
+- API base sanitation & resolvers: `apps/astronote-web/app/o/[shortCode]/route.ts`, `apps/astronote-web/app/s/[shortCode]/route.ts`, retail API clients under `src/lib/retail/api/*`, public join/meta helpers.
+- Public pages: `apps/astronote-web/app/link-not-available/page.tsx` (PublicLayout), `apps/astronote-web/app/(retail)/unsubscribe/page.tsx` (real UX with path token), canonical offer page at `apps/astronote-web/app/(retail)/tracking/offer/[trackingId]/page.tsx` plus legacy redirect at `app/(retail)/retail/tracking/offer/[trackingId]/page.tsx`.
+- Shortener/base: `apps/retail-api/apps/api/src/services/urlShortener.service.js` (PUBLIC_WEB_BASE, strip `/api`, `/o` for offers, `/s` for unsubscribe), `apps/retail-api/apps/api/src/services/publicLinkBuilder.service.js` (ownerId required, fallbacks logged), `apps/retail-api/apps/worker/src/sms.worker.js` (ownerId guard).
 - Logging: `apps/retail-api/apps/api/src/routes/publicShort.routes.js` logs `shortlink_not_found`.
 - Self-test: `apps/retail-api/apps/api/scripts/shortlink-self-test.js` prints public `/o` and `/s` links for a dummy shortCode.
 - Reports: `RETAIL_PUBLIC_LINKS_FIX_REPORT.md`, `RETAIL_PUBLIC_LINKS_LIVE_VERIFICATION.md`, `RETAIL_PUBLIC_LINKS_IMPLEMENTATION_REPORT.md` (this file).
@@ -24,8 +24,8 @@ Env expectations
 
 What was fixed relative to symptoms
 - Shortlinks returning 404: resolvers now sanitize base and call `/public/o|s/:code` (not `/api`); shortener emits web-host links and strips `/api`; link-not-available is branded.
-- Offer page 404: public UI lives at `/retail/tracking/offer/[trackingId]` with offer details + QR; `/o/<code>` resolves there via shortLink target.
-- Unsubscribe placeholder: `/retail/unsubscribe/[token]` now renders marketing + confirm unsubscribe UI using PublicLayout; accepts path token; posts via `useUnsubscribe`.
+- Offer page 404: public UI lives at `/tracking/offer/[trackingId]` (legacy `/retail/tracking/offer/*` redirects) with offer details + QR; `/o/<code>` resolves there via shortLink target.
+- Unsubscribe placeholder: `/unsubscribe/[token]` (legacy `/retail/unsubscribe/*` redirects) now renders marketing + confirm unsubscribe UI using PublicLayout; accepts path token; posts via `useUnsubscribe`.
 
 Verification performed
 - Live curl: `/public/o|s/doesnotexist` return 404 JSON (PASS); `/api/public/...` returns RESOURCE_NOT_FOUND (PASS).
