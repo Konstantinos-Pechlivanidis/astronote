@@ -707,7 +707,7 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       // Finalize message text exactly once (remove duplicate links, append single offer/unsubscribe)
       const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
       const unsubscribeUrl = `${PUBLIC_RETAIL_BASE_URL}/unsubscribe/${unsubscribeToken}`;
-      const offerUrl = msg.trackingId ? `${PUBLIC_RETAIL_BASE_URL}/o/${msg.trackingId}` : null;
+      const offerTargetUrl = msg.trackingId ? `${PUBLIC_RETAIL_BASE_URL}/tracking/offer/${msg.trackingId}` : null;
 
       // Unsubscribe shortening: best-effort with cache; must never throw
       const ttlSeconds = Number(process.env.UNSUBSCRIBE_SHORT_CACHE_TTL_SECONDS || 30 * 24 * 60 * 60);
@@ -760,8 +760,8 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
       }
 
       // Offer shortening: best-effort; must never throw
-      let shortenedOfferUrl = offerUrl;
-      if (offerUrl) {
+      let shortenedOfferUrl = offerTargetUrl;
+      if (offerTargetUrl) {
         try {
           if (DEBUG_SEND) {
             logger.info(
@@ -777,12 +777,12 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
               'SHORTEN_START',
             );
           }
-          shortenedOfferUrl = await shortenUrl(offerUrl, {
+          shortenedOfferUrl = await shortenUrl(offerTargetUrl, {
             ownerId,
             campaignId,
             kind: 'offer',
             type: 'offer',
-            targetUrl: offerUrl,
+            targetUrl: offerTargetUrl,
             forceShort: true,
           });
         } catch (e) {
