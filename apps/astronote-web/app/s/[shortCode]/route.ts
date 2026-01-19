@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const RETAIL_API_BASE = process.env.RETAIL_API_BASE_URL || 'https://astronote-retail.onrender.com';
-const SHOPIFY_API_BASE = process.env.SHOPIFY_API_BASE_URL || 'https://astronote-shopify.onrender.com';
 
-type Attempt = { service: 'retail' | 'shopify'; url: string; status?: number; location?: string | null; bodySnippet?: string | null };
+type Attempt = { service: 'retail'; url: string; status?: number; location?: string | null; bodySnippet?: string | null };
 
 async function resolveRedirect(token: string, base: string, path: 'o' | 's', service: Attempt['service']): Promise<{ location: string | null; attempt: Attempt }> {
   const attempt: Attempt = { service, url: `${base}/public/${path}/${encodeURIComponent(token)}` };
@@ -40,13 +39,6 @@ export async function GET(req: NextRequest, { params }: { params: { shortCode: s
   if (retail.location && !debug) return NextResponse.redirect(retail.location, 302);
   if (retail.location && debug) {
     return NextResponse.json({ type: 's', token, attempts, final: 'redirected', location: retail.location }, { status: 200 });
-  }
-
-  const shopify = await resolveRedirect(token, SHOPIFY_API_BASE, 's', 'shopify');
-  attempts.push(shopify.attempt);
-  if (shopify.location && !debug) return NextResponse.redirect(shopify.location, 302);
-  if (shopify.location && debug) {
-    return NextResponse.json({ type: 's', token, attempts, final: 'redirected', location: shopify.location }, { status: 200 });
   }
 
   if (debug) {

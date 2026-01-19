@@ -777,7 +777,14 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
               'SHORTEN_START',
             );
           }
-          shortenedOfferUrl = await shortenUrl(offerUrl);
+          shortenedOfferUrl = await shortenUrl(offerUrl, {
+            ownerId,
+            campaignId,
+            kind: 'offer',
+            type: 'offer',
+            targetUrl: offerUrl,
+            forceShort: true,
+          });
         } catch (e) {
           if (DEBUG_SEND) {
             logger.warn(
