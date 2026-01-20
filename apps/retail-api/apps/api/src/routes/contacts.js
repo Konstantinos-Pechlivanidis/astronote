@@ -838,17 +838,28 @@ router.get('/contacts/preferences/:pageToken',
       });
 
       // Fallback: if contact is missing, still return store context so the public page can show a graceful message.
-      if (!contact || contact.owner.id !== decoded.storeId) {
-        const owner = await prisma.owner.findUnique({
-          where: { id: decoded.storeId },
-          select: { company: true, senderName: true },
-        });
-        return res.json({
-          storeName: owner?.company || owner?.senderName || 'Store',
-          isSubscribed: false,
-          contact: {},
-          status: 'not_found',
-        });
+      const ownerIdMatches = contact && contact.owner && contact.owner.id === decoded.storeId;
+      if (!contact || !ownerIdMatches) {
+        try {
+          const owner = await prisma.owner.findUnique({
+            where: { id: decoded.storeId },
+            select: { company: true, senderName: true },
+          });
+          return res.json({
+            storeName: owner?.company || owner?.senderName || 'Store',
+            isSubscribed: false,
+            contact: {},
+            status: 'not_found',
+          });
+        } catch (err) {
+          logger.warn({ ownerId: decoded.storeId, err: err?.message }, 'Failed to load owner during preferences fallback');
+          return res.json({
+            storeName: 'Store',
+            isSubscribed: false,
+            contact: {},
+            status: 'not_found',
+          });
+        }
       }
 
       res.json({
