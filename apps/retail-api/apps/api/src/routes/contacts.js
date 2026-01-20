@@ -837,10 +837,17 @@ router.get('/contacts/preferences/:pageToken',
         },
       });
 
+      // Fallback: if contact is missing, still return store context so the public page can show a graceful message.
       if (!contact || contact.owner.id !== decoded.storeId) {
-        return res.status(404).json({
-          message: 'Contact not found',
-          code: 'NOT_FOUND',
+        const owner = await prisma.owner.findUnique({
+          where: { id: decoded.storeId },
+          select: { company: true, senderName: true },
+        });
+        return res.json({
+          storeName: owner?.company || owner?.senderName || 'Store',
+          isSubscribed: false,
+          contact: {},
+          status: 'not_found',
         });
       }
 
@@ -898,9 +905,14 @@ router.post('/contacts/unsubscribe',
       });
 
       if (!contact) {
-        return res.status(404).json({
-          message: 'Contact not found',
-          code: 'NOT_FOUND',
+        logger.warn({
+          contactId: decoded.contactId,
+          ownerId: decoded.storeId,
+          tokenTruncated: `${tokenToUse.slice(0, 8)}...`,
+        }, 'Unsubscribe token valid but contact missing; treating as already unsubscribed');
+        return res.json({
+          message: 'You have been unsubscribed successfully',
+          status: 'unsubscribed',
         });
       }
 
