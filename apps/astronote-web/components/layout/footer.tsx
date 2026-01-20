@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 
 const footerLinks = {
   product: [
@@ -25,8 +26,15 @@ export function Footer() {
           {/* Brand */}
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center space-x-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-                <span className="text-white font-bold text-lg">A</span>
+              <div className="w-9 h-9 rounded-lg bg-white/90 overflow-hidden border border-border shadow-sm">
+                <Image
+                  src="/logo/astronote-logo-1200x1200.png"
+                  alt="Astronote logo"
+                  width={36}
+                  height={36}
+                  className="h-full w-full object-cover"
+                  priority
+                />
               </div>
               <span className="text-xl font-semibold text-text-primary">Astronote</span>
             </div>
@@ -91,4 +99,3 @@ export function Footer() {
     </footer>
   );
 }
-

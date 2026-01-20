@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
@@ -23,8 +24,15 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-              <span className="text-white font-bold text-lg">A</span>
+            <div className="w-9 h-9 rounded-lg bg-white/90 overflow-hidden border border-border shadow-sm">
+              <Image
+                src="/logo/astronote-logo-1200x1200.png"
+                alt="Astronote logo"
+                width={36}
+                height={36}
+                className="h-full w-full object-cover"
+                priority
+              />
             </div>
             <span className="text-xl font-semibold text-text-primary">Astronote</span>
           </Link>
@@ -104,4 +112,3 @@ export function Navbar() {
     </nav>
   );
 }
-

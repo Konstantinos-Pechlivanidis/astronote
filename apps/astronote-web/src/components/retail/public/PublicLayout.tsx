@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export function PublicLayout({ children }: { children: ReactNode }) {
   return (
@@ -7,8 +8,15 @@ export function PublicLayout({ children }: { children: ReactNode }) {
       <header className="border-b border-white/10">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-full bg-[#0ed7c4] text-[#0b1f2e] flex items-center justify-center font-extrabold">
-              A
+            <div className="h-10 w-10 rounded-full bg-white/90 overflow-hidden border border-white/10 shadow-sm">
+              <Image
+                src="/logo/astronote-logo-1200x1200.png"
+                alt="Astronote logo"
+                width={40}
+                height={40}
+                className="h-full w-full object-cover"
+                priority
+              />
             </div>
             <div>
               <p className="text-lg font-semibold leading-tight">Astronote</p>
@@ -63,8 +71,7 @@ export function PublicLayout({ children }: { children: ReactNode }) {
           </div>
           <div className="flex flex-col sm:items-end space-y-1">
             <p><span className="text-white/50">Web:</span> <Link href="https://astronote.onrender.com" className="text-[#0ed7c4] underline">astronote.onrender.com</Link></p>
-            <p><span className="text-white/50">Email:</span> <Link href="mailto:support@astronote.ai" className="text-[#0ed7c4] underline">support@astronote.ai</Link></p>
-            <p><span className="text-white/50">Phone:</span> +30 210 000 0000</p>
+            <p><span className="text-white/50">LinkedIn:</span> <Link href="https://www.linkedin.com/in/konstantinos-pechlivanidis-65a339293/" className="text-[#0ed7c4] underline">Konstantinos Pechlivanidis</Link></p>
           </div>
         </div>
       </footer>

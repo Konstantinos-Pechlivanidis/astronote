@@ -1,9 +1,8 @@
 export function PublicLoading({ message = 'Loading...' }: { message?: string }) {
   return (
-    <div className="text-center py-8">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-4"></div>
-      <p className="text-sm text-[#A9B4CC]">{message}</p>
+    <div className="text-center py-8 text-white space-y-3">
+      <div className="animate-spin rounded-full h-10 w-10 border-2 border-white/20 border-t-[#0ed7c4] mx-auto" />
+      <p className="text-sm text-white/80">{message}</p>
     </div>
   );
 }
-

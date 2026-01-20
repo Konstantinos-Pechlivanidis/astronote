@@ -8,11 +8,12 @@ export function PublicSuccess({
   title?: string
 }) {
   return (
-    <div className="text-center py-8">
-      <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-      <h2 className="text-lg font-semibold text-[#EAF0FF] mb-2">{title}</h2>
-      <p className="text-sm text-[#A9B4CC]">{message}</p>
+    <div className="text-center py-8 text-white space-y-2">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#0ed7c4]/15 border border-[#0ed7c4]/30">
+        <CheckCircle className="w-7 h-7 text-[#0ed7c4]" />
+      </div>
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <p className="text-sm text-white/75">{message}</p>
     </div>
   );
 }
-
