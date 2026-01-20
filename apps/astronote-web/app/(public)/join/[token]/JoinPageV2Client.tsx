@@ -36,7 +36,7 @@ type FormData = {
 
 const LANGUAGE_KEY = 'join_language';
 const DEFAULT_COUNTRY_CODE = '+30';
-const LANDING_PAGE_URL = process.env.NEXT_PUBLIC_LANDING_PAGE_URL || 'https://astronote.app';
+const LANDING_PAGE_URL = (process.env.NEXT_PUBLIC_LANDING_PAGE_URL || 'https://astronote.onrender.com').replace(/\/+$/, '');
 
 const copy = { en, el } as const;
 

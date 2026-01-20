@@ -22,8 +22,9 @@ export function JoinTopBar({
   storeDisplayName,
   language,
   onLanguageChange,
-  landingUrl = 'https://astronote.app',
+  landingUrl = 'https://astronote.onrender.com',
 }: JoinTopBarProps) {
+  const href = (landingUrl || 'https://astronote.onrender.com').replace(/\/+$/, '');
   return (
     <div className="border-b" style={{ borderColor: THEME.border.subtle }}>
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
@@ -89,7 +90,7 @@ export function JoinTopBar({
 
             {/* Astronote credit (desktop only) */}
             <a
-              href={landingUrl}
+              href={href || 'https://astronote.onrender.com'}
               target="_blank"
               rel="noreferrer"
               className="hidden text-xs transition-colors sm:block"

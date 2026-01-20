@@ -8,10 +8,11 @@ type JoinFooterProps = {
  * Simple footer
  */
 export function JoinFooter({ landingUrl = 'https://astronote.app' }: JoinFooterProps) {
+  const href = (landingUrl || 'https://astronote.onrender.com').replace(/\/+$/, '');
   return (
     <div className="text-center text-sm">
       <a
-        href={landingUrl}
+        href={href || 'https://astronote.onrender.com'}
         target="_blank"
         rel="noreferrer"
         className="transition-colors"
@@ -24,4 +25,3 @@ export function JoinFooter({ landingUrl = 'https://astronote.app' }: JoinFooterP
     </div>
   );
 }
-

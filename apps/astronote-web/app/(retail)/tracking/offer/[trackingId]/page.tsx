@@ -9,7 +9,7 @@ import { PublicLoading } from '@/src/components/retail/public/PublicLoading';
 import { PublicError } from '@/src/components/retail/public/PublicError';
 import { PublicSuccess } from '@/src/components/retail/public/PublicSuccess';
 import { useOffer } from '@/src/features/retail/public/hooks/useOffer';
-import { Gift } from 'lucide-react';
+import { Gift, Sparkles, ShieldCheck } from 'lucide-react';
 
 export default function OfferPage() {
   const params = useParams();
@@ -33,7 +33,7 @@ export default function OfferPage() {
     return (
       <PublicLayout>
         <PublicCard>
-          <PublicLoading message="Loading offer..." />
+          <PublicLoading message="Loading your offer..." />
         </PublicCard>
       </PublicLayout>
     );
@@ -47,7 +47,7 @@ export default function OfferPage() {
       <PublicLayout>
         <PublicCard>
           <PublicError
-            title={isNotFound ? 'Offer Not Found' : 'Error'}
+            title={isNotFound ? 'Offer Not Found' : 'We hit a snag'}
             message={
               isNotFound
                 ? 'This offer link is invalid or has expired. Please contact the store for assistance.'
@@ -87,26 +87,56 @@ export default function OfferPage() {
   return (
     <PublicLayout>
       <PublicCard>
-        <div className="text-center">
-          <Gift className="w-12 h-12 text-accent mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-text-primary mb-2">Special Offer</h1>
-          <p className="text-sm text-text-secondary mb-6">From {storeName}</p>
-          <div className="bg-surface-light rounded-lg p-4 mb-6">
-            <p className="text-lg text-text-primary whitespace-pre-wrap">{offerText}</p>
+        <div className="space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-[#0ed7c4]/15 border border-[#0ed7c4]/40 flex items-center justify-center text-[#0ed7c4]">
+              <Gift className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.2em] text-white/60">Exclusive Offer</p>
+              <h1 className="text-2xl font-bold text-white">Claim your reward</h1>
+              <p className="text-sm text-white/70">From {storeName}</p>
+            </div>
           </div>
-          <div className="text-sm text-text-tertiary space-y-3">
-            <p>Please visit the store to redeem this offer.</p>
-            <p>Show this page (or the QR code below) to the store staff.</p>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-lg text-white whitespace-pre-wrap leading-relaxed">{offerText}</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+            <div className="rounded-2xl border border-[#0ed7c4]/30 bg-[#0ed7c4]/5 p-4 text-white">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-[#0ed7c4]" />
+                <p className="text-sm font-semibold">How to redeem</p>
+              </div>
+              <ul className="text-sm text-white/80 space-y-2">
+                <li>1) Show this page at checkout.</li>
+                <li>2) Staff scans the QR code or uses the link below.</li>
+                <li>3) Enjoy your reward instantly.</li>
+              </ul>
+              {redeemUrl ? (
+                <p className="mt-3 text-xs text-white/60 break-all">
+                  Redeem URL: {redeemUrl}
+                </p>
+              ) : null}
+            </div>
             {qrImageUrl ? (
-              <div className="flex flex-col items-center gap-2">
+              <div className="flex flex-col items-center gap-3">
                 <img
                   src={qrImageUrl}
                   alt="Redeem QR code"
-                  className="w-48 h-48 border border-border rounded-lg bg-white"
+                  className="w-48 h-48 md:w-56 md:h-56 border border-white/20 rounded-2xl bg-white shadow-lg"
                 />
-                <p className="text-xs text-text-secondary break-all">{redeemUrl}</p>
+                <p className="text-xs text-white/70">Scan to redeem securely</p>
               </div>
             ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center gap-3">
+            <ShieldCheck className="w-5 h-5 text-[#0ed7c4]" />
+            <p className="text-sm text-white/80">
+              Safe links on <strong>astronote.onrender.com</strong>. Each code is unique to your visit.
+            </p>
           </div>
         </div>
       </PublicCard>

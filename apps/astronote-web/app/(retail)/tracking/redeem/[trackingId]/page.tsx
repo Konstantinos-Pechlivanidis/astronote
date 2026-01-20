@@ -6,7 +6,7 @@ import { PublicCard } from '@/src/components/retail/public/PublicCard';
 import { PublicLoading } from '@/src/components/retail/public/PublicLoading';
 import { PublicError } from '@/src/components/retail/public/PublicError';
 import { useRedeemStatus } from '@/src/features/retail/public/hooks/useRedeemStatus';
-import { CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function RedeemPage() {
@@ -18,7 +18,7 @@ export default function RedeemPage() {
     return (
       <PublicLayout>
         <PublicCard>
-          <PublicLoading message="Loading redemption status..." />
+          <PublicLoading message="Verifying redemption..." />
         </PublicCard>
       </PublicLayout>
     );
@@ -59,19 +59,24 @@ export default function RedeemPage() {
   if (isRedeemed) {
     return (
       <PublicLayout>
-        <PublicCard>
-          <div className="text-center py-8">
-            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-            <h2 className="text-lg font-semibold text-text-primary mb-2">Already Redeemed</h2>
-            <p className="text-sm text-text-secondary mb-2">
-              This offer{storeName ? ` from ${storeName}` : ''} has already been redeemed.
-            </p>
-            {redeemedAt && (
-              <p className="text-xs text-text-tertiary">
-                Redeemed on {format(new Date(redeemedAt), 'PPpp')}
-              </p>
-            )}
+        <PublicCard className="text-white space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-[#0ed7c4]/15 border border-[#0ed7c4]/30 flex items-center justify-center text-[#0ed7c4]">
+              <CheckCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.2em] text-white/60">Success</p>
+              <h2 className="text-xl font-semibold text-white">Offer redeemed</h2>
+            </div>
           </div>
+          <p className="text-sm text-white/80">
+            This offer{storeName ? ` from ${storeName}` : ''} has been redeemed.
+          </p>
+          {redeemedAt && (
+            <p className="text-xs text-white/60">
+              Redeemed on {format(new Date(redeemedAt), 'PPpp')}
+            </p>
+          )}
         </PublicCard>
       </PublicLayout>
     );
@@ -79,16 +84,20 @@ export default function RedeemPage() {
 
   return (
     <PublicLayout>
-      <PublicCard>
-        <div className="text-center py-8">
-          <XCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-text-primary mb-2">Not Yet Redeemed</h2>
-          <p className="text-sm text-text-secondary">
-            This offer{storeName ? ` from ${storeName}` : ''} has not been redeemed yet.
-          </p>
+      <PublicCard className="text-white space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-sm uppercase tracking-[0.2em] text-white/60">Not yet redeemed</p>
+            <h2 className="text-xl font-semibold text-white">Awaiting redemption</h2>
+          </div>
         </div>
+        <p className="text-sm text-white/80">
+          This offer{storeName ? ` from ${storeName}` : ''} has not been redeemed yet. Show your offer page or QR at checkout to redeem.
+        </p>
       </PublicCard>
     </PublicLayout>
   );
 }
-
