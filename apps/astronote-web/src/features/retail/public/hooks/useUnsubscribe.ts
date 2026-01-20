@@ -5,7 +5,9 @@ import { toast } from 'sonner';
 export function useUnsubscribe() {
   return useMutation({
     mutationFn: async ({ pageToken, token }: { pageToken: string; token?: string }) => {
-      const res = await publicApi.unsubscribe({ pageToken, token });
+      // Send both pageToken and token (duplicate) to survive proxies/servers that only look for one key.
+      const payload = { pageToken, token: token || pageToken };
+      const res = await publicApi.unsubscribe(payload);
       return res.data;
     },
     onSuccess: (data) => {
@@ -17,4 +19,3 @@ export function useUnsubscribe() {
     },
   });
 }
-

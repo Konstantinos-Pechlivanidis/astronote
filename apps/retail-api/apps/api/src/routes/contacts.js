@@ -41,8 +41,8 @@ const writeIpLimiter = createLimiter({ keyPrefix: 'rl:contacts:write:ip', points
 
 // Public unsubscribe: 20 req/min per IP
 const unsubIpLimiter = createLimiter({ keyPrefix: 'rl:unsub:ip', points: 20, duration: 60 });
-// Public unsubscribe per token: allow a few retries within 5 minutes (less punitive than 24h)
-const unsubTokenLimiter = createLimiter({ keyPrefix: 'rl:unsub:token', points: 6, duration: 300 });
+// Public unsubscribe per token: allow a few retries within a short window (less punitive)
+const unsubTokenLimiter = createLimiter({ keyPrefix: 'rl:unsub:token', points: 6, duration: 60 });
 
 /**
  * POST /api/contacts
@@ -881,8 +881,8 @@ router.post('/contacts/unsubscribe',
   rateLimitByIp(unsubIpLimiter),
   async (req, res, next) => {
     try {
-      const { pageToken, token } = req.body;
-      const tokenToUse = pageToken || token;
+      const { pageToken, token } = req.body || {};
+      const tokenToUse = pageToken || token || req.query?.pageToken || req.query?.token;
 
       if (!tokenToUse) {
         return res.status(400).json({
