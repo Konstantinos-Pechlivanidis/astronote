@@ -41,8 +41,8 @@ const writeIpLimiter = createLimiter({ keyPrefix: 'rl:contacts:write:ip', points
 
 // Public unsubscribe: 20 req/min per IP
 const unsubIpLimiter = createLimiter({ keyPrefix: 'rl:unsub:ip', points: 20, duration: 60 });
-// Public unsubscribe per token: 5 req / 24h
-const unsubTokenLimiter = createLimiter({ keyPrefix: 'rl:unsub:token', points: 5, duration: 86400 });
+// Public unsubscribe per token: allow a few retries within 5 minutes (less punitive than 24h)
+const unsubTokenLimiter = createLimiter({ keyPrefix: 'rl:unsub:token', points: 6, duration: 300 });
 
 /**
  * POST /api/contacts
