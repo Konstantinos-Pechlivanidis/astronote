@@ -189,6 +189,11 @@ const joinSubmitHandler = async (req, res, next) => {
       }
       birthdayDate = birthday instanceof Date ? birthday : new Date(birthday);
     }
+    const existingContact = await prisma.contact.findUnique({
+      where: { ownerId_phone: { ownerId: link.ownerId, phone } },
+      select: { id: true },
+    });
+
     const contact = await prisma.contact.upsert({
       where: { ownerId_phone: { ownerId: link.ownerId, phone } },
       create: {
@@ -251,6 +256,13 @@ const joinSubmitHandler = async (req, res, next) => {
       await addContactToNfcLeadsList(link.ownerId, contact.id);
     } catch (err) {
       logger.warn({ ownerId: link.ownerId, contactId: contact.id, err: err.message }, 'Failed to add contact to NFC Leads list');
+    }
+
+    if (!existingContact) {
+      const { triggerWelcomeAutomation } = require('../services/automation.service');
+      triggerWelcomeAutomation(link.ownerId, contact).catch((err) => {
+        logger.error({ ownerId: link.ownerId, contactId: contact.id, err: err.message }, 'Welcome automation failed (public join)');
+      });
     }
 
     res.json({

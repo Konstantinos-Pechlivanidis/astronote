@@ -16,6 +16,7 @@ const { getRedisClient } = require('../../api/src/lib/redis');
 const { enqueueCampaign } = require('../../api/src/services/campaignEnqueue.service');
 const prisma = require('../../api/src/lib/prisma');
 const { updateCampaignAggregates } = require('../../api/src/services/campaignAggregates.service');
+const { processBirthdayAutomations } = require('../../api/src/services/automation.service');
 
 function formatRedisInfo(connection) {
   if (!connection) return {};
@@ -49,6 +50,8 @@ const SWEEP_LIMIT = Number(process.env.SCHEDULE_SWEEP_LIMIT || 25);
 const CLAIM_STALE_MINUTES = Number(process.env.SEND_CLAIM_STALE_MINUTES || 15);
 const STALE_RECOVERY_LIMIT = Number(process.env.STALE_RECOVERY_LIMIT || 200);
 const ENQUEUE_LOCK_TTL_SEC = Number(process.env.ENQUEUE_LOCK_TTL_SEC || 600);
+const ENABLE_BIRTHDAY_AUTOMATIONS = process.env.ENABLE_BIRTHDAY_AUTOMATIONS !== '0';
+const BIRTHDAY_AUTOMATION_CRON = process.env.BIRTHDAY_AUTOMATION_CRON || '0 9 * * *';
 
 const schedulerQueue = new Queue('schedulerQueue', {
   connection,
@@ -74,6 +77,23 @@ schedulerQueue.add(
   logger.error({ err: err.message, intervalMs: SWEEP_INTERVAL_MS }, 'Failed to register campaign sweeper');
 });
 
+if (ENABLE_BIRTHDAY_AUTOMATIONS) {
+  schedulerQueue.add(
+    'processBirthdayAutomations',
+    {},
+    {
+      repeat: {
+        cron: BIRTHDAY_AUTOMATION_CRON,
+      },
+      jobId: 'birthday-automation-daily',
+    },
+  ).then(() => {
+    logger.info({ cron: BIRTHDAY_AUTOMATION_CRON }, 'Scheduled birthday automation job registered');
+  }).catch((err) => {
+    logger.error({ err: err.message, cron: BIRTHDAY_AUTOMATION_CRON }, 'Failed to register birthday automation job');
+  });
+}
+
 const worker = new Worker(
   'schedulerQueue',
   async (job) => {
@@ -81,6 +101,11 @@ const worker = new Worker(
 
     if (job.name === 'sweepDueCampaigns') {
       return sweepDueCampaigns(job);
+    }
+
+    if (job.name === 'processBirthdayAutomations') {
+      logger.info('Running birthday automations job');
+      return processBirthdayAutomations();
     }
 
     logger.warn({ jobId: job.id, jobName: job.name }, 'Unknown or legacy scheduler job, skipping');

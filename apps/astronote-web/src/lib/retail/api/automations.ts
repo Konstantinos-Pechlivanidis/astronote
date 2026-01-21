@@ -1,6 +1,13 @@
 import api from './axios';
 import { endpoints } from './endpoints';
 
+export interface AutomationStats {
+  total: number
+  sent: number
+  conversions: number
+  conversionRate: number
+}
+
 export interface Automation {
   id: number
   type: 'welcome_message' | 'birthday_message'
@@ -8,6 +15,7 @@ export interface Automation {
   isActive: boolean
   createdAt?: string
   updatedAt?: string
+  stats?: AutomationStats
 }
 
 export interface AutomationsResponse {
@@ -22,4 +30,3 @@ export const automationsApi = {
     api.put<Automation>(endpoints.automations.update(type), data),
   getStats: (type: string) => api.get(endpoints.automations.stats(type)),
 };
-

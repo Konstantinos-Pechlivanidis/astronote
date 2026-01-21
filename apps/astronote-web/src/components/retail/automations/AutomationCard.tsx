@@ -37,6 +37,9 @@ export function AutomationCard({ automation }: AutomationCardProps) {
 
   const info = AUTOMATION_INFO[automation.type] || AUTOMATION_INFO.welcome_message;
   const Icon = info.icon;
+  const conversionRate = automation.stats
+    ? Math.round((automation.stats.conversionRate || 0) * 100)
+    : 0;
 
   const handleToggle = () => {
     if (updateMutation.isPending) return;
@@ -114,6 +117,23 @@ export function AutomationCard({ automation }: AutomationCardProps) {
           </div>
         </div>
 
+        {automation.stats && (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="rounded-lg border border-border bg-surface-light px-3 py-2">
+              <p className="text-xs text-text-tertiary">Sent</p>
+              <p className="text-sm font-semibold text-text-primary">{automation.stats.sent}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-surface-light px-3 py-2">
+              <p className="text-xs text-text-tertiary">Conversions</p>
+              <p className="text-sm font-semibold text-text-primary">{automation.stats.conversions}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-surface-light px-3 py-2">
+              <p className="text-xs text-text-tertiary">Conv. rate</p>
+              <p className="text-sm font-semibold text-text-primary">{conversionRate}%</p>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <Button onClick={() => setIsEditorOpen(true)} size="sm">
             <Edit className="w-4 h-4 mr-2" />
@@ -132,4 +152,3 @@ export function AutomationCard({ automation }: AutomationCardProps) {
     </>
   );
 }
-

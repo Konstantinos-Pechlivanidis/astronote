@@ -19,6 +19,40 @@ const AUTOMATION_TYPES = {
   BIRTHDAY: 'birthday_message',
 };
 
+function stripOfferAndUnsub(text) {
+  let output = text || '';
+  const linePatterns = [
+    /^ *(view|claim) offer:.*$/gim,
+    /^ *to unsubscribe.*$/gim,
+  ];
+  const urlPatterns = [
+    /https?:\/\/\S*\/o\/[^\s]+/gi,
+    /https?:\/\/\S*\/retail\/o\/[^\s]+/gi,
+    /https?:\/\/\S*\/tracking\/offer\/[^\s]+/gi,
+    /https?:\/\/\S*\/s\/[^\s]+/gi,
+    /https?:\/\/\S*\/retail\/s\/[^\s]+/gi,
+    /https?:\/\/\S*\/unsubscribe\/[^\s]+/gi,
+  ];
+
+  [...linePatterns, ...urlPatterns].forEach((pattern) => {
+    output = output.replace(pattern, '');
+  });
+
+  return output.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfDay(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
 /**
  * Get or create automation for a store
  * Ensures exactly two automations exist per store (welcome and birthday)
@@ -137,14 +171,7 @@ async function triggerWelcomeAutomation(ownerId, contact) {
   }
 
   // Get welcome automation
-  const automation = await prisma.automation.findUnique({
-    where: {
-      ownerId_type: {
-        ownerId,
-        type: AUTOMATION_TYPES.WELCOME,
-      },
-    },
-  });
+  const automation = await getOrCreateAutomation(ownerId, AUTOMATION_TYPES.WELCOME);
 
   // Check if active
   if (!automation || !automation.isActive) {
@@ -157,8 +184,22 @@ async function triggerWelcomeAutomation(ownerId, contact) {
     return { sent: false, reason: 'automation_inactive' };
   }
 
+  const alreadySent = await prisma.automationMessage.findFirst({
+    where: {
+      ownerId,
+      automationId: automation.id,
+      contactId: contact.id,
+      status: 'sent',
+    },
+  });
+
+  if (alreadySent) {
+    logger.info({ ownerId, contactId: contact.id, automationId: automation.id }, 'Welcome automation skipped: already sent');
+    return { sent: false, reason: 'already_sent' };
+  }
+
   // Render message with contact placeholders
-  let messageText = render(automation.messageBody, contact);
+  let messageText = stripOfferAndUnsub(render(automation.messageBody, contact));
 
   if (!messageText || !messageText.trim()) {
     logger.error({ ownerId, contactId: contact.id, messageBody: automation.messageBody }, 'Welcome automation message is empty after rendering');
@@ -293,6 +334,8 @@ async function processBirthdayAutomations() {
   const today = new Date();
   const month = today.getMonth() + 1; // 1-12
   const day = today.getDate(); // 1-31
+  const dayStart = startOfDay(today);
+  const dayEnd = endOfDay(today);
 
   logger.debug({ month, day }, 'Processing birthday automations for today');
 
@@ -390,8 +433,23 @@ async function processBirthdayAutomations() {
           continue;
         }
 
+        const alreadySent = await prisma.automationMessage.findFirst({
+          where: {
+            ownerId: automation.ownerId,
+            automationId: automation.id,
+            contactId: contact.id,
+            status: 'sent',
+            sentAt: { gte: dayStart, lte: dayEnd },
+          },
+        });
+
+        if (alreadySent) {
+          logger.info({ ownerId: automation.ownerId, contactId: contact.id, automationId: automation.id }, 'Birthday automation skipped: already sent today');
+          continue;
+        }
+
         // Render message with contact placeholders
-        let messageText = render(automation.messageBody, contact);
+        let messageText = stripOfferAndUnsub(render(automation.messageBody, contact));
 
         if (!messageText || !messageText.trim()) {
           logger.error({
