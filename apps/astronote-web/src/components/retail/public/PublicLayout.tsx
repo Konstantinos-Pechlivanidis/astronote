@@ -65,13 +65,10 @@ export function PublicLayout({ children }: { children: ReactNode }) {
 
       <footer className="border-t border-white/10 bg-black/40 backdrop-blur-sm">
         <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-white/70">
-          <div className="space-y-1">
-            <p className="font-semibold text-white">Astronote SMS Marketing</p>
-            <p>Serving modern retail brands with compliant, high-conversion messaging.</p>
-          </div>
-          <div className="flex flex-col sm:items-end space-y-1">
-            <p><span className="text-white/50">Web:</span> <Link href="https://astronote.onrender.com" className="text-[#0ed7c4] underline">astronote.onrender.com</Link></p>
-            <p><span className="text-white/50">LinkedIn:</span> <Link href="https://www.linkedin.com/in/konstantinos-pechlivanidis-65a339293/" className="text-[#0ed7c4] underline">Konstantinos Pechlivanidis</Link></p>
+          <div className="text-xs sm:text-sm text-white/70">
+            <Link href="https://astronote.onrender.com" className="text-[#0ed7c4] underline">
+              Provided by Astronote
+            </Link>
           </div>
         </div>
       </footer>

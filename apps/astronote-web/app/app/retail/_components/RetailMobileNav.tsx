@@ -115,7 +115,7 @@ export function RetailMobileNav({ open, onOpenChange, pathname }: RetailMobileNa
                 priority
               />
             </div>
-            <span className="text-lg font-semibold text-text-primary">Astronote Retail</span>
+            <span className="text-lg font-semibold text-text-primary">Astronote</span>
           </Link>
           <Button
             variant="ghost"

@@ -11,6 +11,7 @@ const footerLinks = {
   company: [
     { href: '/security', label: 'Security' },
     { href: '/contact', label: 'Contact' },
+    { href: 'https://konstantinos-pechlivanidis.onrender.com', label: 'Personal website' },
   ],
   legal: [
     { href: '/terms', label: 'Terms & Conditions' },

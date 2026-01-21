@@ -37,14 +37,6 @@ export default function HomePage() {
                       {marketingCopy.hero.secondaryCta}
                     </Button>
                   </Link>
-                  <Link
-                    href="https://www.linkedin.com/in/konstantinos-pechlivanidis-65a339293/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full sm:w-auto text-sm text-text-secondary hover:text-accent underline underline-offset-4"
-                  >
-                    Επικοινώνησε στο LinkedIn
-                  </Link>
                 </div>
               </div>
 

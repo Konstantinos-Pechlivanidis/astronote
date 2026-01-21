@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Navbar } from '@/components/layout/navbar';
-import { Footer } from '@/components/layout/footer';
-import { GlassCard } from '@/components/ui/glass-card';
+import { PublicLayout } from '@/src/components/retail/public/PublicLayout';
+import { PublicCard } from '@/src/components/retail/public/PublicCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { shopifyClient } from '@/lib/api/shopifyClient';
@@ -61,71 +60,64 @@ function ShopifyConnectContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-
-      <main className="flex-1 pt-24 pb-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md mx-auto">
-          <GlassCard>
-            <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-accent-light mb-6 mx-auto">
-              <Store className="w-8 h-8 text-accent" />
-            </div>
-            <h1 className="text-3xl font-bold mb-2 text-center">Connect Shopify Store</h1>
-            <p className="text-text-secondary mb-8 text-center">
-              {isEmbedded
-                ? 'Connecting your Shopify store...'
-                : 'Enter your Shopify store domain to get started'}
-            </p>
-
-            {!isEmbedded && (
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">
-                    Store Domain
-                  </label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="text"
-                      placeholder="your-store"
-                      value={shop}
-                      onChange={(e) => setShop(e.target.value)}
-                      className="flex-1"
-                    />
-                    <span className="flex items-center text-text-tertiary">.myshopify.com</span>
-                  </div>
-                  <p className="text-xs text-text-tertiary mt-2">
-                    Enter just the store name (e.g., &quot;your-store&quot; not &quot;your-store.myshopify.com&quot;)
-                  </p>
-                </div>
-
-                <Button
-                  onClick={handleOAuthConnect}
-                  className="w-full"
-                  size="lg"
-                  disabled={isLoading || !shop}
-                >
-                  {isLoading ? 'Connecting...' : 'Connect Store'}
-                </Button>
-              </div>
-            )}
-
-            {isEmbedded && isLoading && (
-              <div className="text-center">
-                <p className="text-text-secondary">Authenticating with Shopify...</p>
-              </div>
-            )}
-
-            <div className="mt-6 text-center">
-              <a href="/auth" className="text-sm text-text-tertiary hover:text-text-secondary">
-                ← Back to service selection
-              </a>
-            </div>
-          </GlassCard>
+    <PublicLayout>
+      <div className="max-w-md mx-auto text-white space-y-6">
+        <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-[#0ed7c4]/15 border border-[#0ed7c4]/30 mx-auto">
+          <Store className="w-8 h-8 text-[#0ed7c4]" />
         </div>
-      </main>
+        <div className="text-center space-y-2">
+          <p className="text-sm uppercase tracking-[0.2em] text-white/60">Shopify</p>
+          <h1 className="text-3xl font-bold">Connect your store</h1>
+          <p className="text-sm text-white/75">
+            {isEmbedded ? 'Connecting your Shopify store...' : 'Enter your Shopify store domain to get started'}
+          </p>
+        </div>
 
-      <Footer />
-    </div>
+        <PublicCard>
+          {!isEmbedded && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/80 mb-2">
+                  Store Domain
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="your-store"
+                    value={shop}
+                    onChange={(e) => setShop(e.target.value)}
+                    className="flex-1"
+                  />
+                  <span className="flex items-center text-white/60">.myshopify.com</span>
+                </div>
+                <p className="text-xs text-white/60 mt-2">
+                  Enter just the store name (e.g., &quot;your-store&quot; not &quot;your-store.myshopify.com&quot;)
+                </p>
+              </div>
+
+              <Button
+                onClick={handleOAuthConnect}
+                className="w-full bg-[#0ed7c4] text-[#0b1f2e] hover:bg-[#12b6a7]"
+                size="lg"
+                disabled={isLoading || !shop}
+              >
+                {isLoading ? 'Connecting...' : 'Connect Store'}
+              </Button>
+            </div>
+          )}
+
+          {isEmbedded && isLoading && (
+            <div className="text-center text-white/75">Authenticating with Shopify...</div>
+          )}
+
+          <div className="mt-6 text-center">
+            <a href="/auth" className="text-sm text-white/70 hover:text-white">
+              ← Back to service selection
+            </a>
+          </div>
+        </PublicCard>
+      </div>
+    </PublicLayout>
   );
 }
 
@@ -144,4 +136,3 @@ export default function ShopifyConnectPage() {
     </Suspense>
   );
 }
-

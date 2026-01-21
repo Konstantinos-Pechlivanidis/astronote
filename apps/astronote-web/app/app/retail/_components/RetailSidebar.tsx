@@ -62,7 +62,7 @@ export function RetailSidebar({
             />
           </div>
           {!collapsed && (
-            <span className="text-lg font-semibold text-text-primary">Astronote Retail</span>
+            <span className="text-lg font-semibold text-text-primary">Astronote</span>
           )}
         </Link>
       </div>
