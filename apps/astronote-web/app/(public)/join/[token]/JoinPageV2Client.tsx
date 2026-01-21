@@ -17,7 +17,6 @@ import {
   JoinHero,
   JoinBenefits,
   JoinFormCard,
-  JoinFooter,
   THEME,
 } from '@/src/components/publicJoinV2';
 import { resolveContent, parseBenefits } from '@/src/components/publicJoinV2/contentResolver';
@@ -297,11 +296,6 @@ export function JoinPageV2Client({ token }: { token: string }) {
         </div>
       </main>
 
-      <footer className="border-t py-8" style={{ borderColor: THEME.border.subtle }}>
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <JoinFooter landingUrl={LANDING_PAGE_URL} />
-        </div>
-      </footer>
     </JoinShell>
   );
 }

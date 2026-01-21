@@ -122,11 +122,13 @@ export default function OfferPage() {
             </div>
             {qrImageUrl ? (
               <div className="flex flex-col items-center gap-3">
-                <img
-                  src={qrImageUrl}
-                  alt="Redeem QR code"
-                  className="w-48 h-48 md:w-56 md:h-56 border border-white/20 rounded-2xl bg-white shadow-lg"
-                />
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 shadow-lg">
+                  <img
+                    src={qrImageUrl}
+                    alt="Redeem QR code"
+                    className="w-48 h-48 md:w-56 md:h-56 rounded-xl bg-white"
+                  />
+                </div>
                 <p className="text-xs text-white/70">Scan to redeem securely</p>
               </div>
             ) : null}

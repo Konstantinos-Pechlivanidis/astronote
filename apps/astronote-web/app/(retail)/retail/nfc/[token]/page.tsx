@@ -116,7 +116,10 @@ export default function NfcPage() {
             message="The contact was added."
           />
           <div className="mt-4">
-            <Button className="w-full" onClick={() => submitMutation.reset()}>
+            <Button
+              className="w-full bg-[#0ed7c4] text-[#0b1f2e] hover:bg-[#12b6a7]"
+              onClick={() => submitMutation.reset()}
+            >
               Add another number
             </Button>
           </div>
@@ -130,8 +133,8 @@ export default function NfcPage() {
       <PublicCard>
         <div className="space-y-6">
           <div className="space-y-1">
-            <p className="text-sm text-text-secondary">Connect customer to {storeName}</p>
-            <h1 className="text-2xl font-bold text-text-primary">Add contact details</h1>
+            <p className="text-sm text-white/70">Connect customer to {storeName}</p>
+            <h1 className="text-2xl font-bold text-white">Add contact details</h1>
           </div>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="grid gap-3">
@@ -141,7 +144,7 @@ export default function NfcPage() {
                 value={form.firstName}
                 onChange={(e) => handleChange('firstName', e.target.value)}
                 placeholder="First name"
-                className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-3 text-base text-white placeholder:text-white/40"
                 autoComplete="given-name"
               />
               <input
@@ -149,7 +152,7 @@ export default function NfcPage() {
                 value={form.lastName}
                 onChange={(e) => handleChange('lastName', e.target.value)}
                 placeholder="Last name (optional)"
-                className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-3 text-base text-white placeholder:text-white/40"
                 autoComplete="family-name"
               />
               <div className="grid grid-cols-3 gap-2">
@@ -157,7 +160,7 @@ export default function NfcPage() {
                   name="phoneCountryCode"
                   value={form.phoneCountryCode}
                   onChange={(e) => handleChange('phoneCountryCode', e.target.value)}
-                  className="col-span-1 rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                  className="col-span-1 rounded-md border border-white/10 bg-white/5 px-3 py-3 text-base text-white placeholder:text-white/40"
                   autoComplete="tel-country-code"
                   inputMode="tel"
                 />
@@ -167,7 +170,7 @@ export default function NfcPage() {
                   value={form.phoneNational}
                   onChange={(e) => handleChange('phoneNational', e.target.value)}
                   placeholder="Mobile number"
-                  className="col-span-2 rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                  className="col-span-2 rounded-md border border-white/10 bg-white/5 px-3 py-3 text-base text-white placeholder:text-white/40"
                   autoComplete="tel-national"
                   inputMode="tel"
                 />
@@ -178,7 +181,7 @@ export default function NfcPage() {
                 value={form.email}
                 onChange={(e) => handleChange('email', e.target.value)}
                 placeholder="Email (optional)"
-                className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-3 text-base text-white placeholder:text-white/40"
                 autoComplete="email"
               />
               <div className="grid gap-3 sm:grid-cols-2">
@@ -189,14 +192,14 @@ export default function NfcPage() {
                   max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => handleChange('birthday', e.target.value)}
                   placeholder="Birthday"
-                  className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                  className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-3 text-base text-white placeholder:text-white/40"
                   autoComplete="bday"
                 />
                 <select
                   name="gender"
                   value={form.gender}
                   onChange={(e) => handleChange('gender', e.target.value)}
-                  className="w-full rounded-md border border-border bg-surface-light px-3 py-3 text-base"
+                  className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-3 text-base text-white"
                 >
                   <option value="">Select gender (optional)</option>
                   <option value="male">Male</option>
@@ -204,7 +207,7 @@ export default function NfcPage() {
                   <option value="other">Other</option>
                 </select>
               </div>
-              <label className="flex items-start gap-2 text-sm text-text-secondary">
+              <label className="flex items-start gap-2 text-sm text-white/70">
                 <input
                   type="checkbox"
                   checked={form.gdprConsent}
@@ -219,13 +222,13 @@ export default function NfcPage() {
             </div>
             <Button
               type="submit"
-              className="w-full"
+              className="w-full bg-[#0ed7c4] text-[#0b1f2e] hover:bg-[#12b6a7]"
               disabled={submitMutation.isPending}
             >
               {submitMutation.isPending ? 'Sending…' : 'Submit'}
             </Button>
             {submitMutation.error && (
-              <p className="text-sm text-red-500">
+              <p className="text-sm text-red-300">
                 {(submitMutation.error as any)?.response?.data?.message || 'Something went wrong. Please try again.'}
               </p>
             )}
