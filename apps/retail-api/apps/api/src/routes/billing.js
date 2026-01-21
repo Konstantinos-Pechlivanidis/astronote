@@ -1089,7 +1089,11 @@ r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
     const planCatalog = require('../services/plan-catalog.service');
     const mode = planCatalog.detectCatalogMode();
 
-    const requestedPlan = req.body?.planType || req.body?.plan;
+    const requestedPlan =
+      req.body?.planType ||
+      req.body?.targetPlan ||
+      req.body?.targetPlanCode ||
+      req.body?.plan;
     const requestedInterval = req.body?.interval;
     const normalizedInterval =
       requestedInterval === 'month' || requestedInterval === 'year'

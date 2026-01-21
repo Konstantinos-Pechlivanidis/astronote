@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/src/components/ui/dialog';
+import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { useRetailAuth } from '@/src/features/retail/auth/useRetailAuth';
 import { getActiveNavItem } from './RetailNavItems';
 
@@ -161,27 +161,17 @@ export function RetailTopbar({
           </div>
         </div>
       </div>
-      <Dialog
+      <ConfirmDialog
         open={logoutConfirmOpen}
+        onOpenChange={setLogoutConfirmOpen}
         onClose={() => setLogoutConfirmOpen(false)}
+        onConfirm={handleLogout}
         title="Sign out"
-        size="sm"
-      >
-        <p className="text-sm text-text-secondary">Are you sure you want to sign out?</p>
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setLogoutConfirmOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            className="bg-destructive text-white hover:bg-destructive/90"
-            onClick={async () => {
-              await handleLogout();
-            }}
-          >
-            Sign out
-          </Button>
-        </div>
-      </Dialog>
+        message="Are you sure you want to sign out?"
+        confirmText="Sign out"
+        cancelText="Cancel"
+        variant="danger"
+      />
     </div>
   );
 }
