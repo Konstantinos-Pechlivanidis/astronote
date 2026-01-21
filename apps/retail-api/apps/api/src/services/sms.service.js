@@ -2,11 +2,11 @@
 // Centralized SMS sending service with credit enforcement
 
 const { sendSingle } = require('./mitto.service');
-const { getBalance, debit } = require('./wallet.service');
+const { getBalance } = require('./wallet.service');
 const { generateUnsubscribeToken } = require('./token.service');
 const { shortenUrlsInText } = require('./urlShortener.service');
 const { buildUnsubscribeShortUrl } = require('./publicLinkBuilder.service');
-const { isSubscriptionActive } = require('./subscription.service');
+const { isSubscriptionActive, getAllowanceStatus, consumeMessageBilling } = require('./subscription.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'sms-service' });
@@ -35,15 +35,21 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
     };
   }
 
-  // 2. Check balance before sending
+  // 2. Check allowance + credits before sending
+  const allowance = await getAllowanceStatus(ownerId);
   const balance = await getBalance(ownerId);
-  if (balance < 1) {
-    logger.warn({ ownerId, balance }, 'Insufficient credits for SMS send');
+  const available = (allowance?.remainingThisPeriod || 0) + (balance || 0);
+  if (available < 1) {
+    logger.warn({
+      ownerId,
+      balance,
+      allowanceRemaining: allowance?.remainingThisPeriod || 0,
+    }, 'Insufficient allowance/credits for SMS send');
     return {
       sent: false,
       reason: 'insufficient_credits',
       balance,
-      error: 'Not enough credits to send SMS. Please purchase credits.',
+      error: 'Not enough free allowance or credits to send SMS. Please purchase credits or upgrade your subscription.',
     };
   }
 
@@ -81,16 +87,21 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
       sender,
     });
 
-    // 5. Only debit credits AFTER successful send (when we have messageId)
+    // 5. Only consume allowance/credits AFTER successful send (when we have messageId)
     if (result.messageId) {
       try {
-        const debitResult = await debit(ownerId, 1, {
+        const billingResult = await consumeMessageBilling(ownerId, 1, {
           reason: meta.reason || 'sms:send',
           campaignId: meta.campaignId || null,
           messageId: meta.messageId || null,
           meta,
         });
-        logger.debug({ ownerId, balanceAfter: debitResult.balance }, 'Credits debited after successful send');
+        logger.debug({
+          ownerId,
+          balanceAfter: billingResult.balance,
+          usedAllowance: billingResult.usedAllowance,
+          debitedCredits: billingResult.debitedCredits,
+        }, 'Billing applied after successful send');
 
         logger.info({
           ownerId,
@@ -103,11 +114,11 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
           messageId: result.messageId,
           providerMessageId: result.messageId, // Mitto messageId is the provider messageId
           trafficAccountId: result.trafficAccountId,
-          balanceAfter: debitResult.balance,
+          balanceAfter: billingResult.balance,
         };
       } catch (debitErr) {
         // Log error but don't fail - message was already sent
-        logger.error({ ownerId, err: debitErr.message }, 'Failed to debit credits after successful send');
+        logger.error({ ownerId, err: debitErr.message }, 'Failed to bill after successful send');
         return {
           sent: true,
           messageId: result.messageId,
