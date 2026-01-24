@@ -141,7 +141,7 @@ function RetailBillingSuccessContent() {
                 {verifying ? 'Verifying payment' : 'Finalizing'}
               </h2>
               <p className="text-sm text-text-secondary mb-6">
-                Syncing subscription/credits and invoices from Stripe. Once complete we will return you to the billing page automatically.
+                Verifying payment and syncing your wallet and invoices from Stripe. We will return you to billing automatically.
               </p>
             </div>
           </RetailCard>
@@ -153,13 +153,13 @@ function RetailBillingSuccessContent() {
   return (
     <RetailPageLayout>
       <div className="space-y-6">
-        <RetailPageHeader title="Payment Successful" />
+        <RetailPageHeader title="Payment Verified" />
         <RetailCard className="p-6">
           <div className="text-center py-8">
             <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-4" />
-            <h2 className="text-2xl font-bold text-text-primary mb-2">Payment Completed Successfully</h2>
+            <h2 className="text-2xl font-bold text-text-primary mb-2">Payment verified, wallet updated</h2>
             <p className="text-sm text-text-secondary mb-6">
-              Your subscription/payment has been processed. Returning you to billing to refresh balances and invoices.
+              Your payment is confirmed and your wallet is updated. You can return to Billing to review balances and invoices.
             </p>
             <div className="flex items-center justify-center gap-3">
               <Link href="/app/retail/billing">

@@ -17,7 +17,7 @@ export default function RetailBillingCancelPage() {
             <XCircle className="mx-auto h-16 w-16 text-yellow-500 mb-4" />
             <h2 className="text-2xl font-bold text-text-primary mb-2">Payment Cancelled</h2>
             <p className="text-sm text-text-secondary mb-6">
-              Your payment was cancelled. No charges have been made to your account.
+              Your payment was cancelled. No charges were made to your account. You can return to Billing to try again.
             </p>
             <div className="flex items-center justify-center gap-3">
               <Link href="/app/retail/billing">
@@ -33,5 +33,4 @@ export default function RetailBillingCancelPage() {
     </RetailPageLayout>
   );
 }
-
 

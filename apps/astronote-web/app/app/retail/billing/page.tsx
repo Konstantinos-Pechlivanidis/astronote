@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { billingApi, type Package } from '@/src/lib/retail/api/billing';
@@ -19,6 +19,7 @@ import {
   Package as PackageIcon,
   ShoppingCart,
   Plus,
+  AlertCircle,
   ArrowUp,
   ArrowDown,
 } from 'lucide-react';
@@ -110,6 +111,7 @@ const createIdempotencyKey = () => {
 function BillingHeader({
   subscription,
   credits,
+  currency,
 }: {
   subscription: {
     active?: boolean
@@ -126,6 +128,7 @@ function BillingHeader({
     } | null
   }
   credits: number
+  currency: BillingCurrency
 }) {
   const status = subscription?.status || (subscription?.active ? 'active' : 'inactive');
   const isActive = status === 'active';
@@ -140,6 +143,13 @@ function BillingHeader({
       ? 300
       : interval === 'year'
         ? 1500
+        : null;
+  const planPrice = typeof subscription?.plan?.priceEur === 'number'
+    ? subscription.plan.priceEur
+    : interval === 'month'
+      ? 40
+      : interval === 'year'
+        ? 240
         : null;
   const statusTone = isActive
     ? 'bg-green-500/10 text-green-400 border border-green-500/20'
@@ -167,6 +177,12 @@ function BillingHeader({
           <div className="text-lg font-medium text-text-primary mt-1">
             {planLabel}
           </div>
+          {planPrice !== null && interval && (
+            <div className="text-sm text-text-secondary mt-1">
+              Current plan: {intervalLabel} {currencySymbol(currency)}
+              {planPrice.toFixed(0)}
+            </div>
+          )}
           {includedCredits !== null && (
             <div className="text-xs text-text-tertiary mt-1">
               Includes {includedCredits.toLocaleString()} credits per paid cycle
@@ -204,9 +220,75 @@ function BillingHeader({
   );
 }
 
+function BillingAttentionBanner({
+  status,
+  lastBillingError,
+  onManagePayment,
+  onRefresh,
+  isRefreshing,
+  isPortalLoading,
+}: {
+  status?: string | null
+  lastBillingError?: string | null
+  onManagePayment: () => void
+  onRefresh: () => void
+  isRefreshing: boolean
+  isPortalLoading: boolean
+}) {
+  const isPastDue = status === 'past_due' || status === 'unpaid';
+  if (!isPastDue) return null;
+
+  const title = status === 'past_due' ? 'Billing attention required' : 'Payment failed';
+  const description = status === 'past_due'
+    ? 'Your last payment is past due. Update your payment method to keep your subscription active.'
+    : 'Your last payment attempt failed. Update your payment method to restore access.';
+
+  return (
+    <RetailCard className="border-yellow-500/20 bg-yellow-500/10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-yellow-500/30 bg-yellow-500/20">
+            <AlertCircle className="h-5 w-5 text-yellow-700" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-text-primary">{title}</div>
+            <p className="mt-1 text-sm text-text-secondary">{description}</p>
+            <p className="mt-1 text-xs text-text-tertiary">
+              Credits accumulate and never expire; spending requires an active subscription.
+            </p>
+            {lastBillingError && (
+              <p className="mt-2 text-xs text-text-tertiary">
+                Last billing error: {lastBillingError}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={onManagePayment}
+            disabled={isPortalLoading}
+            variant="outline"
+          >
+            {isPortalLoading ? 'Opening...' : 'Update payment method'}
+          </Button>
+          <Button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            variant="outline"
+          >
+            {isRefreshing ? 'Refreshing...' : 'Refresh from Stripe'}
+          </Button>
+        </div>
+      </div>
+    </RetailCard>
+  );
+}
+
 function SubscriptionCard({
   subscription,
   currency,
+  onRefresh,
+  isRefreshing,
 }: {
   subscription: {
     active?: boolean
@@ -220,9 +302,13 @@ function SubscriptionCard({
     availableOptions?: Array<{ planCode: string; interval: string; currency: string }> | null
     plan?: {
       freeCredits?: number
+      priceEur?: number
+      priceUsd?: number
     } | null
   }
   currency: BillingCurrency
+  onRefresh: () => void
+  isRefreshing: boolean
 }) {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -231,10 +317,19 @@ function SubscriptionCard({
 
   const status = subscription?.status || (subscription?.active ? 'active' : 'inactive');
   const isActive = status === 'active';
+  const isPastDue = status === 'past_due' || status === 'unpaid';
+  const isCanceled = status === 'canceled' || status === 'inactive';
   const interval = subscription?.interval;
   const planType = subscription?.planType;
   const intervalLabel = interval === 'year' ? 'Yearly' : interval === 'month' ? 'Monthly' : null;
   const planLabel = intervalLabel ? `${intervalLabel} Plan` : (planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : 'Plan');
+  const planPrice = typeof subscription?.plan?.priceEur === 'number'
+    ? subscription.plan.priceEur
+    : interval === 'month'
+      ? 40
+      : interval === 'year'
+        ? 240
+        : null;
   const pendingIntervalLabel = subscription?.pendingChange?.interval === 'year'
     ? 'Yearly'
     : subscription?.pendingChange?.interval === 'month'
@@ -421,6 +516,12 @@ function SubscriptionCard({
         <p className="text-sm text-text-secondary mb-4">
           Status: <span className="text-text-primary capitalize">{status.replace(/_/g, ' ')}</span>
         </p>
+        {planPrice !== null && interval && (
+          <div className="text-xs text-text-tertiary mb-2">
+            Current plan price: {currencySymbol(currency)}
+            {planPrice.toFixed(0)} / {interval === 'year' ? 'year' : 'month'}
+          </div>
+        )}
         {subscription?.pendingChange?.effectiveAt && (
           <div className="text-xs text-text-tertiary mb-2">
             Pending change: {pendingPlanLabel} effective{' '}
@@ -485,38 +586,77 @@ function SubscriptionCard({
     <RetailCard>
       <div className="flex items-center gap-2 mb-4">
         <XCircle className="w-5 h-5 text-red-400" />
-        <h3 className="text-lg font-semibold text-text-primary">Subscribe to a Plan</h3>
+        <h3 className="text-lg font-semibold text-text-primary">
+          {isPastDue ? 'Payment requires attention' : 'Activate a Plan'}
+        </h3>
       </div>
-      <p className="text-sm text-text-secondary mb-6">
-        Choose a subscription plan to start sending campaigns. Monthly includes 300 credits per paid
-        cycle. Yearly includes 1500 credits per paid cycle.
-      </p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {intervalOptions.map((option) => (
-          <RetailCard key={option.interval} variant="subtle" hover>
-            <h4 className="font-semibold text-text-primary mb-2">{option.title}</h4>
-            <p className="text-sm text-text-secondary mb-4">{option.description}</p>
+      {isPastDue ? (
+        <p className="text-sm text-text-secondary mb-6">
+          Your subscription is on hold until the payment issue is resolved. Update your payment
+          method or refresh Stripe to retry.
+        </p>
+      ) : (
+        <div className="mb-6 space-y-2">
+          <p className="text-sm text-text-secondary">
+            {isCanceled
+              ? 'Your credits are safe and never expire, but sending is disabled until you activate a subscription.'
+              : 'Choose a subscription plan to start sending campaigns. Monthly includes 300 credits per paid cycle. Yearly includes 1500 credits per paid cycle.'}
+          </p>
+          {isCanceled && (
+            <p className="text-xs text-text-tertiary">
+              Credits accumulate and never expire; spending requires an active subscription.
+            </p>
+          )}
+        </div>
+      )}
+      {isPastDue && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          <Button
+            onClick={handleManageSubscription}
+            disabled={portalMutation.isPending}
+            variant="outline"
+          >
+            {portalMutation.isPending ? 'Opening...' : 'Update payment method'}
+          </Button>
+          <Button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            variant="outline"
+          >
+            {isRefreshing ? 'Refreshing...' : 'Refresh from Stripe'}
+          </Button>
+        </div>
+      )}
+      {!isPastDue && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {intervalOptions.map((option) => (
+              <RetailCard key={option.interval} variant="subtle" hover>
+                <h4 className="font-semibold text-text-primary mb-2">{option.title}</h4>
+                <p className="text-sm text-text-secondary mb-4">{option.description}</p>
+                <Button
+                  onClick={() => handleSubscribe(option.planType)}
+                  disabled={subscribeMutation.isPending}
+                  className="w-full"
+                >
+                  {subscribeMutation.isPending && selectedPlan === option.planType
+                    ? 'Processing...'
+                    : `${isCanceled ? 'Activate' : 'Subscribe'} ${option.title}`}
+                </Button>
+              </RetailCard>
+            ))}
+          </div>
+          <div className="mt-4">
             <Button
-              onClick={() => handleSubscribe(option.planType)}
-              disabled={subscribeMutation.isPending}
-              className="w-full"
+              onClick={handleManageSubscription}
+              disabled={portalMutation.isPending}
+              variant="outline"
             >
-              {subscribeMutation.isPending && selectedPlan === option.planType
-                ? 'Processing...'
-                : `Subscribe ${option.title}`}
+              {portalMutation.isPending ? 'Loading...' : 'Manage Payment Method'}
             </Button>
-          </RetailCard>
-        ))}
-      </div>
-      <div className="mt-4">
-        <Button
-          onClick={handleManageSubscription}
-          disabled={portalMutation.isPending}
-          variant="outline"
-        >
-          {portalMutation.isPending ? 'Loading...' : 'Manage Payment Method'}
-        </Button>
-      </div>
+          </div>
+        </>
+      )}
     </RetailCard>
   );
 }
@@ -534,7 +674,10 @@ function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  const tiers = Array.isArray(tiersData?.tiers) ? tiersData.tiers : [];
+  const tiers = useMemo(
+    () => (Array.isArray(tiersData?.tiers) ? tiersData.tiers : []),
+    [tiersData?.tiers],
+  );
 
   useEffect(() => {
     if (!tiers.length) return;
@@ -586,6 +729,16 @@ function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
 
   const handleTopup = () => {
     if (!selectedTier) return;
+    const displayPrice = totalPrice !== null
+      ? formatAmount(totalPrice, currency)
+      : formatAmount(selectedTier.amount, selectedTier.currency);
+    const vatLine = vatAmount !== undefined && vatAmount !== null
+      ? ` Includes VAT ${currencySymbol(currency)}${vatAmount.toFixed(2)}.`
+      : '';
+    const confirmMessage = `You’re purchasing: ${displayPrice} top-up → +${selectedTier.credits.toLocaleString()} credits.${vatLine}\nProceed to Stripe Checkout?`;
+    if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
+      return;
+    }
     topupMutation.mutate({ credits: selectedTier.credits });
   };
 
@@ -734,6 +887,12 @@ function PackageCard({ pkg, currency }: { pkg: Package; currency: BillingCurrenc
         ? crypto.randomUUID()
         : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     }
+    const unitCount = getUnits(pkg).toLocaleString();
+    const priceLabel = `${currencySymbol(pkg.currency || currency)}${getPrice(pkg)}`;
+    const confirmMessage = `You’re purchasing: ${priceLabel} → +${unitCount} credits.\nProceed to Stripe Checkout?`;
+    if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
+      return;
+    }
     setIsPurchasing(true);
     purchaseMutation.mutate({
       packageId: Number(pkg.id),
@@ -789,7 +948,12 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
   if (isLoading) {
     return (
       <RetailCard>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Wallet Activity</h3>
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-text-primary">Wallet activity (credits)</h3>
+          <p className="text-sm text-text-secondary">
+            Credits added, spent, or refunded inside your wallet.
+          </p>
+        </div>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-16 bg-surface-light rounded animate-pulse"></div>
@@ -802,7 +966,12 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
   if (!transactions || transactions.length === 0) {
     return (
       <RetailCard>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Wallet Activity</h3>
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-text-primary">Wallet activity (credits)</h3>
+          <p className="text-sm text-text-secondary">
+            Credits added, spent, or refunded inside your wallet.
+          </p>
+        </div>
         <p className="text-sm text-text-secondary">No transactions yet.</p>
       </RetailCard>
     );
@@ -811,7 +980,10 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
   return (
     <RetailCard>
       <div className="p-6 border-b border-border">
-        <h3 className="text-lg font-semibold text-text-primary">Wallet Activity</h3>
+        <h3 className="text-lg font-semibold text-text-primary">Wallet activity (credits)</h3>
+        <p className="text-sm text-text-secondary">
+          Credits added, spent, or refunded inside your wallet.
+        </p>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
@@ -971,7 +1143,12 @@ function BillingHistoryTable({
     <RetailCard>
       <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-text-primary">Payment History</h3>
+          <div>
+            <h3 className="text-lg font-semibold text-text-primary">Payments</h3>
+            <p className="text-sm text-text-secondary">
+              Money transactions processed via Stripe (subscriptions and top-ups).
+            </p>
+          </div>
           <div className="text-xs text-text-tertiary">Subscription • Included credits • Top-ups</div>
         </div>
       </div>
@@ -1042,6 +1219,7 @@ export default function RetailBillingPage() {
   const [transactionsPage, setTransactionsPage] = useState(1);
   const [invoicePage] = useState(1);
   const [billingHistoryPage] = useState(1);
+  const [activityTab, setActivityTab] = useState<'wallet' | 'payments'>('wallet');
   const [selectedCurrency, setSelectedCurrency] = useState<BillingCurrency>('EUR');
   const [currencyStorageKey, setCurrencyStorageKey] = useState<string | null>(null);
   const hasStoredSelection = useRef(false);
@@ -1152,6 +1330,31 @@ export default function RetailBillingPage() {
     },
   });
 
+  const portalMutation = useMutation({
+    mutationFn: async () => {
+      const res = await subscriptionsApi.getPortal();
+      return res.data;
+    },
+    onSuccess: (data) => {
+      if (data.portalUrl || data.url) {
+        const target = data.portalUrl || data.url!;
+        window.open(target, '_blank', 'noopener,noreferrer');
+      } else {
+        toast.error('No portal URL received from server');
+      }
+    },
+    onError: (error: any) => {
+      const code = error.response?.data?.code;
+      const message = error.response?.data?.message || 'Failed to load customer portal';
+
+      if (code === 'MISSING_CUSTOMER_ID') {
+        toast.error('No payment account found. Please subscribe to a plan first.');
+      } else {
+        toast.error(message);
+      }
+    },
+  });
+
   // Portal return: reconcile once and then clean the URL.
   useEffect(() => {
     if (searchParams.get('fromPortal') === 'true') {
@@ -1187,14 +1390,20 @@ export default function RetailBillingPage() {
       >
         {reconcileMutation.isPending ? 'Refreshing…' : 'Refresh from Stripe'}
       </Button>
-      <Select value={selectedCurrency} onValueChange={handleCurrencyChange}>
-        <SelectTrigger className="w-[140px]">
-          <SelectValue placeholder="Currency" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="EUR">EUR (€)</SelectItem>
-        </SelectContent>
-      </Select>
+      {SUPPORTED_CURRENCIES.length > 1 ? (
+        <Select value={selectedCurrency} onValueChange={handleCurrencyChange}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Currency" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="EUR">EUR (€)</SelectItem>
+          </SelectContent>
+        </Select>
+      ) : (
+        <div className="px-3 py-2 rounded-md border border-border bg-surface-light text-sm text-text-secondary">
+          Currency: EUR
+        </div>
+      )}
     </div>
   );
 
@@ -1235,6 +1444,7 @@ export default function RetailBillingPage() {
   const availablePackages = Array.isArray(packages)
     ? packages.filter((pkg) => ['credit_topup', 'subscription_package', 'credit_pack'].includes(pkg.type || ''))
     : [];
+  const subscriptionStatus = subscription?.status || (subscription?.active ? 'active' : 'inactive');
 
   return (
     <RetailPageLayout>
@@ -1248,10 +1458,24 @@ export default function RetailBillingPage() {
           After payment we automatically verify and reconcile so credits and invoices refresh in a few moments.
         </div>
 
-        <BillingHeader subscription={subscription} credits={credits} />
+        <BillingAttentionBanner
+          status={subscriptionStatus}
+          lastBillingError={subscription?.lastBillingError}
+          onManagePayment={() => portalMutation.mutate()}
+          onRefresh={() => reconcileMutation.mutate()}
+          isRefreshing={reconcileMutation.isPending}
+          isPortalLoading={portalMutation.isPending}
+        />
+
+        <BillingHeader subscription={subscription} credits={credits} currency={selectedCurrency} />
 
         <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <SubscriptionCard subscription={subscription} currency={selectedCurrency} />
+          <SubscriptionCard
+            subscription={subscription}
+            currency={selectedCurrency}
+            onRefresh={() => reconcileMutation.mutate()}
+            isRefreshing={reconcileMutation.isPending}
+          />
           <CreditTopupCard currency={selectedCurrency} />
         </div>
 
@@ -1293,46 +1517,67 @@ export default function RetailBillingPage() {
           </div>
         )}
 
-        <div className="mb-6">
-          <TransactionsTable
-            transactions={transactionsData?.items || []}
-            isLoading={transactionsLoading}
-          />
-          {transactionsData && transactionsData.total > 20 && (
-            <div className="mt-4 flex items-center justify-between">
-              <div className="text-sm text-text-secondary">
-                Showing {(transactionsPage - 1) * 20 + 1} to{' '}
-                {Math.min(transactionsPage * 20, transactionsData.total)} of {transactionsData.total}{' '}
-                transactions
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => setTransactionsPage((p) => Math.max(1, p - 1))}
-                  disabled={transactionsPage === 1}
-                  variant="outline"
-                  size="sm"
-                >
-                  Previous
-                </Button>
-                <Button
-                  onClick={() => setTransactionsPage((p) => p + 1)}
-                  disabled={transactionsPage * 20 >= transactionsData.total}
-                  variant="outline"
-                  size="sm"
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => setActivityTab('wallet')}
+              variant={activityTab === 'wallet' ? 'default' : 'outline'}
+              size="sm"
+            >
+              Wallet activity (credits)
+            </Button>
+            <Button
+              onClick={() => setActivityTab('payments')}
+              variant={activityTab === 'payments' ? 'default' : 'outline'}
+              size="sm"
+            >
+              Payments
+            </Button>
+          </div>
+          {activityTab === 'wallet' ? (
+            <>
+              <TransactionsTable
+                transactions={transactionsData?.items || []}
+                isLoading={transactionsLoading}
+              />
+              {transactionsData && transactionsData.total > 20 && (
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-text-secondary">
+                    Showing {(transactionsPage - 1) * 20 + 1} to{' '}
+                    {Math.min(transactionsPage * 20, transactionsData.total)} of {transactionsData.total}{' '}
+                    transactions
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => setTransactionsPage((p) => Math.max(1, p - 1))}
+                      disabled={transactionsPage === 1}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      onClick={() => setTransactionsPage((p) => p + 1)}
+                      disabled={transactionsPage * 20 >= transactionsData.total}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <BillingHistoryTable
+              transactions={billingHistoryData?.transactions || []}
+              isLoading={billingHistoryLoading}
+            />
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="mb-6">
           <InvoicesTable invoices={invoicesData?.invoices || []} isLoading={invoicesLoading} />
-          <BillingHistoryTable
-            transactions={billingHistoryData?.transactions || []}
-            isLoading={billingHistoryLoading}
-          />
         </div>
       </div>
     </RetailPageLayout>
