@@ -16,6 +16,8 @@ const { resolveTaxTreatment, resolveTaxRateForInvoice } = require('../services/t
 const { upsertTaxEvidence } = require('../services/tax-evidence.service');
 const { upsertInvoiceRecord, recordSubscriptionInvoiceTransaction } = require('../services/invoices.service');
 const { syncBillingProfileFromStripe } = require('../services/billing-profile.service');
+const { createPaymentFromInvoice, createPaymentFromCheckoutSession, getSubscriptionPaymentKind } = require('../services/payments.service');
+const { getTopupTierByPriceId } = require('../billing/topupCatalog');
 const {
   generateEventHash,
   processWebhookWithReplayProtection,
@@ -27,6 +29,18 @@ const router = express.Router();
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+const INCLUDED_CREDITS_MONTHLY = Number(process.env.CREDITS_INCLUDED_MONTHLY || 0);
+const INCLUDED_CREDITS_YEARLY = Number(process.env.CREDITS_INCLUDED_YEARLY || 0);
+
+const resolveIncludedCredits = (kind) => {
+  if (kind === 'monthly') {
+    return Number.isInteger(INCLUDED_CREDITS_MONTHLY) ? INCLUDED_CREDITS_MONTHLY : 0;
+  }
+  if (kind === 'yearly') {
+    return Number.isInteger(INCLUDED_CREDITS_YEARLY) ? INCLUDED_CREDITS_YEARLY : 0;
+  }
+  return 0;
+};
 
 const extractTaxId = (taxIds = []) => {
   if (!Array.isArray(taxIds)) {
@@ -173,6 +187,56 @@ const extractSubscriptionPeriod = (subscription) => {
     currentPeriodStart,
     currentPeriodEnd,
     cancelAtPeriodEnd,
+  };
+};
+
+const derivePendingChangeFromSchedule = async (subscription) => {
+  const planCatalog = require('../services/plan-catalog.service');
+  const scheduleRef = subscription?.schedule;
+  if (!scheduleRef) {
+    return null;
+  }
+
+  let schedule = scheduleRef;
+  if (typeof scheduleRef === 'string') {
+    if (!stripe) {
+      return null;
+    }
+    try {
+      schedule = await stripe.subscriptionSchedules.retrieve(scheduleRef);
+    } catch (err) {
+      logger.warn({ scheduleId: scheduleRef, err: err.message }, 'Failed to retrieve subscription schedule');
+      return null;
+    }
+  }
+
+  const phases = schedule?.phases;
+  if (!Array.isArray(phases) || phases.length < 2) {
+    return null;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const nextPhase = phases.find((phase) => phase?.start_date && phase.start_date > now);
+  if (!nextPhase || !Array.isArray(nextPhase.items) || nextPhase.items.length === 0) {
+    return null;
+  }
+
+  const nextPrice = nextPhase.items[0]?.price || null;
+  const nextPriceId = typeof nextPrice === 'string' ? nextPrice : nextPrice?.id;
+  if (!nextPriceId) {
+    return null;
+  }
+
+  const resolved = planCatalog.resolvePlanFromPriceId(nextPriceId);
+  if (!resolved) {
+    return null;
+  }
+
+  return {
+    planCode: resolved.planCode,
+    interval: resolved.interval,
+    currency: resolved.currency,
+    effectiveAt: nextPhase.start_date ? new Date(nextPhase.start_date * 1000) : null,
   };
 };
 
@@ -609,27 +673,6 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
       }, 'Subscription activated and allowance reset successfully');
     }
 
-    // Record included credits grant in the unified billing ledger (amount=0).
-    // This makes "free included credits" visible in purchase history.
-    try {
-      const included = result?.includedSmsPerPeriod || 0;
-      await recordBillingTransaction({
-        ownerId,
-        creditsAdded: included,
-        amount: 0,
-        currency: subscriptionCurrency || session.currency?.toUpperCase() || 'EUR',
-        packageType: 'subscription_included_credits',
-        stripeSessionId: session.id,
-        stripePaymentId: session.payment_intent || null,
-        idempotencyKey: `free_credits:sub:${subscriptionId}`,
-      });
-    } catch (err) {
-      logger.warn(
-        { ownerId, subscriptionId, err: err.message },
-        'Failed to record included credits grant (non-fatal)',
-      );
-    }
-
     const taxDetails = extractTaxDetailsFromSession(session);
     if (taxDetails.billingCountry || taxDetails.vatId) {
       const treatment = resolveTaxTreatment({
@@ -678,23 +721,49 @@ async function handleCheckoutSessionCompletedForSubscription(session) {
 async function handleCheckoutSessionCompletedForTopup(session) {
   const metadata = session.metadata || {};
   const ownerId = Number(metadata.ownerId);
-  const credits = Number(metadata.credits);
-  const currency = String(metadata.currency || 'EUR').toUpperCase();
-  const priceAmount = Number(metadata.priceAmount || metadata.priceEur || metadata.priceUsd);
+  const currency = String(metadata.currency || session.currency || 'EUR').toUpperCase();
+  let priceId = metadata.priceId || null;
 
-  if (!ownerId || !credits || !priceAmount) {
-    logger.warn({ sessionId: session.id }, 'Credit top-up checkout missing required metadata');
+  if (!ownerId) {
+    logger.warn({ sessionId: session.id }, 'Credit top-up checkout missing owner metadata');
     return;
   }
+
+  if (!priceId && Array.isArray(session.line_items?.data)) {
+    priceId = session.line_items.data?.[0]?.price?.id || null;
+  }
+
+  if (!priceId && stripe) {
+    try {
+      const expanded = await stripe.checkout.sessions.retrieve(session.id, { expand: ['line_items'] });
+      priceId = expanded.line_items?.data?.[0]?.price?.id || priceId;
+    } catch (err) {
+      logger.warn({ sessionId: session.id, err: err.message }, 'Failed to retrieve checkout session line items');
+    }
+  }
+
+  let tier = null;
+  try {
+    tier = getTopupTierByPriceId(priceId, currency);
+  } catch (err) {
+    logger.warn({ sessionId: session.id, ownerId, priceId, err: err.message }, 'Failed to resolve top-up tier');
+    return;
+  }
+  if (!tier) {
+    logger.warn({ sessionId: session.id, ownerId, priceId }, 'Credit top-up tier not found for price ID');
+    return;
+  }
+
+  const credits = tier.credits;
+  const priceAmount = tier.amount;
 
   logger.info({ ownerId, credits, priceAmount, currency, sessionId: session.id }, 'Processing credit top-up checkout completion');
 
   // Validate payment amount matches expected amount (fraud prevention)
-  const expectedAmountCents = Math.round(priceAmount * 100);
+  const expectedAmountCents = tier.amountCents;
   const actualAmountCents = session.amount_total || 0;
 
-  // Allow small rounding differences (up to 1 cent)
-  if (Math.abs(actualAmountCents - expectedAmountCents) > 1) {
+  if (expectedAmountCents && actualAmountCents && actualAmountCents + 1 < expectedAmountCents) {
     logger.error({
       ownerId,
       sessionId: session.id,
@@ -703,8 +772,8 @@ async function handleCheckoutSessionCompletedForTopup(session) {
       credits,
       priceAmount,
       currency,
-    }, 'Payment amount mismatch - potential fraud or configuration error');
-    throw new Error(`Payment amount mismatch: expected ${expectedAmountCents} cents, got ${actualAmountCents} cents`);
+    }, 'Payment amount lower than expected for top-up');
+    throw new Error(`Payment amount mismatch: expected at least ${expectedAmountCents} cents, got ${actualAmountCents} cents`);
   }
 
   // Check if already processed (idempotency)
@@ -742,6 +811,7 @@ async function handleCheckoutSessionCompletedForTopup(session) {
           credits,
           priceAmount,
           currency,
+          priceId,
           purchasedAt: new Date().toISOString(),
         },
       }, tx);
@@ -757,6 +827,8 @@ async function handleCheckoutSessionCompletedForTopup(session) {
       stripePaymentId: session.payment_intent || null,
       idempotencyKey: `stripe:topup:${session.payment_intent || session.id}`,
     });
+
+    await createPaymentFromCheckoutSession(ownerId, session, { kind: 'topup' });
 
     const taxDetails = extractTaxDetailsFromSession(session);
     if (taxDetails.billingCountry || taxDetails.vatId) {
@@ -837,6 +909,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
       planType: true,
       subscriptionStatus: true,
       stripeSubscriptionId: true,
+      subscriptionInterval: true,
     },
   });
 
@@ -890,10 +963,21 @@ async function handleInvoicePaymentSucceeded(invoice) {
     data: { lastBillingError: null },
   });
 
+  await createPaymentFromInvoice(user.id, invoice, {
+    fallbackPlanType: user.planType,
+    fallbackInterval: user.subscriptionInterval,
+  });
+
+  const paymentKind = getSubscriptionPaymentKind(invoice, {
+    fallbackPlanType: user.planType,
+    fallbackInterval: user.subscriptionInterval,
+  });
+  const creditsToGrant = resolveIncludedCredits(paymentKind.kind);
+
   // For subscription_create: store invoice + record charge, but avoid allowance reset here.
   // Allowance is reset in checkout.session.completed (idempotent).
   if (invoice.billing_reason === 'subscription_create') {
-    await recordSubscriptionInvoiceTransaction(user.id, invoice, { creditsAdded: 0 });
+    await recordSubscriptionInvoiceTransaction(user.id, invoice, { creditsAdded: creditsToGrant });
     return;
   }
 
@@ -937,25 +1021,6 @@ async function handleInvoicePaymentSucceeded(invoice) {
           includedSmsPerPeriod: result.includedSmsPerPeriod,
           subscriptionId,
         }, 'Allowance reset successfully for billing cycle');
-
-        // Record included credits grant in the unified billing ledger (amount=0).
-        try {
-          await recordBillingTransaction({
-            ownerId: user.id,
-            creditsAdded: result.includedSmsPerPeriod || 0,
-            amount: 0,
-            currency: invoice.currency?.toUpperCase() || 'EUR',
-            packageType: 'subscription_included_credits',
-            stripeSessionId: invoice.id,
-            stripePaymentId: invoice.payment_intent || null,
-            idempotencyKey: `free_credits:invoice:${invoice.id}`,
-          });
-        } catch (err) {
-          logger.warn(
-            { ownerId: user.id, invoiceId: invoice.id, err: err.message },
-            'Failed to record included credits grant (non-fatal)',
-          );
-        }
       } else {
         logger.info({
           userId: user.id,
@@ -977,7 +1042,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
   }
 
   await recordSubscriptionInvoiceTransaction(user.id, invoice, {
-    creditsAdded: 0,
+    creditsAdded: creditsToGrant,
   });
 }
 
@@ -1085,24 +1150,88 @@ async function handleInvoicePaymentFailed(invoice) {
   }
 }
 
-/**
- * Handle charge.refunded event
- * This is fired when a payment is refunded
- */
-async function handleChargeRefunded(charge) {
-  logger.info({ chargeId: charge.id, amount: charge.amount, amountRefunded: charge.amount_refunded }, 'Processing charge refunded event');
+const resolveOwnerIdFromCustomer = async (customerId) => {
+  if (!customerId) {
+    return null;
+  }
+  const user = await prisma.user.findFirst({
+    where: { stripeCustomerId: customerId },
+    select: { id: true },
+  });
+  return user?.id || null;
+};
 
-  const paymentIntentId = charge.payment_intent;
-  const customerId = charge.customer;
+const resolvePaymentForCharge = async (charge) => {
+  if (!charge) {
+    return null;
+  }
+  const paymentIntentId = charge.payment_intent || null;
+  const invoiceId = charge.invoice || null;
+  const chargeId = charge.id || null;
 
-  if (!paymentIntentId) {
-    logger.warn({ chargeId: charge.id }, 'Charge missing payment intent ID');
-    return;
+  const filters = [];
+  if (paymentIntentId) {
+    filters.push({ stripePaymentIntentId: paymentIntentId });
+  }
+  if (invoiceId) {
+    filters.push({ stripeInvoiceId: invoiceId });
+  }
+  if (chargeId) {
+    filters.push({ stripeChargeId: chargeId });
   }
 
-  // Find credit transaction by payment intent ID
-  // Check both credit top-ups and credit pack purchases
-  const creditTxn = await prisma.creditTransaction.findFirst({
+  if (!filters.length) {
+    return null;
+  }
+
+  return prisma.payment.findFirst({
+    where: { OR: filters },
+  });
+};
+
+const resolveCreditsGrantedForPayment = async (tx, ownerId, payment) => {
+  if (!payment || !ownerId) {
+    return 0;
+  }
+  const sessionIds = [];
+  if (payment.stripeInvoiceId) {
+    sessionIds.push(payment.stripeInvoiceId);
+  }
+  if (payment.stripeSessionId) {
+    sessionIds.push(payment.stripeSessionId);
+  }
+  const paymentIntentId = payment.stripePaymentIntentId;
+
+  const filters = [];
+  if (sessionIds.length) {
+    filters.push({ stripeSessionId: { in: sessionIds } });
+  }
+  if (paymentIntentId) {
+    filters.push({ stripePaymentId: paymentIntentId });
+  }
+
+  if (!filters.length) {
+    return 0;
+  }
+
+  const transactions = await tx.billingTransaction.findMany({
+    where: {
+      ownerId,
+      status: 'paid',
+      OR: filters,
+    },
+    select: { creditsAdded: true },
+  });
+
+  return transactions.reduce((sum, row) => sum + (row.creditsAdded || 0), 0);
+};
+
+const resolveCreditsGrantedForPaymentIntent = async (tx, paymentIntentId, fallbackOwnerId = null) => {
+  if (!paymentIntentId) {
+    return { ownerId: fallbackOwnerId, credits: 0, creditTxn: null };
+  }
+
+  const creditTxn = await tx.creditTransaction.findFirst({
     where: {
       type: 'credit',
       OR: [
@@ -1130,126 +1259,569 @@ async function handleChargeRefunded(charge) {
   });
 
   if (!creditTxn) {
-    logger.warn({ chargeId: charge.id, paymentIntentId }, 'Credit transaction not found for refunded charge');
-    return;
+    return { ownerId: fallbackOwnerId, credits: 0, creditTxn: null };
   }
 
-  // Calculate credits to deduct (assuming 1 credit = 1 cent, or use metadata if available)
-  // For credit top-ups, use the credits amount from metadata
-  // For credit packs, use the units from the purchase
-  let creditsToDeduct = 0;
-
+  let credits = 0;
   if (creditTxn.reason === 'stripe:topup') {
     const meta = creditTxn.meta || {};
-    creditsToDeduct = meta.credits || 0;
+    credits = meta.credits || 0;
   } else if (creditTxn.reason?.startsWith('stripe:purchase:')) {
-    // For credit packs, find the purchase to get units
-    const purchase = await prisma.purchase.findFirst({
+    const purchase = await tx.purchase.findFirst({
       where: {
         stripePaymentIntentId: paymentIntentId,
         ownerId: creditTxn.ownerId,
       },
       include: { package: true },
     });
-
-    if (purchase && purchase.package) {
-      creditsToDeduct = purchase.package.units;
+    if (purchase?.package) {
+      credits = purchase.package.units;
     } else {
-      // Fallback: use transaction amount
-      creditsToDeduct = creditTxn.amount;
+      credits = creditTxn.amount || 0;
     }
   } else {
-    // Fallback: use transaction amount
-    creditsToDeduct = creditTxn.amount;
+    credits = creditTxn.amount || 0;
   }
 
-  if (creditsToDeduct <= 0) {
-    logger.warn({ chargeId: charge.id, transactionId: creditTxn.id }, 'Invalid credits amount for refund');
+  return { ownerId: creditTxn.ownerId, credits, creditTxn };
+};
+
+const fetchReversedCreditsForPayment = async (tx, ownerId, paymentId) => {
+  if (!ownerId || !paymentId) {
+    return 0;
+  }
+
+  const result = await tx.creditTransaction.aggregate({
+    where: {
+      ownerId,
+      type: 'debit',
+      OR: [
+        { reason: 'stripe:refund' },
+        { reason: 'stripe:dispute' },
+      ],
+      meta: {
+        path: ['paymentId'],
+        equals: paymentId,
+      },
+    },
+    _sum: { amount: true },
+  });
+
+  return result?._sum?.amount || 0;
+};
+
+const fetchReversedCreditsForPaymentIntent = async (tx, ownerId, paymentIntentId, reason) => {
+  if (!ownerId || !paymentIntentId) {
+    return 0;
+  }
+
+  const result = await tx.creditTransaction.aggregate({
+    where: {
+      ownerId,
+      type: 'debit',
+      reason,
+      meta: {
+        path: ['paymentIntentId'],
+        equals: paymentIntentId,
+      },
+    },
+    _sum: { amount: true },
+  });
+
+  return result?._sum?.amount || 0;
+};
+
+const setBillingHold = async (ownerId, reason, tx) => {
+  if (!ownerId) {
     return;
   }
+  const payload = {
+    billingHold: true,
+    billingHoldReason: reason || 'billing_hold',
+    billingHoldAt: new Date(),
+  };
+  if (tx) {
+    await tx.user.update({ where: { id: ownerId }, data: payload });
+    return;
+  }
+  await prisma.user.update({ where: { id: ownerId }, data: payload });
+};
 
-  // Check if already refunded (idempotency)
-  const existingRefund = await prisma.creditTransaction.findFirst({
+const clearBillingHoldIfMatches = async (ownerId, expectedReason, tx) => {
+  if (!ownerId) {
+    return;
+  }
+  const user = await (tx || prisma).user.findUnique({
+    where: { id: ownerId },
+    select: { billingHold: true, billingHoldReason: true },
+  });
+  if (!user?.billingHold) {
+    return;
+  }
+  if (expectedReason && user.billingHoldReason !== expectedReason) {
+    return;
+  }
+  const payload = {
+    billingHold: false,
+    billingHoldReason: null,
+    billingHoldAt: null,
+  };
+  await (tx || prisma).user.update({ where: { id: ownerId }, data: payload });
+};
+
+const ensurePaymentAdjustment = async (tx, data) => {
+  const {
+    ownerId,
+    paymentId,
+    type,
+    amount,
+    currency,
+    stripeChargeId,
+    stripeRefundId,
+    stripeDisputeId,
+    status,
+    reason,
+    occurredAt,
+    meta,
+  } = data;
+
+  if (!ownerId || !type || !Number.isFinite(amount) || !occurredAt) {
+    return null;
+  }
+
+  if (stripeRefundId) {
+    const existing = await tx.paymentAdjustment.findFirst({
+      where: { stripeRefundId },
+    });
+    if (existing) {
+      return existing;
+    }
+  }
+
+  if (stripeDisputeId) {
+    const existing = await tx.paymentAdjustment.findFirst({
+      where: { stripeDisputeId },
+    });
+    if (existing) {
+      return tx.paymentAdjustment.update({
+        where: { id: existing.id },
+        data: {
+          status: status || existing.status,
+          reason: reason || existing.reason,
+          amount,
+          currency,
+          paymentId: paymentId || existing.paymentId,
+          stripeChargeId: stripeChargeId || existing.stripeChargeId,
+          occurredAt,
+          meta: meta || existing.meta,
+        },
+      });
+    }
+  }
+
+  if (!stripeRefundId && !stripeDisputeId && stripeChargeId) {
+    const existing = await tx.paymentAdjustment.findFirst({
+      where: {
+        stripeChargeId,
+        stripeRefundId: null,
+        stripeDisputeId: null,
+        amount,
+        occurredAt,
+        type,
+      },
+    });
+    if (existing) {
+      return existing;
+    }
+  }
+
+  return tx.paymentAdjustment.create({
+    data: {
+      ownerId,
+      paymentId: paymentId || null,
+      type,
+      amount,
+      currency: currency || 'EUR',
+      stripeChargeId: stripeChargeId || null,
+      stripeRefundId: stripeRefundId || null,
+      stripeDisputeId: stripeDisputeId || null,
+      status: status || null,
+      reason: reason || null,
+      occurredAt,
+      meta: meta || undefined,
+    },
+  });
+};
+
+const reverseCreditsForAdjustment = async ({
+  tx,
+  ownerId,
+  payment,
+  paymentIntentId,
+  refundAmount,
+  paymentAmountOverride,
+  adjustmentType,
+  adjustmentId,
+  chargeId,
+  invoiceId,
+}) => {
+  if (!ownerId || !refundAmount || refundAmount <= 0) {
+    return { reversed: false, reason: 'invalid_amount' };
+  }
+
+  const reason = adjustmentType === 'dispute' ? 'stripe:dispute' : 'stripe:refund';
+  const idKey = adjustmentType === 'dispute' ? 'disputeId' : 'refundId';
+
+  const existingDebit = await tx.creditTransaction.findFirst({
     where: {
-      ownerId: creditTxn.ownerId,
+      ownerId,
       type: 'debit',
-      reason: 'stripe:refund',
+      reason,
       meta: {
-        path: ['chargeId'],
-        equals: charge.id,
+        path: [idKey],
+        equals: adjustmentId,
       },
     },
   });
 
-  if (existingRefund) {
-    logger.info({
-      chargeId: charge.id,
-      transactionId: creditTxn.id,
-      refundTransactionId: existingRefund.id,
-    }, 'Refund already processed (idempotency check)');
-    return;
+  if (existingDebit) {
+    return { reversed: false, reason: 'already_reversed' };
   }
 
+  let creditsGranted = 0;
+  let paymentAmount = 0;
+  const paymentId = payment?.id || null;
+
+  if (payment) {
+    creditsGranted = await resolveCreditsGrantedForPayment(tx, ownerId, payment);
+    paymentAmount = payment.amount || 0;
+  }
+
+  if (!paymentAmount && Number.isFinite(paymentAmountOverride)) {
+    paymentAmount = paymentAmountOverride;
+  }
+
+  if (!creditsGranted && paymentIntentId) {
+    const resolved = await resolveCreditsGrantedForPaymentIntent(tx, paymentIntentId, ownerId);
+    creditsGranted = resolved.credits;
+    if (!ownerId && resolved.ownerId) {
+      ownerId = resolved.ownerId;
+    }
+  }
+
+  if (!creditsGranted) {
+    await setBillingHold(ownerId, `${adjustmentType}:${adjustmentId || chargeId || 'unknown'}`, tx);
+    return { reversed: false, reason: 'missing_credits' };
+  }
+
+  let creditsToReverse = creditsGranted;
+  if (paymentAmount > 0 && refundAmount < paymentAmount) {
+    creditsToReverse = Math.ceil((creditsGranted * refundAmount) / paymentAmount);
+  }
+
+  if (paymentId) {
+    const alreadyReversed = await fetchReversedCreditsForPayment(tx, ownerId, paymentId);
+    const remaining = Math.max(0, creditsGranted - alreadyReversed);
+    if (remaining <= 0) {
+      return { reversed: false, reason: 'already_reversed' };
+    }
+    creditsToReverse = Math.min(creditsToReverse, remaining);
+  } else if (paymentIntentId) {
+    const alreadyReversed = await fetchReversedCreditsForPaymentIntent(tx, ownerId, paymentIntentId, reason);
+    const remaining = Math.max(0, creditsGranted - alreadyReversed);
+    if (remaining <= 0) {
+      return { reversed: false, reason: 'already_reversed' };
+    }
+    creditsToReverse = Math.min(creditsToReverse, remaining);
+  }
+
+  if (!creditsToReverse || creditsToReverse <= 0) {
+    return { reversed: false, reason: 'zero_remaining' };
+  }
+
+  const { debit } = require('../services/wallet.service');
+
   try {
-    logger.info({
-      ownerId: creditTxn.ownerId,
-      creditsToDeduct,
-      chargeId: charge.id,
-      originalTransactionId: creditTxn.id,
-    }, 'Processing refund - deducting credits');
+    await debit(ownerId, creditsToReverse, {
+      reason,
+      meta: {
+        [idKey]: adjustmentId,
+        chargeId,
+        paymentId: paymentId || undefined,
+        paymentIntentId: paymentIntentId || undefined,
+        invoiceId: invoiceId || undefined,
+        refundedAmount: refundAmount,
+      },
+    }, tx);
+    return { reversed: true, credits: creditsToReverse };
+  } catch (err) {
+    if (err.message === 'INSUFFICIENT_CREDITS') {
+      await setBillingHold(ownerId, `${adjustmentType}:${adjustmentId || chargeId || 'unknown'}`, tx);
+      return { reversed: false, reason: 'insufficient_credits' };
+    }
+    throw err;
+  }
+};
 
-    const { debit } = require('../services/wallet.service');
+/**
+ * Handle charge.refunded event
+ * This is fired when a payment is refunded
+ */
+async function handleChargeRefunded(charge) {
+  logger.info({ chargeId: charge.id, amount: charge.amount, amountRefunded: charge.amount_refunded }, 'Processing charge refunded event');
 
-    await prisma.$transaction(async (tx) => {
-      // Debit credits
-      await debit(creditTxn.ownerId, creditsToDeduct, {
-        reason: 'stripe:refund',
-        meta: {
-          chargeId: charge.id,
-          paymentIntentId,
-          customerId,
-          originalTransactionId: creditTxn.id,
-          originalReason: creditTxn.reason,
-          refundedAt: new Date().toISOString(),
+  const paymentIntentId = charge.payment_intent;
+  const customerId = charge.customer;
+  const invoiceId = charge.invoice || null;
+  const currency = charge.currency ? String(charge.currency).toUpperCase() : 'EUR';
+  const refunds = Array.isArray(charge.refunds?.data) ? charge.refunds.data : [];
+  const fallbackRefunds = refunds.length
+    ? refunds
+    : (charge.amount_refunded || 0) > 0
+      ? [{
+        id: null,
+        amount: charge.amount_refunded,
+        status: 'succeeded',
+        reason: null,
+        created: charge.created || Math.floor(Date.now() / 1000),
+      }]
+      : [];
+
+  const payment = await resolvePaymentForCharge(charge);
+  let ownerId = payment?.ownerId || null;
+  if (!ownerId) {
+    ownerId = await resolveOwnerIdFromCustomer(customerId);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    let resolvedPayment = payment || null;
+    if (!resolvedPayment && paymentIntentId) {
+      resolvedPayment = await tx.payment.findFirst({
+        where: { stripePaymentIntentId: paymentIntentId },
+      });
+    }
+    if (!resolvedPayment && invoiceId) {
+      resolvedPayment = await tx.payment.findFirst({
+        where: { stripeInvoiceId: invoiceId },
+      });
+    }
+    if (!resolvedPayment) {
+      resolvedPayment = await tx.payment.findFirst({
+        where: { stripeChargeId: charge.id },
+      });
+    }
+
+    if (resolvedPayment) {
+      const refundTotal = charge.amount_refunded || 0;
+      const refundAt = fallbackRefunds.length ? new Date(fallbackRefunds[0].created * 1000) : new Date();
+      const isFullRefund = refundTotal >= (resolvedPayment.amount || 0) && refundTotal > 0;
+      await tx.payment.update({
+        where: { id: resolvedPayment.id },
+        data: {
+          stripeChargeId: resolvedPayment.stripeChargeId || charge.id,
+          refundedAmount: refundTotal || null,
+          refundedAt: refundTotal > 0 ? refundAt : resolvedPayment.refundedAt,
+          status: isFullRefund ? 'refunded' : resolvedPayment.status,
         },
-      }, tx);
+      });
+      ownerId = ownerId || resolvedPayment.ownerId;
+    }
 
-      // Update purchase status if it exists
-      const purchase = await tx.purchase.findFirst({
-        where: {
-          stripePaymentIntentId: paymentIntentId,
-          ownerId: creditTxn.ownerId,
+    if (!ownerId) {
+      logger.warn({ chargeId: charge.id, paymentIntentId }, 'Refund owner could not be resolved');
+      return;
+    }
+
+    for (const refund of fallbackRefunds) {
+      const refundId = refund.id || null;
+      const refundAmount = refund.amount || 0;
+      if (!refundAmount) {
+        continue;
+      }
+      const occurredAt = refund.created ? new Date(refund.created * 1000) : new Date();
+      await ensurePaymentAdjustment(tx, {
+        ownerId,
+        paymentId: resolvedPayment?.id || null,
+        type: 'refund',
+        amount: refundAmount,
+        currency,
+        stripeChargeId: charge.id,
+        stripeRefundId: refundId,
+        status: refund.status || null,
+        reason: refund.reason || null,
+        occurredAt,
+        meta: {
+          paymentIntentId,
+          invoiceId,
+          chargeId: charge.id,
         },
       });
 
-      if (purchase) {
-        await tx.purchase.update({
-          where: { id: purchase.id },
-          data: {
-            status: 'refunded',
-            updatedAt: new Date(),
-          },
-        });
-        logger.info({ purchaseId: purchase.id }, 'Purchase marked as refunded');
-      }
+      await reverseCreditsForAdjustment({
+        tx,
+        ownerId,
+        payment: resolvedPayment || null,
+        paymentIntentId,
+        refundAmount,
+        paymentAmountOverride: resolvedPayment?.amount || charge.amount || 0,
+        adjustmentType: 'refund',
+        adjustmentId: refundId || charge.id,
+        chargeId: charge.id,
+        invoiceId,
+      });
+    }
+
+    const purchase = paymentIntentId
+      ? await tx.purchase.findFirst({
+        where: {
+          stripePaymentIntentId: paymentIntentId,
+          ownerId,
+        },
+      })
+      : null;
+
+    if (purchase && purchase.status !== 'refunded') {
+      await tx.purchase.update({
+        where: { id: purchase.id },
+        data: { status: 'refunded', updatedAt: new Date() },
+      });
+      logger.info({ purchaseId: purchase.id }, 'Purchase marked as refunded');
+    }
+  });
+}
+
+/**
+ * Handle charge.dispute.created / updated event
+ */
+async function handleChargeDisputeUpdated(dispute) {
+  if (!dispute) {
+    return;
+  }
+  const chargeId = dispute.charge;
+  const paymentIntentId = dispute.payment_intent || null;
+  const amount = dispute.amount || 0;
+  const currency = dispute.currency ? String(dispute.currency).toUpperCase() : 'EUR';
+  const status = dispute.status || null;
+  const reason = dispute.reason || null;
+  const occurredAt = dispute.created ? new Date(dispute.created * 1000) : new Date();
+
+  await prisma.$transaction(async (tx) => {
+    let payment = null;
+    if (chargeId) {
+      payment = await tx.payment.findFirst({
+        where: {
+          OR: [
+            { stripeChargeId: chargeId },
+            paymentIntentId ? { stripePaymentIntentId: paymentIntentId } : undefined,
+          ].filter(Boolean),
+        },
+      });
+    }
+
+    let ownerId = payment?.ownerId || null;
+    if (!ownerId && dispute.customer) {
+      ownerId = await resolveOwnerIdFromCustomer(dispute.customer);
+    }
+
+    if (!ownerId) {
+      logger.warn({ disputeId: dispute.id, chargeId }, 'Dispute owner could not be resolved');
+      return;
+    }
+
+    if (payment) {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          stripeChargeId: payment.stripeChargeId || chargeId || null,
+          stripeDisputeId: dispute.id,
+          disputeStatus: status,
+          disputeReason: reason,
+          disputeAmount: amount || null,
+          disputedAt: occurredAt,
+        },
+      });
+    }
+
+    await ensurePaymentAdjustment(tx, {
+      ownerId,
+      paymentId: payment?.id || null,
+      type: 'dispute',
+      amount,
+      currency,
+      stripeChargeId: chargeId || null,
+      stripeDisputeId: dispute.id,
+      status,
+      reason,
+      occurredAt,
+      meta: {
+        paymentIntentId,
+        chargeId,
+      },
     });
 
-    logger.info({
-      ownerId: creditTxn.ownerId,
-      creditsToDeduct,
-      chargeId: charge.id,
-      originalTransactionId: creditTxn.id,
-    }, 'Refund processed successfully - credits deducted');
-  } catch (err) {
-    logger.error({
-      ownerId: creditTxn.ownerId,
-      creditsToDeduct,
-      chargeId: charge.id,
-      err: err.message,
-      stack: err.stack,
-    }, 'Failed to process refund');
-    throw err;
+    if (amount > 0) {
+      await reverseCreditsForAdjustment({
+        tx,
+        ownerId,
+        payment,
+        paymentIntentId,
+        refundAmount: amount,
+        paymentAmountOverride: payment?.amount || 0,
+        adjustmentType: 'dispute',
+        adjustmentId: dispute.id,
+        chargeId,
+        invoiceId: null,
+      });
+    }
+
+    if (status && status !== 'won') {
+      await setBillingHold(ownerId, `dispute:${dispute.id}`, tx);
+    }
+  });
+}
+
+/**
+ * Handle charge.dispute.closed event
+ */
+async function handleChargeDisputeClosed(dispute) {
+  if (!dispute) {
+    return;
   }
+  const status = dispute.status || null;
+  await prisma.$transaction(async (tx) => {
+    const adjustment = await tx.paymentAdjustment.findFirst({
+      where: { stripeDisputeId: dispute.id },
+    });
+    if (adjustment) {
+      await tx.paymentAdjustment.update({
+        where: { id: adjustment.id },
+        data: {
+          status,
+          reason: dispute.reason || adjustment.reason,
+          occurredAt: dispute.created ? new Date(dispute.created * 1000) : adjustment.occurredAt,
+        },
+      });
+    }
+
+    const payment = await tx.payment.findFirst({
+      where: { stripeDisputeId: dispute.id },
+    });
+    if (payment) {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          disputeStatus: status,
+        },
+      });
+    }
+
+    if (status === 'won') {
+      const ownerId = adjustment?.ownerId || payment?.ownerId || null;
+      if (ownerId) {
+        await clearBillingHoldIfMatches(ownerId, `dispute:${dispute.id}`, tx);
+      }
+    }
+  });
 }
 
 /**
@@ -1376,6 +1948,7 @@ async function handleSubscriptionUpdated(subscription) {
   const period = extractSubscriptionPeriod(subscription);
   const derivedInterval = period.interval || (newPlanType ? getIntervalForPlan(newPlanType) : null);
   const includedSmsPerPeriod = derivedInterval ? getIncludedSmsForInterval(derivedInterval) : null;
+  const pendingChange = await derivePendingChangeFromSchedule(subscription);
 
   // Determine what needs to be updated
   const statusChanged = user.subscriptionStatus !== newStatus;
@@ -1469,6 +2042,10 @@ async function handleSubscriptionUpdated(subscription) {
       trialEndsAt: subscription.trial_end
         ? new Date(subscription.trial_end * 1000)
         : null,
+      pendingChangePlanCode: pendingChange?.planCode || null,
+      pendingChangeInterval: pendingChange?.interval || null,
+      pendingChangeCurrency: pendingChange?.currency || null,
+      pendingChangeEffectiveAt: pendingChange?.effectiveAt || null,
       metadata: subscription.metadata || undefined,
     },
     create: {
@@ -1485,6 +2062,10 @@ async function handleSubscriptionUpdated(subscription) {
       trialEndsAt: subscription.trial_end
         ? new Date(subscription.trial_end * 1000)
         : null,
+      pendingChangePlanCode: pendingChange?.planCode || null,
+      pendingChangeInterval: pendingChange?.interval || null,
+      pendingChangeCurrency: pendingChange?.currency || null,
+      pendingChangeEffectiveAt: pendingChange?.effectiveAt || null,
       metadata: subscription.metadata || undefined,
     },
   });
@@ -1570,6 +2151,17 @@ router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async
 
         case 'charge.refunded':
           await handleChargeRefunded(event.data.object);
+          break;
+
+        case 'charge.dispute.created':
+        case 'charge.dispute.updated':
+        case 'charge.dispute.funds_withdrawn':
+        case 'charge.dispute.funds_reinstated':
+          await handleChargeDisputeUpdated(event.data.object);
+          break;
+
+        case 'charge.dispute.closed':
+          await handleChargeDisputeClosed(event.data.object);
           break;
 
         case 'customer.subscription.deleted':

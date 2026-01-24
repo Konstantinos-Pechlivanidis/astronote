@@ -85,6 +85,20 @@ export interface TopupPrice {
   priceUsdWithVat?: number | null
 }
 
+export interface TopupTier {
+  credits: number
+  currency: string
+  amount: number
+  amountCents: number
+  priceId?: string
+  priceBreakdown?: TopupPrice | null
+}
+
+export interface TopupTiersResponse {
+  currency: string
+  tiers: TopupTier[]
+}
+
 export interface TransactionsResponse {
   items: Transaction[]
   total: number
@@ -101,8 +115,7 @@ export function normalizeBalanceResponse(data: BalanceResponse | null) {
   if (!data) return null;
 
   const balance = data.balance || 0;
-  const allowanceRemaining = data.allowance?.remainingThisPeriod || 0;
-  const totalCredits = balance + allowanceRemaining;
+  const totalCredits = balance;
 
   return {
     credits: balance,
@@ -125,8 +138,7 @@ export function normalizeSummaryResponse(data: BillingSummaryResponse | null) {
   if (!data) return null;
 
   const balance = data.credits?.balance || 0;
-  const allowanceRemaining = data.allowance?.remainingThisPeriod || 0;
-  const totalCredits = balance + allowanceRemaining;
+  const totalCredits = balance;
 
   return {
     credits: balance,
@@ -189,7 +201,7 @@ export const billingApi = {
   },
 
   /**
-   * Get billing summary (subscription + allowance + credits)
+   * Get billing summary (subscription + wallet credits)
    */
   getSummary: async () => {
     const res = await api.get<BillingSummaryResponse>(endpoints.billing.summary);
@@ -244,6 +256,12 @@ export const billingApi = {
    */
   calculateTopup: (credits: number, currency?: string) =>
     api.get<TopupPrice>(endpoints.billing.topupCalculate, { params: { credits, currency } }),
+
+  /**
+   * List available top-up tiers
+   */
+  getTopupTiers: (currency?: string) =>
+    api.get<TopupTiersResponse>(endpoints.billing.topupTiers, { params: { currency } }),
 
   /**
    * Top-up credits

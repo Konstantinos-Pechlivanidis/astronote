@@ -72,9 +72,7 @@ export default function BillingSummaryCard() {
           <label className="block text-sm font-medium text-gray-700 mb-2">Credits Balance</label>
           <p className="text-lg font-semibold text-gray-900">{credits.toLocaleString()}</p>
           <p className="text-xs text-gray-500 mt-1">
-            {subscription.active
-              ? 'Credits can be used to send campaigns'
-              : 'Active subscription required to use credits'}
+            Credits accumulate and never expire; spending requires an active subscription.
           </p>
         </div>
 
@@ -93,4 +91,3 @@ export default function BillingSummaryCard() {
     </div>
   );
 }
-

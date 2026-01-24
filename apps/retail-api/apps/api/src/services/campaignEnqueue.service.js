@@ -164,25 +164,26 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
     // 1) Check subscription status BEFORE starting any transaction
     step = 'check_subscription';
     logger.info({ ...baseContext, step }, 'Checking subscription status');
-    const { isSubscriptionActive, getAllowanceStatus } = require('./subscription.service');
-    const subscriptionActive = await isSubscriptionActive(camp.ownerId);
-    if (!subscriptionActive) {
+    const { canSendOrSpendCredits, getAllowanceStatus } = require('./subscription.service');
+    const subscriptionGate = await canSendOrSpendCredits(camp.ownerId);
+    if (!subscriptionGate.allowed) {
       logger.warn({ ...baseContext, step }, 'Inactive subscription - campaign enqueue blocked');
-      return { ok: false, reason: 'subscription_required', enqueuedJobs: 0 };
+      return { ok: false, reason: subscriptionGate.reason || 'inactive_subscription', enqueuedJobs: 0 };
     }
 
     // 2) Check allowance + credits BEFORE starting any transaction
     step = 'check_billing';
-    const { getBalance } = require('./wallet.service');
-    const currentBalance = await getBalance(camp.ownerId);
+    const { getWalletSummary } = require('./wallet.service');
+    const walletSummary = await getWalletSummary(camp.ownerId);
     const allowance = await getAllowanceStatus(camp.ownerId);
     const requiredCredits = contacts.length;
-    const availableCredits = (allowance?.remainingThisPeriod || 0) + (currentBalance || 0);
+    const availableCredits = (allowance?.remainingThisPeriod || 0) + (walletSummary.available || 0);
 
     logger.info({
       ...baseContext,
       step,
-      currentBalance,
+      currentBalance: walletSummary.balance,
+      reservedBalance: walletSummary.reservedBalance,
       allowanceRemaining: allowance?.remainingThisPeriod || 0,
       requiredCredits,
       availableCredits,
@@ -191,7 +192,7 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       logger.warn({
         ...baseContext,
         step,
-        currentBalance,
+        currentBalance: walletSummary.balance,
         allowanceRemaining: allowance?.remainingThisPeriod || 0,
         requiredCredits,
         availableCredits,
@@ -386,6 +387,34 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       select: { id: true },
     });
 
+    if (toEnqueue.length > 0) {
+      step = 'reserve_credits';
+      const { reserveCreditsForMessages } = require('./credit-reservation.service');
+      try {
+        const reservationResult = await reserveCreditsForMessages(
+          camp.ownerId,
+          toEnqueue.map((m) => m.id),
+          { campaignId: camp.id, reason: 'campaign:enqueue' },
+        );
+        logger.info({
+          ...baseContext,
+          step,
+          reserved: reservationResult.reserved,
+          reused: reservationResult.reused,
+          total: reservationResult.total,
+        }, 'Credits reserved for campaign messages');
+      } catch (reserveErr) {
+        logger.warn({ ...baseContext, step, err: reserveErr.message }, 'Failed to reserve credits for campaign');
+
+        // Rollback campaign state if reservation fails
+        await prisma.campaign.updateMany({
+          where: { id: camp.id, ownerId },
+          data: { status: initialStatus || 'draft', startedAt: null },
+        });
+        return { ok: false, reason: 'insufficient_credits', enqueuedJobs: 0 };
+      }
+    }
+
     // Unique run token per enqueue attempt to avoid jobId collisions blocking jobs
     // BullMQ forbids ":" in custom job ids; keep token URL-safe.
     const runToken = `run-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
@@ -459,6 +488,10 @@ exports.enqueueCampaign = async (campaignId, options = {}) => {
       logger.error({ ...baseContext, step, queuedCount: toEnqueue.length }, 'No jobs enqueued for campaign');
       const rollbackData = { status: initialStatus || 'draft', startedAt: null, finishedAt: null, total: 0, sent: 0, failed: 0, processed: null };
       try {
+        const { releaseReservationForMessage } = require('./credit-reservation.service');
+        await Promise.all(
+          toEnqueue.map((msg) => releaseReservationForMessage(ownerId, msg.id, { reason: 'enqueue_failed' }).catch(() => null)),
+        );
         if (toEnqueue.length > 0) {
           const ids = toEnqueue.map((m) => m.id);
           await prisma.$transaction([

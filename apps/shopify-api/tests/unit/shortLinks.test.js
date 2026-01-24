@@ -14,6 +14,8 @@ describe('Short Links Service (unit)', () => {
     jest.clearAllMocks();
     jest.resetModules();
     process.env.NODE_ENV = 'test';
+    process.env.PUBLIC_BASE_URL = 'https://example.test';
+    process.env.SHORTLINK_BASE_URL = 'https://example.test';
     process.env.URL_SHORTENER_BASE_URL = 'https://example.test';
 
     jest.unstable_mockModule('../../services/prisma.js', () => ({
@@ -122,4 +124,3 @@ describe('Short Links Service (unit)', () => {
     });
   });
 });
-

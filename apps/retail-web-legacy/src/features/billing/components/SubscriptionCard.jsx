@@ -10,6 +10,14 @@ export default function SubscriptionCard({ subscription }) {
 
   const isActive = subscription?.active === true;
   const currentPlan = subscription?.planType;
+  const intervalLabel = subscription?.interval === 'year'
+    ? 'Yearly'
+    : subscription?.interval === 'month'
+      ? 'Monthly'
+      : null;
+  const nextRenewal = subscription?.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
+    : null;
 
   const handleSubscribe = (planType) => {
     setSelectedPlan(planType);
@@ -27,12 +35,16 @@ export default function SubscriptionCard({ subscription }) {
           <CheckCircle className="w-5 h-5 text-green-600" />
           <h3 className="text-lg font-semibold text-gray-900">
             Current Subscription: {currentPlan ? currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1) : 'Active'}
+            {intervalLabel ? ` · ${intervalLabel}` : ''}
           </h3>
         </div>
         <p className="text-sm text-gray-600 mb-4">
           You have an active subscription. You can manage your subscription, update your plan, or cancel
           from the customer portal.
         </p>
+        {nextRenewal && (
+          <p className="text-xs text-gray-500 mb-4">Next renewal: {nextRenewal}</p>
+        )}
         <div className="flex gap-2">
           <button
             onClick={handleManageSubscription}
@@ -53,13 +65,13 @@ export default function SubscriptionCard({ subscription }) {
         <h3 className="text-lg font-semibold text-gray-900">Subscribe to a Plan</h3>
       </div>
       <p className="text-sm text-gray-600 mb-6">
-        Choose a subscription plan to start sending campaigns. All plans include monthly credit
-        allocations.
+        Choose a subscription plan to start sending campaigns. Monthly includes 300 credits per paid
+        cycle. Yearly includes 1500 credits per paid cycle.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="border border-gray-200 rounded-lg p-4">
-          <h4 className="font-semibold text-gray-900 mb-2">Starter Plan</h4>
-          <p className="text-sm text-gray-600 mb-4">Perfect for small businesses</p>
+          <h4 className="font-semibold text-gray-900 mb-2">Monthly Plan</h4>
+          <p className="text-sm text-gray-600 mb-4">€40/month · Includes 300 credits</p>
           <button
             onClick={() => handleSubscribe('starter')}
             disabled={subscribeMutation.isPending}
@@ -67,12 +79,12 @@ export default function SubscriptionCard({ subscription }) {
           >
             {subscribeMutation.isPending && selectedPlan === 'starter'
               ? 'Processing...'
-              : 'Subscribe to Starter'}
+              : 'Subscribe Monthly'}
           </button>
         </div>
         <div className="border border-gray-200 rounded-lg p-4">
-          <h4 className="font-semibold text-gray-900 mb-2">Pro Plan</h4>
-          <p className="text-sm text-gray-600 mb-4">For growing businesses</p>
+          <h4 className="font-semibold text-gray-900 mb-2">Yearly Plan</h4>
+          <p className="text-sm text-gray-600 mb-4">€240/year · Includes 1500 credits</p>
           <button
             onClick={() => handleSubscribe('pro')}
             disabled={subscribeMutation.isPending}
@@ -80,11 +92,10 @@ export default function SubscriptionCard({ subscription }) {
           >
             {subscribeMutation.isPending && selectedPlan === 'pro'
               ? 'Processing...'
-              : 'Subscribe to Pro'}
+              : 'Subscribe Yearly'}
           </button>
         </div>
       </div>
     </div>
   );
 }
-

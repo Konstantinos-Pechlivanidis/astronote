@@ -68,7 +68,7 @@ type RetailBillingHistoryResponse = {
   pagination: Pagination;
 };
 
-const SUPPORTED_CURRENCIES = ['EUR', 'USD'] as const;
+const SUPPORTED_CURRENCIES = ['EUR'] as const;
 type BillingCurrency = (typeof SUPPORTED_CURRENCIES)[number];
 
 const normalizeCurrency = (value?: string | null): BillingCurrency | null => {
@@ -110,7 +110,6 @@ const createIdempotencyKey = () => {
 function BillingHeader({
   subscription,
   credits,
-  allowance,
 }: {
   subscription: {
     active?: boolean
@@ -120,17 +119,28 @@ function BillingHeader({
     currentPeriodEnd?: string | null
     cancelAtPeriodEnd?: boolean
     lastBillingError?: string | null
+    plan?: {
+      priceEur?: number
+      priceUsd?: number
+      freeCredits?: number
+    } | null
   }
   credits: number
-  allowance: { includedPerPeriod: number; usedThisPeriod: number; remainingThisPeriod: number }
 }) {
   const status = subscription?.status || (subscription?.active ? 'active' : 'inactive');
   const isActive = status === 'active';
   const planType = subscription?.planType;
   const interval = subscription?.interval;
-  const planLabel = planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : 'Plan';
   const intervalLabel = interval === 'year' ? 'Yearly' : interval === 'month' ? 'Monthly' : null;
+  const planLabel = intervalLabel ? `${intervalLabel} Plan` : (planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : 'Plan');
   const statusLabel = status ? status.replace(/_/g, ' ') : 'inactive';
+  const includedCredits = typeof subscription?.plan?.freeCredits === 'number'
+    ? subscription.plan.freeCredits
+    : interval === 'month'
+      ? 300
+      : interval === 'year'
+        ? 1500
+        : null;
   const statusTone = isActive
     ? 'bg-green-500/10 text-green-400 border border-green-500/20'
     : status === 'past_due' || status === 'unpaid'
@@ -147,41 +157,44 @@ function BillingHeader({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <span className="text-sm text-text-secondary">Credits Balance</span>
+          <span className="text-sm text-text-secondary">Wallet Balance</span>
           <div className="text-2xl font-bold text-text-primary mt-1">
             {credits?.toLocaleString() || 0} credits
           </div>
         </div>
         <div>
-          <span className="text-sm text-text-secondary">Free SMS Remaining</span>
-          <div className="text-2xl font-bold text-text-primary mt-1">
-            {allowance?.remainingThisPeriod?.toLocaleString() || 0}
+          <span className="text-sm text-text-secondary">Current Plan</span>
+          <div className="text-lg font-medium text-text-primary mt-1">
+            {planLabel}
           </div>
-          <div className="text-xs text-text-tertiary mt-1">
-            {allowance?.includedPerPeriod?.toLocaleString() || 0} per {intervalLabel || 'period'}
-          </div>
+          {includedCredits !== null && (
+            <div className="text-xs text-text-tertiary mt-1">
+              Includes {includedCredits.toLocaleString()} credits per paid cycle
+            </div>
+          )}
         </div>
         <div>
-          <span className="text-sm text-text-secondary">Subscription</span>
-          <div className="text-lg font-medium text-text-primary mt-1">
-            {planLabel}{intervalLabel ? ` · ${intervalLabel}` : ''}
-          </div>
+          <span className="text-sm text-text-secondary">Next Renewal</span>
+          {subscription?.currentPeriodEnd && (
+            <div className="text-lg font-medium text-text-primary mt-1">
+              {format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy')}
+            </div>
+          )}
+          {!subscription?.currentPeriodEnd && (
+            <div className="text-lg font-medium text-text-primary mt-1">—</div>
+          )}
           {subscription?.currentPeriodEnd && (
             <div className="text-xs text-text-tertiary mt-1">
-              Renews {format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy')}
-              {subscription.cancelAtPeriodEnd ? ' (cancels at period end)' : ''}
+              {subscription.cancelAtPeriodEnd ? 'Cancels at period end' : 'Renews automatically'}
             </div>
           )}
         </div>
       </div>
-      {!isActive && (
-        <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-          <p className="text-sm text-yellow-400">
-            <strong>Subscription required:</strong> You can purchase credits at any time, but you
-            need an active subscription to send campaigns.
-          </p>
-        </div>
-      )}
+      <div className="mt-4 bg-surface-light border border-border rounded-lg p-3">
+        <p className={`text-sm ${isActive ? 'text-text-secondary' : 'text-yellow-400'}`}>
+          Credits accumulate and never expire; spending requires an active subscription.
+        </p>
+      </div>
       {subscription?.lastBillingError && (
         <div className="mt-3 text-xs text-red-400">
           Last billing error: {subscription.lastBillingError}
@@ -205,6 +218,9 @@ function SubscriptionCard({
     pendingChange?: any
     allowedActions?: string[] | null
     availableOptions?: Array<{ planCode: string; interval: string; currency: string }> | null
+    plan?: {
+      freeCredits?: number
+    } | null
   }
   currency: BillingCurrency
 }) {
@@ -218,20 +234,30 @@ function SubscriptionCard({
   const interval = subscription?.interval;
   const planType = subscription?.planType;
   const intervalLabel = interval === 'year' ? 'Yearly' : interval === 'month' ? 'Monthly' : null;
-  const planLabel = planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : 'Plan';
+  const planLabel = intervalLabel ? `${intervalLabel} Plan` : (planType ? planType.charAt(0).toUpperCase() + planType.slice(1) : 'Plan');
+  const pendingIntervalLabel = subscription?.pendingChange?.interval === 'year'
+    ? 'Yearly'
+    : subscription?.pendingChange?.interval === 'month'
+      ? 'Monthly'
+      : null;
+  const pendingPlanLabel = pendingIntervalLabel
+    ? `${pendingIntervalLabel} Plan`
+    : subscription?.pendingChange?.planCode
+      ? String(subscription.pendingChange.planCode).charAt(0).toUpperCase() + String(subscription.pendingChange.planCode).slice(1)
+      : 'Plan';
 
   const intervalOptions = [
     {
       interval: 'month' as const,
       planType: 'starter',
       title: 'Monthly',
-      description: '100 free SMS per billing period',
+      description: `${currencySymbol(currency)}40/month · Includes 300 credits per paid cycle`,
     },
     {
       interval: 'year' as const,
       planType: 'pro',
       title: 'Yearly',
-      description: '500 free SMS per billing period',
+      description: `${currencySymbol(currency)}240/year · Includes 1500 credits per paid cycle`,
     },
   ];
 
@@ -305,20 +331,40 @@ function SubscriptionCard({
       if (!cancelKeyRef.current) {
         cancelKeyRef.current = createIdempotencyKey();
       }
-      const res = await subscriptionsApi.cancel(cancelKeyRef.current);
+      const res = await subscriptionsApi.cancel({
+        cancelAtPeriodEnd: true,
+        idempotencyKey: cancelKeyRef.current,
+      });
       return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
       queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
       queryClient.invalidateQueries({ queryKey: ['retail-subscription-current'] });
-      toast.success('Subscription cancelled');
+      toast.success('Cancellation scheduled at period end');
     },
     onSettled: () => {
       cancelKeyRef.current = null;
     },
     onError: (error: any) => {
       const message = error.response?.data?.message || 'Failed to cancel subscription';
+      toast.error(message);
+    },
+  });
+
+  const resumeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await subscriptionsApi.resume();
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['retail-subscription-current'] });
+      toast.success('Subscription resumed');
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.message || 'Failed to resume subscription';
       toast.error(message);
     },
   });
@@ -359,6 +405,8 @@ function SubscriptionCard({
 
   const allowed = Array.isArray(subscription?.allowedActions) ? subscription.allowedActions : null;
   const canSwitch = allowed ? allowed.includes('switchInterval') || allowed.includes('changePlan') : true;
+  const canCancel = allowed ? allowed.includes('cancelAtPeriodEnd') : true;
+  const canResume = allowed ? allowed.includes('resumeSubscription') : true;
   const hasPendingChange = Boolean(subscription?.pendingChange);
 
   if (isActive) {
@@ -367,12 +415,23 @@ function SubscriptionCard({
         <div className="flex items-center gap-2 mb-4">
           <CheckCircle className="w-5 h-5 text-green-400" />
           <h3 className="text-lg font-semibold text-text-primary">
-            Current Subscription: {planLabel}{intervalLabel ? ` · ${intervalLabel}` : ''}
+            Current Subscription: {planLabel}
           </h3>
         </div>
         <p className="text-sm text-text-secondary mb-4">
           Status: <span className="text-text-primary capitalize">{status.replace(/_/g, ' ')}</span>
         </p>
+        {subscription?.pendingChange?.effectiveAt && (
+          <div className="text-xs text-text-tertiary mb-2">
+            Pending change: {pendingPlanLabel} effective{' '}
+            {format(new Date(subscription.pendingChange.effectiveAt), 'MMM d, yyyy')}
+          </div>
+        )}
+        {subscription?.plan?.freeCredits && (
+          <div className="text-xs text-text-tertiary mb-4">
+            Includes {subscription.plan.freeCredits.toLocaleString()} credits per paid cycle.
+          </div>
+        )}
         {subscription?.currentPeriodEnd && (
           <div className="text-xs text-text-tertiary mb-4">
             Renews {format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy')}
@@ -403,11 +462,20 @@ function SubscriptionCard({
           </Button>
           <Button
             onClick={() => cancelMutation.mutate()}
-            disabled={cancelMutation.isPending}
+            disabled={cancelMutation.isPending || subscription.cancelAtPeriodEnd || !canCancel}
             variant="outline"
           >
-            {cancelMutation.isPending ? 'Cancelling...' : 'Cancel Subscription'}
+            {cancelMutation.isPending ? 'Scheduling...' : 'Cancel at Period End'}
           </Button>
+          {subscription.cancelAtPeriodEnd && (
+            <Button
+              onClick={() => resumeMutation.mutate()}
+              disabled={resumeMutation.isPending || !canResume}
+              variant="outline"
+            >
+              {resumeMutation.isPending ? 'Resuming...' : 'Resume Subscription'}
+            </Button>
+          )}
         </div>
       </RetailCard>
     );
@@ -420,8 +488,8 @@ function SubscriptionCard({
         <h3 className="text-lg font-semibold text-text-primary">Subscribe to a Plan</h3>
       </div>
       <p className="text-sm text-text-secondary mb-6">
-        Choose a subscription plan to start sending campaigns. Monthly includes 100 free SMS.
-        Yearly includes 500 free SMS.
+        Choose a subscription plan to start sending campaigns. Monthly includes 300 credits per paid
+        cycle. Yearly includes 1500 credits per paid cycle.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {intervalOptions.map((option) => (
@@ -454,18 +522,41 @@ function SubscriptionCard({
 }
 
 function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
-  const creditOptions = [100, 250, 500, 1000, 2000];
-  const [selectedCredits, setSelectedCredits] = useState<number>(creditOptions[2]);
+  const [selectedCredits, setSelectedCredits] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: priceData, isLoading: priceLoading, error: priceError } = useQuery({
-    queryKey: ['retail-topup-price', selectedCredits, currency],
+  const { data: tiersData, isLoading: tiersLoading, error: tiersError } = useQuery({
+    queryKey: ['retail-topup-tiers', currency],
     queryFn: async () => {
+      const res = await billingApi.getTopupTiers(currency);
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  const tiers = Array.isArray(tiersData?.tiers) ? tiersData.tiers : [];
+
+  useEffect(() => {
+    if (!tiers.length) return;
+    if (selectedCredits && tiers.some((tier) => tier.credits === selectedCredits)) {
+      return;
+    }
+    setSelectedCredits(tiers[0].credits);
+  }, [tiers, selectedCredits]);
+
+  const selectedTier = tiers.find((tier) => tier.credits === selectedCredits) || null;
+
+  const { data: calculatedTopup } = useQuery({
+    queryKey: ['retail-topup-calc', currency, selectedCredits],
+    queryFn: async () => {
+      if (!selectedCredits) {
+        throw new Error('Credits are required');
+      }
       const res = await billingApi.calculateTopup(selectedCredits, currency);
       return res.data;
     },
-    enabled: Number.isInteger(selectedCredits) && selectedCredits > 0,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: Boolean(selectedCredits),
+    staleTime: 60 * 1000,
   });
 
   const topupMutation = useMutation({
@@ -494,19 +585,13 @@ function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
   });
 
   const handleTopup = () => {
-    if (!selectedCredits) return;
-    topupMutation.mutate({ credits: selectedCredits });
+    if (!selectedTier) return;
+    topupMutation.mutate({ credits: selectedTier.credits });
   };
 
-  const totalPrice = typeof priceData?.priceWithVat === 'number'
-    ? priceData.priceWithVat
-    : typeof priceData?.price === 'number'
-      ? priceData.price
-      : typeof priceData?.priceEurWithVat === 'number'
-        ? priceData.priceEurWithVat
-        : typeof priceData?.priceUsdWithVat === 'number'
-          ? priceData.priceUsdWithVat
-          : null;
+  const priceBreakdown = calculatedTopup ?? selectedTier?.priceBreakdown ?? null;
+  const totalPrice = priceBreakdown?.priceWithVat ?? selectedTier?.amount ?? null;
+  const vatAmount = priceBreakdown?.vatAmount;
 
   return (
     <RetailCard>
@@ -515,74 +600,80 @@ function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
         <h3 className="text-lg font-semibold text-text-primary">Buy Credits</h3>
       </div>
       <p className="text-sm text-text-secondary mb-4">
-        Purchase credits. 1 credit = 1 SMS message. Credits can be purchased regardless of
-        subscription status, but can only be <strong>used</strong> with an active subscription.
+        Credits accumulate and never expire; spending requires an active subscription.
       </p>
       <div className="space-y-4">
-        <div>
-          <label htmlFor="creditPack" className="block text-sm font-medium text-text-secondary mb-2">
-            Select Credits
-          </label>
-          <Select
-            value={String(selectedCredits)}
-            onValueChange={(value) => setSelectedCredits(Number(value))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select Credits" />
-            </SelectTrigger>
-            <SelectContent>
-              {creditOptions.map((credits) => (
-                <SelectItem key={credits} value={String(credits)}>
-                  {credits.toLocaleString()} credits
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="bg-surface-light rounded-lg p-4">
-          <div className="flex justify-between text-sm text-text-secondary mb-1">
-            <span>Credits:</span>
-            <span className="font-medium text-text-primary">{selectedCredits.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between text-lg font-bold text-text-primary pt-2 border-t border-border">
-            <span>Total:</span>
-            <span>
-              {priceLoading
-                ? 'Loading...'
-                : totalPrice !== null
-                  ? formatAmount(totalPrice, currency)
-                  : '—'}
-            </span>
-          </div>
-          {priceData?.vatAmount !== undefined && (
-            <div className="mt-2 text-xs text-text-tertiary">
-              Includes VAT {currencySymbol(currency)}
-              {priceData.vatAmount.toFixed(2)}
-            </div>
-          )}
-        </div>
-        <Button
-          onClick={handleTopup}
-          disabled={topupMutation.isPending || priceLoading || !!priceError}
-          className="w-full"
-          size="lg"
-        >
-          {topupMutation.isPending ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-              Processing...
-            </>
-          ) : (
-            <>
-              <Plus className="w-4 h-4 mr-2" />
-              Buy {selectedCredits.toLocaleString()} Credits
-            </>
-          )}
-        </Button>
-        {priceError && (
+        {tiersLoading ? (
+          <div className="h-20 rounded bg-surface-light animate-pulse" />
+        ) : tiersError ? (
           <p className="text-xs text-text-tertiary text-center">
-            Failed to load pricing. Please try again.
+            Failed to load top-up options. Please try again.
           </p>
+        ) : tiers.length === 0 ? (
+          <p className="text-xs text-text-tertiary text-center">
+            No top-up options available at the moment.
+          </p>
+        ) : (
+          <>
+            <div>
+              <label htmlFor="creditPack" className="block text-sm font-medium text-text-secondary mb-2">
+                Select Credits
+              </label>
+              <Select
+                value={selectedCredits ? String(selectedCredits) : ''}
+                onValueChange={(value) => setSelectedCredits(Number(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Credits" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tiers.map((tier) => (
+                    <SelectItem key={tier.credits} value={String(tier.credits)}>
+                      {tier.credits.toLocaleString()} credits · {formatAmount(tier.amount, tier.currency)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="bg-surface-light rounded-lg p-4">
+              <div className="flex justify-between text-sm text-text-secondary mb-1">
+                <span>Credits:</span>
+                <span className="font-medium text-text-primary">
+                  {selectedTier ? selectedTier.credits.toLocaleString() : '—'}
+                </span>
+              </div>
+              <div className="flex justify-between text-lg font-bold text-text-primary pt-2 border-t border-border">
+                <span>Total:</span>
+                <span>
+                  {totalPrice !== null ? formatAmount(totalPrice, currency) : '—'}
+                </span>
+              </div>
+              {vatAmount !== undefined && vatAmount !== null && (
+                <div className="mt-2 text-xs text-text-tertiary">
+                  Includes VAT {currencySymbol(currency)}
+                  {vatAmount.toFixed(2)}
+                </div>
+              )}
+            </div>
+            <Button
+              onClick={handleTopup}
+              disabled={!selectedTier || topupMutation.isPending}
+              className="w-full"
+              size="lg"
+            >
+              {topupMutation.isPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Buy {selectedTier ? selectedTier.credits.toLocaleString() : ''} Credits
+                </>
+              )}
+            </Button>
+          </>
         )}
       </div>
     </RetailCard>
@@ -698,7 +789,7 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
   if (isLoading) {
     return (
       <RetailCard>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Transaction History</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Wallet Activity</h3>
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-16 bg-surface-light rounded animate-pulse"></div>
@@ -711,7 +802,7 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
   if (!transactions || transactions.length === 0) {
     return (
       <RetailCard>
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Transaction History</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-4">Wallet Activity</h3>
         <p className="text-sm text-text-secondary">No transactions yet.</p>
       </RetailCard>
     );
@@ -720,7 +811,7 @@ function TransactionsTable({ transactions, isLoading }: { transactions: any[]; i
   return (
     <RetailCard>
       <div className="p-6 border-b border-border">
-        <h3 className="text-lg font-semibold text-text-primary">Transaction History</h3>
+        <h3 className="text-lg font-semibold text-text-primary">Wallet Activity</h3>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
@@ -880,8 +971,8 @@ function BillingHistoryTable({
     <RetailCard>
       <div className="p-6 border-b border-border">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-text-primary">Purchase History</h3>
-          <div className="text-xs text-text-tertiary">Subscription • Included credits • Topups</div>
+          <h3 className="text-lg font-semibold text-text-primary">Payment History</h3>
+          <div className="text-xs text-text-tertiary">Subscription • Included credits • Top-ups</div>
         </div>
       </div>
 
@@ -893,7 +984,7 @@ function BillingHistoryTable({
             ))}
           </div>
         ) : transactions.length === 0 ? (
-          <p className="text-sm text-text-secondary">No billing history yet.</p>
+          <p className="text-sm text-text-secondary">No payment history yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-border">
@@ -1102,7 +1193,6 @@ export default function RetailBillingPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="EUR">EUR (€)</SelectItem>
-          <SelectItem value="USD">USD ($)</SelectItem>
         </SelectContent>
       </Select>
     </div>
@@ -1141,14 +1231,7 @@ export default function RetailBillingPage() {
 
   const subscription =
     subscriptionCurrent || summaryData?.subscription || { active: false, planType: null };
-  const credits =
-    summaryData?.totalCredits ??
-    (summaryData?.credits || 0) + (summaryData?.allowance?.remainingThisPeriod || 0);
-  const allowance = summaryData?.allowance || {
-    includedPerPeriod: 0,
-    usedThisPeriod: 0,
-    remainingThisPeriod: 0,
-  };
+  const credits = summaryData?.totalCredits ?? (summaryData?.credits || 0);
   const availablePackages = Array.isArray(packages)
     ? packages.filter((pkg) => ['credit_topup', 'subscription_package', 'credit_pack'].includes(pkg.type || ''))
     : [];
@@ -1165,7 +1248,7 @@ export default function RetailBillingPage() {
           After payment we automatically verify and reconcile so credits and invoices refresh in a few moments.
         </div>
 
-        <BillingHeader subscription={subscription} credits={credits} allowance={allowance} />
+        <BillingHeader subscription={subscription} credits={credits} />
 
         <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <SubscriptionCard subscription={subscription} currency={selectedCurrency} />

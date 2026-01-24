@@ -13,7 +13,6 @@ const { getBalance } = require('../services/wallet.service');
 const {
   getSubscriptionStatus,
   getPlanConfig,
-  calculateTopupPrice,
   getIntervalForPlan,
 } = require('../services/subscription.service');
 const { getSubscriptionStatusWithStripeSync } = require('../services/stripe-sync.service');
@@ -21,6 +20,12 @@ const { getBillingProfile, upsertBillingProfile } = require('../services/billing
 const { listInvoices } = require('../services/invoices.service');
 const { resolveBillingCurrency } = require('../billing/currency');
 const { CONFIG_ERROR_CODE, getPackagePriceId } = require('../billing/stripePrices');
+const { listTopupTiers, getTopupTierByCredits, buildTopupPriceBreakdown } = require('../billing/topupCatalog');
+const {
+  parseDateInput,
+  normalizeRange,
+  generateBillingExports,
+} = require('../services/billing-export.service');
 const {
   createSubscriptionCheckoutSession,
   createCreditTopupCheckoutSession,
@@ -34,8 +39,21 @@ const crypto = require('crypto');
 
 const r = Router();
 const logger = pino({ name: 'billing-routes' });
+const ADMIN_EXPORT_TOKEN = process.env.ADMIN_EXPORT_TOKEN || null;
 
 const isValidStripeCustomerId = (value) => typeof value === 'string' && value.startsWith('cus_');
+
+const readAdminExportToken = (req) => {
+  const direct = req.headers['x-admin-export-token'] || req.headers['x-admin-token'];
+  if (direct) {
+    return String(direct).trim();
+  }
+  const auth = req.headers.authorization || '';
+  if (auth.startsWith('Bearer ')) {
+    return auth.replace('Bearer ', '').trim();
+  }
+  return '';
+};
 
 async function resolveStripeCustomerId({
   userId,
@@ -936,6 +954,23 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
       });
     }
 
+    const { setSubscriptionCancelAtPeriodEnd, cancelSubscriptionSchedule } = require('../services/stripe.service');
+    if (subscription.cancelAtPeriodEnd) {
+      await setSubscriptionCancelAtPeriodEnd(subscription.stripeSubscriptionId, false);
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { cancelAtPeriodEnd: false },
+      });
+      await prisma.subscription.updateMany({
+        where: { ownerId: req.user.id },
+        data: {
+          cancelAtPeriodEnd: false,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'resume_for_plan_change',
+        },
+      });
+    }
+
     const currentInterval =
       subscription.interval || (subscription.planType ? getIntervalForPlan(subscription.planType) : null);
     const targetInterval =
@@ -963,6 +998,25 @@ r.post('/subscriptions/update', requireAuth, async (req, res, next) => {
       return 'immediate';
     };
     const changeMode = decideChangeMode(currentInterval, targetInterval);
+
+    if (subscription.pendingChange && changeMode !== 'scheduled') {
+      try {
+        await cancelSubscriptionSchedule(subscription.stripeSubscriptionId);
+      } catch (err) {
+        logger.warn({ userId: req.user.id, err: err.message }, 'Failed to cancel pending schedule before plan change');
+      }
+      await prisma.subscription.updateMany({
+        where: { ownerId: req.user.id },
+        data: {
+          pendingChangePlanCode: null,
+          pendingChangeInterval: null,
+          pendingChangeCurrency: null,
+          pendingChangeEffectiveAt: null,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'pending_change_cleared',
+        },
+      });
+    }
 
     if (changeMode === 'checkout') {
       const billingProfile = await getBillingProfile(req.user.id);
@@ -1134,6 +1188,23 @@ r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
       });
     }
 
+    const { setSubscriptionCancelAtPeriodEnd, cancelSubscriptionSchedule } = require('../services/stripe.service');
+    if (subscription.cancelAtPeriodEnd) {
+      await setSubscriptionCancelAtPeriodEnd(subscription.stripeSubscriptionId, false);
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { cancelAtPeriodEnd: false },
+      });
+      await prisma.subscription.updateMany({
+        where: { ownerId: req.user.id },
+        data: {
+          cancelAtPeriodEnd: false,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'resume_for_plan_change',
+        },
+      });
+    }
+
     const currentInterval =
       subscription.interval || (subscription.planType ? getIntervalForPlan(subscription.planType) : null);
     const targetInterval =
@@ -1171,6 +1242,25 @@ r.post('/subscriptions/switch', requireAuth, async (req, res, next) => {
     };
 
     const changeMode = decideChangeMode(currentInterval, targetInterval);
+
+    if (subscription.pendingChange && changeMode !== 'scheduled') {
+      try {
+        await cancelSubscriptionSchedule(subscription.stripeSubscriptionId);
+      } catch (err) {
+        logger.warn({ userId: req.user.id, err: err.message }, 'Failed to cancel pending schedule before plan change');
+      }
+      await prisma.subscription.updateMany({
+        where: { ownerId: req.user.id },
+        data: {
+          pendingChangePlanCode: null,
+          pendingChangeInterval: null,
+          pendingChangeCurrency: null,
+          pendingChangeEffectiveAt: null,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'pending_change_cleared',
+        },
+      });
+    }
 
     if (changeMode === 'checkout') {
       const billingProfile = await getBillingProfile(req.user.id);
@@ -1430,7 +1520,8 @@ r.post('/subscriptions/scheduled/cancel', requireAuth, async (req, res, next) =>
  */
 r.post('/subscriptions/cancel', requireAuth, async (req, res, next) => {
   try {
-    const subscription = await getSubscriptionStatus(req.user.id);
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
+    const cancelAtPeriodEnd = req.body?.cancelAtPeriodEnd === true;
 
     if (!subscription.active || !subscription.stripeSubscriptionId) {
       return res.status(400).json({
@@ -1439,7 +1530,47 @@ r.post('/subscriptions/cancel', requireAuth, async (req, res, next) => {
       });
     }
 
-    // Cancel subscription in Stripe
+    if (cancelAtPeriodEnd) {
+      if (subscription.cancelAtPeriodEnd) {
+        return res.json({
+          ok: true,
+          cancelAtPeriodEnd: true,
+          alreadyScheduled: true,
+          message: 'Cancellation already scheduled at period end',
+        });
+      }
+
+      const { setSubscriptionCancelAtPeriodEnd, cancelSubscriptionSchedule } = require('../services/stripe.service');
+      if (subscription.pendingChange) {
+        try {
+          await cancelSubscriptionSchedule(subscription.stripeSubscriptionId);
+        } catch (err) {
+          logger.warn({ userId: req.user.id, err: err.message }, 'Failed to cancel pending schedule before cancellation');
+        }
+      }
+
+      await setSubscriptionCancelAtPeriodEnd(subscription.stripeSubscriptionId, true);
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { cancelAtPeriodEnd: true },
+      });
+      await prisma.subscription.updateMany({
+        where: { ownerId: req.user.id },
+        data: {
+          cancelAtPeriodEnd: true,
+          pendingChangePlanCode: null,
+          pendingChangeInterval: null,
+          pendingChangeCurrency: null,
+          pendingChangeEffectiveAt: null,
+          lastSyncedAt: new Date(),
+          sourceOfTruth: 'cancel_at_period_end_request',
+        },
+      });
+
+      return res.json({ ok: true, cancelAtPeriodEnd: true, message: 'Cancellation scheduled at period end' });
+    }
+
+    // Cancel subscription in Stripe immediately
     await cancelSubscription(subscription.stripeSubscriptionId);
 
     // Immediately update local DB to avoid race condition
@@ -1447,7 +1578,54 @@ r.post('/subscriptions/cancel', requireAuth, async (req, res, next) => {
     const { deactivateSubscription } = require('../services/subscription.service');
     await deactivateSubscription(req.user.id, 'cancelled');
 
-    res.json({ ok: true, message: 'Subscription cancelled successfully' });
+    res.json({ ok: true, cancelAtPeriodEnd: false, message: 'Subscription cancelled successfully' });
+  } catch (e) {
+    if (e.message?.includes('Stripe is not configured')) {
+      return res.status(503).json({
+        message: 'Payment processing unavailable',
+        code: 'STRIPE_NOT_CONFIGURED',
+      });
+    }
+    next(e);
+  }
+});
+
+/**
+ * POST /api/subscriptions/resume
+ * Resume subscription if it was set to cancel at period end
+ */
+r.post('/subscriptions/resume', requireAuth, async (req, res, next) => {
+  try {
+    const subscription = await getSubscriptionStatusWithStripeSync(req.user.id);
+
+    if (!subscription.active || !subscription.stripeSubscriptionId) {
+      return res.status(400).json({
+        message: 'No active subscription found to resume',
+        code: 'INACTIVE_SUBSCRIPTION',
+      });
+    }
+
+    if (!subscription.cancelAtPeriodEnd) {
+      return res.json({ ok: true, message: 'Subscription already active', alreadyResumed: true });
+    }
+
+    const { setSubscriptionCancelAtPeriodEnd } = require('../services/stripe.service');
+    await setSubscriptionCancelAtPeriodEnd(subscription.stripeSubscriptionId, false);
+
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { cancelAtPeriodEnd: false },
+    });
+    await prisma.subscription.updateMany({
+      where: { ownerId: req.user.id },
+      data: {
+        cancelAtPeriodEnd: false,
+        lastSyncedAt: new Date(),
+        sourceOfTruth: 'resume_request',
+      },
+    });
+
+    res.json({ ok: true, message: 'Cancellation removed. Subscription will renew.' });
   } catch (e) {
     if (e.message?.includes('Stripe is not configured')) {
       return res.status(503).json({
@@ -1519,6 +1697,47 @@ r.get('/subscriptions/portal', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/billing/topup/tiers
+ * List available credit top-up tiers for the current billing currency
+ */
+r.get('/billing/topup/tiers', requireAuth, async (req, res, next) => {
+  try {
+    const currency = await resolveBillingCurrency({
+      userId: req.user.id,
+      currency: req.query?.currency,
+    });
+    const tiers = listTopupTiers(currency);
+    const payload = tiers.map((tier) => ({
+      credits: tier.credits,
+      currency: tier.currency,
+      amount: tier.amount,
+      amountCents: tier.amountCents,
+      priceId: tier.priceId,
+      priceBreakdown: buildTopupPriceBreakdown(tier),
+    }));
+
+    res.json({
+      currency,
+      tiers: payload,
+    });
+  } catch (e) {
+    if (e?.code === 'INVALID_CURRENCY') {
+      return res.status(400).json({
+        message: e.message || 'Invalid currency',
+        code: 'INVALID_CURRENCY',
+      });
+    }
+    if (e?.code === CONFIG_ERROR_CODE) {
+      return res.status(500).json({
+        message: e.message,
+        code: CONFIG_ERROR_CODE,
+      });
+    }
+    next(e);
+  }
+});
+
+/**
  * POST /api/billing/topup
  * Create credit top-up checkout session
  * Body: { credits: number }
@@ -1552,26 +1771,16 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       currency: req.body?.currency || req.query?.currency,
     });
 
-    const billingProfile = await getBillingProfile(req.user.id);
-    const billingCountry =
-      billingProfile?.billingAddress?.country ||
-      billingProfile?.vatCountry ||
-      null;
-    const vatIdValidated = billingProfile?.taxStatus === 'verified';
-    const isBusiness = typeof billingProfile?.isBusiness === 'boolean'
-      ? billingProfile.isBusiness
-      : billingProfile?.vatNumber
-        ? true
-        : null;
+    const tier = getTopupTierByCredits(credits, currency);
+    if (!tier) {
+      return res.status(400).json({
+        message: 'Invalid top-up credits amount. Choose one of the available top-up tiers.',
+        code: 'INVALID_TOPUP_TIER',
+      });
+    }
 
-    const price = calculateTopupPrice(credits, {
-      currency,
-      billingCountry,
-      vatId: billingProfile?.vatNumber || null,
-      vatIdValidated,
-      isBusiness,
-      ipCountry: req.headers['cf-ipcountry'] || req.headers['x-country'] || null,
-    });
+    const price = buildTopupPriceBreakdown(tier);
+    const billingProfile = await getBillingProfile(req.user.id);
 
     const stripeCustomerId = await ensureStripeCustomer({
       ownerId: req.user.id,
@@ -1596,19 +1805,20 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
     const session = await createCreditTopupCheckoutSession({
       ownerId: req.user.id,
       userEmail: req.user.email,
-      credits,
+      credits: tier.credits,
       priceAmount: price.priceWithVat,
       currency,
       successUrl,
       cancelUrl,
       stripeCustomerId,
+      priceId: tier.priceId,
     });
 
     res.status(201).json({
       ok: true,
       checkoutUrl: session.url,
       sessionId: session.id,
-      credits,
+      credits: tier.credits,
       currency,
       price: price.priceWithVat,
       priceEur: price.priceEurWithVat,
@@ -1620,6 +1830,12 @@ r.post('/billing/topup', requireAuth, async (req, res, next) => {
       return res.status(503).json({
         message: 'Payment processing unavailable',
         code: 'STRIPE_NOT_CONFIGURED',
+      });
+    }
+    if (e?.code === 'INVALID_CURRENCY') {
+      return res.status(400).json({
+        message: e.message || 'Invalid currency',
+        code: 'INVALID_CURRENCY',
       });
     }
     if (e?.code === CONFIG_ERROR_CODE) {
@@ -1661,32 +1877,27 @@ r.get('/billing/topup/calculate', requireAuth, async (req, res, next) => {
       userId: req.user.id,
       currency: req.query.currency,
     });
-    const billingProfile = await getBillingProfile(req.user.id);
-    const billingCountry =
-      billingProfile?.billingAddress?.country ||
-      billingProfile?.vatCountry ||
-      null;
-    const vatIdValidated = billingProfile?.taxStatus === 'verified';
-    const isBusiness = typeof billingProfile?.isBusiness === 'boolean'
-      ? billingProfile.isBusiness
-      : billingProfile?.vatNumber
-        ? true
-        : null;
-    const price = calculateTopupPrice(credits, {
-      currency,
-      billingCountry,
-      vatId: billingProfile?.vatNumber || null,
-      vatIdValidated,
-      isBusiness,
-      ipCountry: req.headers['cf-ipcountry'] || req.headers['x-country'] || null,
-    });
+    const tier = getTopupTierByCredits(credits, currency);
+    if (!tier) {
+      return res.status(400).json({
+        message: 'Invalid top-up credits amount. Choose one of the available top-up tiers.',
+        code: 'INVALID_TOPUP_TIER',
+      });
+    }
 
+    const price = buildTopupPriceBreakdown(tier);
     res.json(price);
   } catch (e) {
     if (e.message?.includes('Invalid credits amount')) {
       return res.status(400).json({
         message: e.message || 'An error occurred while calculating the price',
         code: 'PRICE_CALCULATION_ERROR',
+      });
+    }
+    if (e?.code === 'INVALID_CURRENCY') {
+      return res.status(400).json({
+        message: e.message || 'Invalid currency',
+        code: 'INVALID_CURRENCY',
       });
     }
     if (e?.code === 'INVALID_CURRENCY') {
@@ -2185,6 +2396,52 @@ r.get('/billing/verify-sync', requireAuth, async (req, res, next) => {
         mediumSeverity: issues.filter(i => i.severity === 'medium').length,
       },
     });
+  } catch (e) {
+    next(e);
+  }
+});
+
+r.get('/billing/admin/export', async (req, res, next) => {
+  try {
+    if (!ADMIN_EXPORT_TOKEN) {
+      return res.status(503).json({ message: 'Admin export not configured' });
+    }
+    const token = readAdminExportToken(req);
+    if (!token || token !== ADMIN_EXPORT_TOKEN) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const start = parseDateInput(req.query.from, { endOfDay: false });
+    const end = parseDateInput(req.query.to, { endOfDay: true });
+    const range = normalizeRange({ start, end });
+    if (!range) {
+      return res.status(400).json({ message: 'Invalid date range. Use from/to in YYYY-MM-DD or ISO format.' });
+    }
+
+    const kind = String(req.query.type || 'payments').toLowerCase();
+    const exportPayload = await generateBillingExports(range);
+
+    const fileStamp = `${range.start.toISOString().slice(0, 10)}_${range.end.toISOString().slice(0, 10)}`;
+    if (kind === 'refunds') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="refunds_${fileStamp}.csv"`);
+      return res.send(exportPayload.refunds.csv);
+    }
+
+    if (kind === 'both') {
+      return res.json({
+        range: {
+          start: range.start.toISOString(),
+          end: range.end.toISOString(),
+        },
+        paymentsCsv: exportPayload.payments.csv,
+        refundsCsv: exportPayload.refunds.csv,
+      });
+    }
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="payments_${fileStamp}.csv"`);
+    return res.send(exportPayload.payments.csv);
   } catch (e) {
     next(e);
   }

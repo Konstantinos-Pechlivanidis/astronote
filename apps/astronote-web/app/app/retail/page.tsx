@@ -53,8 +53,7 @@ export default function RetailDashboardPage() {
                   const b: any = balance;
                   const totalCredits =
                     b?.totalCredits ??
-                    (b?.balance || 0) +
-                      (b?.allowance?.remainingThisPeriod || 0);
+                    (typeof b?.balance === 'number' ? b.balance : (b?.credits || 0));
                   return (
                     <p className="text-2xl font-bold">
                       {balanceLoading ? '...' : totalCredits.toLocaleString()}

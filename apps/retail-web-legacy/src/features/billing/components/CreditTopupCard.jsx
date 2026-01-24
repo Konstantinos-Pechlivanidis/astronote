@@ -1,55 +1,57 @@
 import { CreditCard, Plus } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { billingApi } from '../../../api/modules/billing';
+import { queryKeys } from '../../../lib/queryKeys';
 import { useTopupCredits } from '../hooks/useTopupCredits';
-import { usePackages } from '../hooks/usePackages';
 import LoadingState from '../../../components/common/LoadingState';
 import ErrorState from '../../../components/common/ErrorState';
 
 export default function CreditTopupCard() {
-  const [selectedPackId, setSelectedPackId] = useState(null);
-  const { data: packages, isLoading: packagesLoading, error: packagesError } = usePackages();
+  const [selectedCredits, setSelectedCredits] = useState(null);
+  const { data: tiersData, isLoading: tiersLoading, error: tiersError } = useQuery({
+    queryKey: queryKeys.billing.topupTiers,
+    queryFn: async () => {
+      const res = await billingApi.getTopupTiers();
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
   const topupMutation = useTopupCredits();
 
-  // Filter credit packs (type: 'credit_pack')
-  const creditPacks = packages?.filter(pkg => pkg.type === 'credit_pack') || [];
+  const tiers = Array.isArray(tiersData?.tiers) ? tiersData.tiers : [];
 
-  // Set default selection to first pack
+  // Set default selection to first tier
   useEffect(() => {
-    if (creditPacks.length > 0 && !selectedPackId) {
-      setSelectedPackId(creditPacks[0].id);
+    if (tiers.length > 0 && !selectedCredits) {
+      setSelectedCredits(tiers[0].credits);
     }
-  }, [creditPacks, selectedPackId]);
+  }, [tiers, selectedCredits]);
 
-  const selectedPack = creditPacks.find(pkg => pkg.id === selectedPackId);
+  const selectedTier = tiers.find(tier => tier.credits === selectedCredits);
 
   const handleTopup = () => {
-    if (!selectedPackId) return;
-    // Ensure packId is string (billingApi.topup also normalizes, but defensive here)
-    const packIdString = String(selectedPackId);
-    if (!packIdString || !packIdString.startsWith('pack_')) {
-      console.error('[Billing] Invalid packId format:', selectedPackId);
-      return;
-    }
-    topupMutation.mutate({ packId: packIdString });
+    if (!selectedTier) return;
+    topupMutation.mutate({ credits: selectedTier.credits });
   };
 
-  if (packagesLoading) {
+  if (tiersLoading) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
-        <LoadingState message="Loading credit packs..." />
+        <LoadingState message="Loading top-up options..." />
       </div>
     );
   }
 
-  if (packagesError) {
+  if (tiersError) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
-        <ErrorState error={packagesError} />
+        <ErrorState error={tiersError} />
       </div>
     );
   }
 
-  if (creditPacks.length === 0) {
+  if (tiers.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex items-center gap-2 mb-4">
@@ -70,41 +72,41 @@ export default function CreditTopupCard() {
         <h3 className="text-lg font-semibold text-gray-900">Buy Credits</h3>
       </div>
       <p className="text-sm text-gray-600 mb-4">
-        Purchase credit packs. 1 credit = 1 SMS message. Credits can be purchased regardless of subscription status, but can only be <strong>used</strong> with an active subscription.
+        Credits accumulate and never expire; spending requires an active subscription.
       </p>
       <div className="space-y-4">
         <div>
           <label htmlFor="creditPack" className="block text-sm font-medium text-gray-700 mb-1">
-            Select Credit Pack
+            Select Credits
           </label>
           <select
             id="creditPack"
-            value={selectedPackId || ''}
-            onChange={(e) => setSelectedPackId(e.target.value)}
+            value={selectedCredits || ''}
+            onChange={(e) => setSelectedCredits(Number(e.target.value))}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           >
-            {creditPacks.map((pack) => (
-              <option key={pack.id} value={pack.id}>
-                {pack.units.toLocaleString()} credits - €{((pack.priceCents || pack.priceEur * 100) / 100).toFixed(2)}
+            {tiers.map((tier) => (
+              <option key={tier.credits} value={tier.credits}>
+                {tier.credits.toLocaleString()} credits - €{tier.amount.toFixed(2)}
               </option>
             ))}
           </select>
         </div>
-        {selectedPack && (
+        {selectedTier && (
           <div className="bg-gray-50 rounded-lg p-4">
             <div className="flex justify-between text-sm text-gray-600 mb-1">
               <span>Credits:</span>
-              <span className="font-medium text-gray-900">{selectedPack.units.toLocaleString()}</span>
+              <span className="font-medium text-gray-900">{selectedTier.credits.toLocaleString()}</span>
             </div>
             <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t border-gray-200">
               <span>Total:</span>
-              <span>€{((selectedPack.priceCents || selectedPack.priceEur * 100) / 100).toFixed(2)}</span>
+              <span>€{selectedTier.amount.toFixed(2)}</span>
             </div>
           </div>
         )}
         <button
           onClick={handleTopup}
-          disabled={!selectedPackId || topupMutation.isPending || !selectedPack?.available}
+          disabled={!selectedTier || topupMutation.isPending}
           className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {topupMutation.isPending ? (
@@ -115,17 +117,11 @@ export default function CreditTopupCard() {
           ) : (
             <>
               <Plus className="w-4 h-4" />
-              Buy {selectedPack ? `${selectedPack.units.toLocaleString()} Credits` : 'Credits'}
+              Buy {selectedTier ? `${selectedTier.credits.toLocaleString()} Credits` : 'Credits'}
             </>
           )}
         </button>
-        {selectedPack && !selectedPack.available && (
-          <p className="text-xs text-gray-500 text-center">
-            This pack is not available for purchase at this time.
-          </p>
-        )}
       </div>
     </div>
   );
 }
-

@@ -16,7 +16,8 @@ const { getRedisClient } = require('../../api/src/lib/redis');
 const prisma = require('../../api/src/lib/prisma');
 const { sendSingle } = require('../../api/src/services/mitto.service');
 const { sendBulkSMSWithCredits } = require('../../api/src/services/smsBulk.service');
-const { consumeMessageBilling, isSubscriptionActive } = require('../../api/src/services/subscription.service');
+const { consumeMessageBilling, canSendOrSpendCredits } = require('../../api/src/services/subscription.service');
+const { releaseReservationForMessage } = require('../../api/src/services/credit-reservation.service');
 const { generateUnsubscribeToken } = require('../../api/src/services/token.service');
 const { shortenUrlsInText, ShortenerError } = require('../../api/src/services/urlShortener.service');
 const { buildOfferShortUrl, buildUnsubscribeShortUrl } = require('../../api/src/services/publicLinkBuilder.service');
@@ -323,14 +324,17 @@ async function processIndividualJob(messageId, job) {
           'PRE_SEND',
         );
       }
-      const subscriptionActive = await isSubscriptionActive(msg.campaign.ownerId);
-      if (!subscriptionActive) {
+      const subscriptionGate = await canSendOrSpendCredits(msg.campaign.ownerId);
+      if (!subscriptionGate.allowed) {
+        await releaseReservationForMessage(msg.campaign.ownerId, msg.id, {
+          reason: 'inactive_subscription',
+        }).catch(() => null);
         await prisma.campaignMessage.update({
           where: { id: msg.id },
           data: {
             failedAt: new Date(),
             status: 'failed',
-            error: 'Active subscription required to send SMS',
+            error: subscriptionGate.message || 'Active subscription required to send SMS',
             billingStatus: 'failed',
             billingError: 'SUBSCRIPTION_REQUIRED',
           }
@@ -388,6 +392,24 @@ async function processIndividualJob(messageId, job) {
           },
           'POST_SEND',
         );
+      }
+
+      if (!providerId) {
+        await releaseReservationForMessage(msg.campaign.ownerId, msg.id, {
+          reason: 'send_failed',
+        }).catch(() => null);
+        await prisma.campaignMessage.update({
+          where: { id: msg.id },
+          data: {
+            failedAt: new Date(),
+            status: 'failed',
+            error: 'Provider did not return messageId',
+            billingStatus: 'failed',
+            billingError: 'NO_PROVIDER_MESSAGE_ID',
+          },
+        });
+        logger.warn({ messageId: msg.id, ownerId: msg.campaign.ownerId }, 'Provider did not return messageId; message marked failed');
+        return;
       }
 
       let billingStatus = null;
@@ -504,8 +526,11 @@ async function processIndividualJob(messageId, job) {
         }
       });
 
-      // No credit refund needed - credits are only debited after successful send
-      // If send failed, no credits were debited, so nothing to refund
+      if (!retryable) {
+        await releaseReservationForMessage(msg.campaign.ownerId, msg.id, {
+          reason: 'send_failed',
+        }).catch(() => null);
+      }
 
       // Update campaign aggregates for failed message (non-blocking)
       try {

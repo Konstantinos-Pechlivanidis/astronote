@@ -177,6 +177,11 @@ describe('Plan Catalog', () => {
     });
 
     it('returns valid when all priceIds are configured', () => {
+      delete process.env.STRIPE_PRICE_ID_SUB_STARTER_EUR;
+      delete process.env.STRIPE_PRICE_ID_SUB_STARTER_USD;
+      delete process.env.STRIPE_PRICE_ID_SUB_PRO_EUR;
+      delete process.env.STRIPE_PRICE_ID_SUB_PRO_USD;
+
       process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_EUR = 'price_1';
       process.env.STRIPE_PRICE_ID_SUB_STARTER_MONTH_USD = 'price_2';
       process.env.STRIPE_PRICE_ID_SUB_STARTER_YEAR_EUR = 'price_3';
@@ -234,4 +239,3 @@ describe('Plan Catalog', () => {
     });
   });
 });
-

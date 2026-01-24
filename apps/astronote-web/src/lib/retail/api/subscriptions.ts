@@ -35,10 +35,18 @@ export const subscriptionsApi = {
     });
   },
 
-  cancel: (idempotencyKey?: string) =>
-    api.post<{ success: boolean }>(endpoints.subscriptions.cancel, {}, {
+  cancel: (data?: { cancelAtPeriodEnd?: boolean; idempotencyKey?: string }) => {
+    const idempotencyKey = data?.idempotencyKey;
+    const payload = data?.cancelAtPeriodEnd !== undefined
+      ? { cancelAtPeriodEnd: Boolean(data.cancelAtPeriodEnd) }
+      : {};
+    return api.post<{ success: boolean }>(endpoints.subscriptions.cancel, payload, {
       headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    }),
+    });
+  },
+
+  resume: () =>
+    api.post<{ success: boolean }>(endpoints.subscriptions.resume),
 
   getPortal: () =>
     api.get<{ portalUrl?: string; url?: string }>(endpoints.subscriptions.portal),

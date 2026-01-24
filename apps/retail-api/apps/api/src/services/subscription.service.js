@@ -15,13 +15,13 @@ const PLANS = {
   starter: {
     priceEur: 40,        // €40/month - configured in Stripe as recurring monthly price
     priceUsd: 40,        // $40/month (display only; configured in Stripe)
-    freeCredits: 100,    // 100 credits allocated on each billing cycle (monthly)
+    freeCredits: 300,    // 300 credits allocated on each billing cycle (monthly)
     stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_STARTER_EUR',
   },
   pro: {
     priceEur: 240,       // €240/year - configured in Stripe as recurring yearly price
     priceUsd: 240,       // $240/year (display only; configured in Stripe)
-    freeCredits: 500,    // 500 credits allocated on each billing cycle (yearly)
+    freeCredits: 1500,   // 1500 credits allocated on each billing cycle (yearly)
     stripePriceIdEnv: 'STRIPE_PRICE_ID_SUB_PRO_EUR',
   },
 };
@@ -32,8 +32,8 @@ const INTERVAL_BY_PLAN = {
 };
 
 const ALLOWANCE_BY_INTERVAL = {
-  month: 100,
-  year: 500,
+  month: 0,
+  year: 0,
 };
 
 // Credit top-up pricing
@@ -130,14 +130,60 @@ function resolveIntervalFromStripe(stripeSubscription) {
  */
 async function isSubscriptionActive(userId) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { subscriptionStatus: true },
-    });
-    return user?.subscriptionStatus === 'active';
+    const result = await canSendOrSpendCredits(userId);
+    return Boolean(result.allowed);
   } catch (err) {
     logger.error({ userId, err: err.message }, 'Failed to check subscription status');
     return false;
+  }
+}
+
+/**
+ * Single rule for sending/spending credits: subscription must be ACTIVE.
+ * @param {number} userId - User ID
+ * @returns {Promise<{allowed: boolean, status: string, reason: string|null, message: string|null}>}
+ */
+async function canSendOrSpendCredits(userId) {
+  if (!userId) {
+    return {
+      allowed: false,
+      status: 'inactive',
+      reason: 'inactive_subscription',
+      message: 'Active subscription required to send SMS.',
+    };
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionStatus: true, billingHold: true, billingHoldReason: true },
+    });
+    const status = user?.subscriptionStatus || 'inactive';
+    if (user?.billingHold) {
+      return {
+        allowed: false,
+        status,
+        reason: 'billing_hold',
+        message: user?.billingHoldReason
+          ? `Billing hold: ${user.billingHoldReason}`
+          : 'Billing hold: account requires review.',
+      };
+    }
+    const allowed = status === 'active';
+    return {
+      allowed,
+      status,
+      reason: allowed ? null : 'inactive_subscription',
+      message: allowed ? null : 'Active subscription required to send SMS.',
+    };
+  } catch (err) {
+    logger.error({ userId, err: err.message }, 'Failed to evaluate subscription gate');
+    return {
+      allowed: false,
+      status: 'inactive',
+      reason: 'inactive_subscription',
+      message: 'Active subscription required to send SMS.',
+    };
   }
 }
 
@@ -651,9 +697,34 @@ async function consumeMessageBilling(userId, amount, opts = {}) {
       };
     }
 
-    const result = await consumeAllowanceThenCredits(userId, amount, opts, tx);
-    const billedAt = new Date();
+    const { commitReservationForMessage } = require('./credit-reservation.service');
+    const reservationResult = await commitReservationForMessage(userId, messageId, opts, tx);
+    let billedAt = reservationResult?.billedAt || new Date();
 
+    if (reservationResult?.committed || reservationResult?.alreadyCommitted) {
+      await tx.campaignMessage.update({
+        where: { id: messageId },
+        data: {
+          billingStatus: 'paid',
+          billedAt,
+          billingError: null,
+        },
+      });
+
+      return {
+        billingStatus: 'paid',
+        billedAt,
+        balance: reservationResult.balance ?? null,
+        usedAllowance: 0,
+        debitedCredits: amount,
+        remainingAllowance: null,
+        alreadyBilled: Boolean(reservationResult.alreadyCommitted),
+      };
+    }
+
+    // Fallback: no reservation found; debit directly (legacy behavior)
+    const result = await consumeAllowanceThenCredits(userId, amount, opts, tx);
+    billedAt = new Date();
     await tx.campaignMessage.update({
       where: { id: messageId },
       data: {
@@ -818,6 +889,7 @@ module.exports = {
   getFreeCreditsForPlan,
   getPlanConfig,
   isSubscriptionActive,
+  canSendOrSpendCredits,
   getSubscriptionStatus,
   resetAllowanceForPeriod,
   activateSubscription,

@@ -385,6 +385,7 @@ async function createSubscriptionCheckoutSession({
         planType,
         type: 'subscription',
         currency: currency.toUpperCase(),
+        priceId,
       },
       billing_address_collection: 'required',
       ...(isValidStripeCustomerId(stripeCustomerId)
@@ -399,6 +400,7 @@ async function createSubscriptionCheckoutSession({
           ownerId: String(ownerId),
           planType,
           currency: currency.toUpperCase(),
+          priceId,
         },
       },
       ...(isStripeTaxEnabled()
@@ -509,6 +511,7 @@ async function createSubscriptionChangeCheckoutSession({
  * @param {number} params.credits - Number of credits to purchase
  * @param {number} params.priceAmount - Price in currency (including VAT/tax if applicable)
  * @param {string} params.currency - Currency code (EUR, USD, etc.)
+ * @param {string} params.priceId - Stripe price ID for the top-up tier
  * @param {string} params.successUrl - Success redirect URL
  * @param {string} params.cancelUrl - Cancel redirect URL
  * @returns {Promise<Object>} Stripe checkout session
@@ -522,20 +525,27 @@ async function createCreditTopupCheckoutSession({
   successUrl,
   cancelUrl,
   stripeCustomerId,
+  priceId,
 }) {
   if (!stripe) {
     throw new Error('Stripe is not configured');
   }
 
-  const normalizedPriceAmount = Number(priceAmount);
-  if (!Number.isFinite(normalizedPriceAmount) || normalizedPriceAmount <= 0) {
-    throw new Error('Invalid price amount for credit top-up');
+  if (!priceId) {
+    throw new Error('Stripe price ID is required for credit top-up');
   }
 
-  const priceId = getStripeCreditTopupPriceId(currency);
+  let normalizedPriceAmount = Number(priceAmount);
   const price = await stripe.prices.retrieve(priceId);
   if (price.type !== 'one_time') {
     throw new Error(`Credit top-up price ID ${priceId} is not a one-time price.`);
+  }
+  if (!Number.isFinite(normalizedPriceAmount) || normalizedPriceAmount <= 0) {
+    if (Number.isFinite(price.unit_amount)) {
+      normalizedPriceAmount = Number((price.unit_amount / 100).toFixed(2));
+    } else {
+      throw new Error('Invalid price amount for credit top-up');
+    }
   }
 
   const session = await stripe.checkout.sessions.create({
@@ -544,7 +554,7 @@ async function createCreditTopupCheckoutSession({
     line_items: [
       {
         price: priceId,
-        quantity: credits, // Price is per-credit, so quantity = number of credits
+        quantity: 1,
       },
     ],
     success_url: successUrl,
@@ -555,6 +565,7 @@ async function createCreditTopupCheckoutSession({
       priceAmount: String(normalizedPriceAmount),
       currency: currency.toUpperCase(),
       type: 'credit_topup',
+      priceId,
     },
     ...(isValidStripeCustomerId(stripeCustomerId)
       ? { customer: stripeCustomerId, customer_update: { address: 'auto', name: 'auto' } }
@@ -648,6 +659,24 @@ async function cancelSubscription(subscriptionId) {
   }
 
   return stripe.subscriptions.cancel(subscriptionId);
+}
+
+async function setSubscriptionCancelAtPeriodEnd(subscriptionId, cancelAtPeriodEnd) {
+  if (!stripe) {
+    throw new Error('Stripe is not configured');
+  }
+  if (!subscriptionId) {
+    throw new Error('subscriptionId is required');
+  }
+
+  const value = Boolean(cancelAtPeriodEnd);
+  return stripe.subscriptions.update(subscriptionId, {
+    cancel_at_period_end: value,
+    metadata: {
+      cancelAtPeriodEnd: value ? 'true' : 'false',
+      updatedAt: new Date().toISOString(),
+    },
+  });
 }
 
 async function getSubscriptionExpanded(subscriptionId) {
@@ -783,6 +812,7 @@ module.exports = {
   getCustomerPortalUrl,
   updateSubscription,
   cancelSubscription,
+  setSubscriptionCancelAtPeriodEnd,
   createOrUpdateSubscriptionSchedule,
   cancelSubscriptionSchedule,
   verifyWebhookSignature,

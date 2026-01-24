@@ -39,6 +39,9 @@ export function BillingSummaryCard() {
 
   const subscription = billingGate.subscription || { active: false, planType: null };
   const credits = billingGate.credits || 0;
+  const nextRenewal = subscription.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd)
+    : null;
 
   return (
     <GlassCard>
@@ -71,6 +74,11 @@ export function BillingSummaryCard() {
                 : 'Inactive'}
             </span>
           </div>
+          {nextRenewal && (
+            <div className="mt-2 text-xs text-text-tertiary">
+              Next renewal: {nextRenewal.toLocaleDateString()}
+            </div>
+          )}
         </div>
 
         {/* Credits Balance */}
@@ -78,9 +86,7 @@ export function BillingSummaryCard() {
           <label className="block text-sm font-medium text-text-secondary mb-2">Credits Balance</label>
           <p className="text-lg font-semibold text-text-primary">{credits.toLocaleString()}</p>
           <p className="text-xs text-text-tertiary mt-1">
-            {subscription.active
-              ? 'Credits can be used to send campaigns'
-              : 'Active subscription required to use credits'}
+            Credits accumulate and never expire; spending requires an active subscription.
           </p>
         </div>
 
@@ -98,4 +104,3 @@ export function BillingSummaryCard() {
     </GlassCard>
   );
 }
-

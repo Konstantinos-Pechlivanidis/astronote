@@ -83,9 +83,7 @@ function CreditsCard() {
     );
   }
 
-  const balance =
-    (data as any)?.totalCredits ??
-    (data?.credits || 0) + (data?.allowance?.remainingThisPeriod || 0);
+  const balance = (data as any)?.totalCredits ?? (data?.credits || 0);
   const subscription = data?.subscription || { active: false, planType: null };
 
   return (
@@ -123,6 +121,9 @@ function CreditsCard() {
                   </>
                 )}
               </div>
+              <p className="mt-2 text-xs text-text-tertiary">
+                Credits accumulate and never expire; spending requires an active subscription.
+              </p>
             </div>
           </div>
         </div>

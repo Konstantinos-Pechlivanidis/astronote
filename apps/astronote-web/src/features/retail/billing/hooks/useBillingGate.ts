@@ -13,15 +13,12 @@ export function useBillingGate() {
   });
 
   const subscription = data?.subscription || { active: false, planType: null };
-  const credits =
-    (data as any)?.totalCredits ??
-    (data?.credits || 0) +
-      (data?.allowance?.remainingThisPeriod || 0);
+  const credits = (data as any)?.totalCredits ?? (data?.credits || 0);
   const canSendCampaigns = subscription.active === true;
 
   const reason = canSendCampaigns
     ? null
-    : 'Active subscription required to send campaigns. Credits can only be used with an active subscription.';
+    : 'Credits accumulate and never expire; spending requires an active subscription.';
 
   const ctaTarget = '/app/retail/billing';
 

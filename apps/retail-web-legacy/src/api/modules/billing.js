@@ -88,14 +88,13 @@ export const billingApi = {
 
   /**
    * Top-up credits using credit pack
-   * Body: { packId: string } - packId MUST be string (e.g., 'pack_100')
+   * Body: { credits: number }
    */
-  topup: (data) => {
-    // Ensure packId is string
-    const normalizedData = {
-      ...data,
-      packId: String(data.packId),
-    };
-    return api.post(endpoints.billing.topup, normalizedData);
-  },
+  topup: (data) => api.post(endpoints.billing.topup, data),
+
+  /**
+   * Get available top-up tiers
+   */
+  getTopupTiers: (currency = 'EUR') =>
+    api.get(endpoints.billing.topupTiers, { params: { currency } }),
 };

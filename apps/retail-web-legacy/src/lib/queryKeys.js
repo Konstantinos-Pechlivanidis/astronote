@@ -33,6 +33,7 @@ export const queryKeys = {
     balance: ['billing', 'balance'],
     wallet: ['billing', 'wallet'], // Alias for balance, but separate key for clarity
     packages: ['billing', 'packages'],
+    topupTiers: ['billing', 'topup-tiers'],
     transactions: (params) => ['billing', 'transactions', params],
     purchases: (params) => ['billing', 'purchases', params],
     gate: ['billing', 'gate'], // Derived from balance
@@ -65,4 +66,3 @@ export const queryKeys = {
     stats: (id) => ['templates', 'stats', id],
   },
 };
-

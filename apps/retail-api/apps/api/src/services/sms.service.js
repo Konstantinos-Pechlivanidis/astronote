@@ -2,11 +2,11 @@
 // Centralized SMS sending service with credit enforcement
 
 const { sendSingle } = require('./mitto.service');
-const { getBalance } = require('./wallet.service');
+const { getWalletSummary } = require('./wallet.service');
 const { generateUnsubscribeToken } = require('./token.service');
 const { shortenUrlsInText } = require('./urlShortener.service');
 const { buildUnsubscribeShortUrl } = require('./publicLinkBuilder.service');
-const { isSubscriptionActive, getAllowanceStatus, consumeMessageBilling } = require('./subscription.service');
+const { canSendOrSpendCredits, getAllowanceStatus, consumeMessageBilling } = require('./subscription.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'sms-service' });
@@ -25,30 +25,31 @@ const logger = pino({ name: 'sms-service' });
  */
 async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {}, contactId = null }) {
   // 1. Check subscription status first
-  const subscriptionActive = await isSubscriptionActive(ownerId);
-  if (!subscriptionActive) {
+  const subscriptionGate = await canSendOrSpendCredits(ownerId);
+  if (!subscriptionGate.allowed) {
     logger.warn({ ownerId }, 'Inactive subscription - SMS send blocked');
     return {
       sent: false,
-      reason: 'inactive_subscription',
-      error: 'Active subscription required to send SMS. Please subscribe to a plan.',
+      reason: subscriptionGate.reason || 'inactive_subscription',
+      error: subscriptionGate.message || 'Active subscription required to send SMS. Please subscribe to a plan.',
     };
   }
 
   // 2. Check allowance + credits before sending
   const allowance = await getAllowanceStatus(ownerId);
-  const balance = await getBalance(ownerId);
-  const available = (allowance?.remainingThisPeriod || 0) + (balance || 0);
+  const walletSummary = await getWalletSummary(ownerId);
+  const available = (allowance?.remainingThisPeriod || 0) + (walletSummary.available || 0);
   if (available < 1) {
     logger.warn({
       ownerId,
-      balance,
+      balance: walletSummary.balance,
+      reservedBalance: walletSummary.reservedBalance,
       allowanceRemaining: allowance?.remainingThisPeriod || 0,
     }, 'Insufficient allowance/credits for SMS send');
     return {
       sent: false,
       reason: 'insufficient_credits',
-      balance,
+      balance: walletSummary.balance,
       error: 'Not enough free allowance or credits to send SMS. Please purchase credits or upgrade your subscription.',
     };
   }
@@ -124,7 +125,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
           messageId: result.messageId,
           providerMessageId: result.messageId, // Mitto messageId is the provider messageId
           trafficAccountId: result.trafficAccountId,
-          balanceAfter: balance, // Return original balance if debit failed
+          balanceAfter: walletSummary.balance, // Return original balance if debit failed
         };
       }
     } else {
@@ -144,7 +145,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
       sent: false,
       reason: 'send_failed',
       error: err.message,
-      balanceAfter: balance,
+      balanceAfter: walletSummary.balance,
     };
   }
 }

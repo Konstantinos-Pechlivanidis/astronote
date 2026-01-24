@@ -239,7 +239,7 @@ export default function NewContactPage() {
                   </SelectContent>
                 </Select>
                 <p className="mt-2 text-xs text-text-tertiary">
-                  Προεπιλογή σε opt-in ώστε να επιτρέπεται η αποστολή SMS. Μπορείς να το απενεργοποιήσεις αν δεν έχεις συγκατάθεση.
+                  Default is Opted In so SMS can be sent. Switch to Opted Out if you do not have consent.
                 </p>
               </div>
 

@@ -4,21 +4,20 @@ import { queryKeys } from '../../../lib/queryKeys';
 import { toast } from 'sonner';
 
 /**
- * Hook for purchasing credit packs
- * Ensures packId is string and handles checkout redirect
+ * Hook for purchasing credit top-ups
+ * Ensures credits are valid and handles checkout redirect
  */
 export function useTopupCredits() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ packId }) => {
-      // billingApi.topup already normalizes packId to string, but defensive check here
-      const packIdString = String(packId);
-      if (!packIdString || !packIdString.startsWith('pack_')) {
-        throw new Error(`Invalid pack ID format: ${packId}. Expected format: 'pack_100', 'pack_500', etc.`);
+    mutationFn: async ({ credits }) => {
+      const creditsValue = Number(credits);
+      if (!Number.isInteger(creditsValue) || creditsValue <= 0) {
+        throw new Error('Credits must be a positive whole number');
       }
-      
-      const res = await billingApi.topup({ packId: packIdString });
+
+      const res = await billingApi.topup({ credits: creditsValue });
       return res.data;
     },
     onSuccess: (data) => {
@@ -42,11 +41,10 @@ export function useTopupCredits() {
         console.error('[Billing] Topup error:', {
           message: error.message,
           response: error.response?.data,
-          packId: error.config?.data,
+          credits: error.config?.data,
         });
       }
     },
     retry: false, // Don't retry payment mutations
   });
 }
-

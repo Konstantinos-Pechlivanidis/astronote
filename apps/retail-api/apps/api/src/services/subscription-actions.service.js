@@ -27,15 +27,13 @@ function computeAllowedActions(subscription) {
     const actions = [
       'changePlan',
       'switchInterval',
-      'cancelSubscription',
+      'cancelAtPeriodEnd',
       'updatePaymentMethod',
       'viewInvoices',
       'refreshFromStripe',
     ];
 
     // If subscription is set to cancel at period end, expose resume.
-    // NOTE: Retail currently cancels immediately via /subscriptions/cancel.
-    // We keep this action surfaced only as informational until resume endpoint is implemented.
     if (cancelAtPeriodEnd) {
       return [
         'resumeSubscription',
@@ -50,6 +48,7 @@ function computeAllowedActions(subscription) {
       return [
         'changePlan',
         'cancelScheduledChange',
+        'cancelAtPeriodEnd',
         'updatePaymentMethod',
         'viewInvoices',
         'refreshFromStripe',
@@ -80,4 +79,3 @@ module.exports = {
   computeAllowedActions,
   getAvailableOptions,
 };
-

@@ -28,7 +28,7 @@ export const endpoints = {
     purchases: '/api/billing/purchases',
     purchase: '/api/billing/purchase',
     topup: '/api/billing/topup',
-    // topupCalculate removed - endpoint deprecated, use credit packs instead
+    topupTiers: '/api/billing/topup/tiers',
   },
   
   // Subscriptions
@@ -112,4 +112,3 @@ export const endpoints = {
     conversionSubmit: (tagPublicId) => `/api/conversion/${tagPublicId}`,
   },
 };
-

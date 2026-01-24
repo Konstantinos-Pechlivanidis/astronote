@@ -107,7 +107,7 @@ export function useEnqueueCampaign() {
       // Also invalidate other related queries
       queryClient.invalidateQueries({ queryKey: ['retail', 'campaigns', 'list'] });
       queryClient.invalidateQueries({ queryKey: ['retail', 'campaigns', 'status', id] });
-      // Keep dashboard + billing in sync (credits/allowance + KPIs)
+      // Keep dashboard + billing in sync (credits + KPIs)
       queryClient.invalidateQueries({ queryKey: ['retail-kpis'] });
       queryClient.invalidateQueries({ queryKey: ['retail-balance'] });
       queryClient.invalidateQueries({ queryKey: ['retail-billing-summary'] });
@@ -146,7 +146,7 @@ export function useEnqueueCampaign() {
       } else if (code === 'ALREADY_SENDING') {
         toast.error('Campaign is already being sent');
       } else if (code === 'INSUFFICIENT_CREDITS') {
-        toast.error('Not enough free allowance or credits. Please purchase more credits or upgrade your subscription.');
+        toast.error('Not enough credits. Please purchase more credits or wait for your next billing cycle.');
       } else if (code === 'QUEUE_UNAVAILABLE') {
         toast.error('Message queue unavailable. Please try again in a moment.');
       } else if (code === 'PRISMA_SCHEMA_DRIFT') {

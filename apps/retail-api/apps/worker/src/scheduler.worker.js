@@ -52,6 +52,9 @@ const STALE_RECOVERY_LIMIT = Number(process.env.STALE_RECOVERY_LIMIT || 200);
 const ENQUEUE_LOCK_TTL_SEC = Number(process.env.ENQUEUE_LOCK_TTL_SEC || 600);
 const ENABLE_BIRTHDAY_AUTOMATIONS = process.env.ENABLE_BIRTHDAY_AUTOMATIONS !== '0';
 const BIRTHDAY_AUTOMATION_CRON = process.env.BIRTHDAY_AUTOMATION_CRON || '0 9 * * *';
+const RESERVATION_RECONCILE_CRON = process.env.CREDIT_RESERVATION_RECONCILE_CRON || '0 3 * * *';
+const EXPORT_WEEKLY_ENABLED = process.env.EXPORT_WEEKLY_ENABLED !== '0';
+const EXPORT_WEEKLY_CRON = process.env.EXPORT_WEEKLY_CRON || '0 7 * * MON';
 
 const schedulerQueue = new Queue('schedulerQueue', {
   connection,
@@ -94,6 +97,38 @@ if (ENABLE_BIRTHDAY_AUTOMATIONS) {
   });
 }
 
+schedulerQueue.add(
+  'reconcileCreditReservations',
+  {},
+  {
+    repeat: {
+      cron: RESERVATION_RECONCILE_CRON,
+    },
+    jobId: 'credit-reservation-reconcile-daily',
+  },
+).then(() => {
+  logger.info({ cron: RESERVATION_RECONCILE_CRON }, 'Scheduled credit reservation reconciliation job registered');
+}).catch((err) => {
+  logger.error({ err: err.message, cron: RESERVATION_RECONCILE_CRON }, 'Failed to register credit reservation reconciliation job');
+});
+
+if (EXPORT_WEEKLY_ENABLED) {
+  schedulerQueue.add(
+    'weeklyBillingExport',
+    {},
+    {
+      repeat: {
+        cron: EXPORT_WEEKLY_CRON,
+      },
+      jobId: 'weekly-billing-export',
+    },
+  ).then(() => {
+    logger.info({ cron: EXPORT_WEEKLY_CRON }, 'Scheduled weekly billing export job registered');
+  }).catch((err) => {
+    logger.error({ err: err.message, cron: EXPORT_WEEKLY_CRON }, 'Failed to register weekly billing export job');
+  });
+}
+
 const worker = new Worker(
   'schedulerQueue',
   async (job) => {
@@ -106,6 +141,16 @@ const worker = new Worker(
     if (job.name === 'processBirthdayAutomations') {
       logger.info('Running birthday automations job');
       return processBirthdayAutomations();
+    }
+
+    if (job.name === 'reconcileCreditReservations') {
+      const { reconcileStaleReservations } = require('../../api/src/services/credit-reservation.service');
+      return reconcileStaleReservations();
+    }
+
+    if (job.name === 'weeklyBillingExport') {
+      const { runWeeklyBillingExport } = require('../../api/src/services/billing-export-runner.service');
+      return runWeeklyBillingExport();
     }
 
     logger.warn({ jobId: job.id, jobName: job.name }, 'Unknown or legacy scheduler job, skipping');

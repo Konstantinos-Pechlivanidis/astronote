@@ -25,7 +25,7 @@ export function useBillingGate() {
 
   const reason = canSendCampaigns
     ? null
-    : 'Active subscription required to send campaigns. Credits can only be used with an active subscription.';
+    : 'Credits accumulate and never expire; spending requires an active subscription.';
 
   const ctaTarget = '/app/billing';
 
@@ -39,4 +39,3 @@ export function useBillingGate() {
     error,
   };
 }
-

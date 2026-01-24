@@ -2,8 +2,9 @@
 // Bulk SMS sending service with credit enforcement
 
 const { sendBulkMessages } = require('./mitto.service');
-const { getBalance } = require('./wallet.service');
-const { isSubscriptionActive, getAllowanceStatus, consumeMessageBilling } = require('./subscription.service');
+const { getWalletSummary } = require('./wallet.service');
+const { canSendOrSpendCredits, getAllowanceStatus } = require('./subscription.service');
+const { reserveCreditsForMessages, commitReservationForMessage, releaseReservationForMessage } = require('./credit-reservation.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'sms-bulk-service' });
@@ -42,16 +43,26 @@ async function sendBulkSMSWithCredits(messages) {
   }
 
   // 1. Check subscription status first
-  const subscriptionActive = await isSubscriptionActive(ownerId);
-  if (!subscriptionActive) {
+  const subscriptionGate = await canSendOrSpendCredits(ownerId);
+  if (!subscriptionGate.allowed) {
     logger.warn({ ownerId, messageCount: messages.length }, 'Inactive subscription - bulk SMS send blocked');
+    const messageIds = messages
+      .map((msg) => msg.internalMessageId)
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (messageIds.length) {
+      await Promise.all(
+        messageIds.map((id) =>
+          releaseReservationForMessage(ownerId, id, { reason: 'inactive_subscription' }).catch(() => null),
+        ),
+      );
+    }
     return {
       bulkId: null,
       results: messages.map(msg => ({
         internalMessageId: msg.internalMessageId,
         sent: false,
-        reason: 'subscription_required',
-        error: 'Active subscription required to send SMS. Please subscribe to a plan.',
+        reason: subscriptionGate.reason || 'inactive_subscription',
+        error: subscriptionGate.message || 'Active subscription required to send SMS. Please subscribe to a plan.',
       })),
       summary: {
         total: messages.length,
@@ -61,35 +72,65 @@ async function sendBulkSMSWithCredits(messages) {
     };
   }
 
-  // 2. Check allowance + credits before sending
+  // 2. Ensure reservations (campaign messages) or check availability (non-campaign)
   const allowance = await getAllowanceStatus(ownerId);
-  const balance = await getBalance(ownerId);
-  const requiredCredits = messages.length;
-  const available = (allowance?.remainingThisPeriod || 0) + (balance || 0);
+  const walletSummary = await getWalletSummary(ownerId);
+  const messageIds = messages
+    .map((msg) => msg.internalMessageId)
+    .filter((id) => Number.isInteger(id) && id > 0);
 
-  if (available < requiredCredits) {
-    logger.warn({
-      ownerId,
-      balance,
-      allowanceRemaining: allowance?.remainingThisPeriod || 0,
-      requiredCredits,
-      messageCount: messages.length,
-    }, 'Insufficient allowance/credits for bulk SMS send');
-    return {
-      bulkId: null,
-      results: messages.map(msg => ({
-        internalMessageId: msg.internalMessageId,
-        sent: false,
-        reason: 'insufficient_credits',
-        balance,
-        error: 'Not enough free allowance or credits to send SMS. Please purchase credits or upgrade your subscription.',
-      })),
-      summary: {
-        total: messages.length,
-        sent: 0,
-        failed: messages.length,
-      },
-    };
+  if (messageIds.length) {
+    try {
+      await reserveCreditsForMessages(ownerId, messageIds, {
+        campaignId: messages[0]?.meta?.campaignId || null,
+        reason: 'campaign:enqueue',
+      });
+    } catch (reserveErr) {
+      logger.warn({ ownerId, err: reserveErr.message }, 'Failed to reserve credits for bulk send');
+      return {
+        bulkId: null,
+        results: messages.map(msg => ({
+          internalMessageId: msg.internalMessageId,
+          sent: false,
+          reason: 'insufficient_credits',
+          balance: walletSummary.balance,
+          error: 'Not enough available credits to send SMS.',
+        })),
+        summary: {
+          total: messages.length,
+          sent: 0,
+          failed: messages.length,
+        },
+      };
+    }
+  } else {
+    const requiredCredits = messages.length;
+    const available = (allowance?.remainingThisPeriod || 0) + (walletSummary.available || 0);
+    if (available < requiredCredits) {
+      logger.warn({
+        ownerId,
+        balance: walletSummary.balance,
+        reservedBalance: walletSummary.reservedBalance,
+        allowanceRemaining: allowance?.remainingThisPeriod || 0,
+        requiredCredits,
+        messageCount: messages.length,
+      }, 'Insufficient allowance/credits for bulk SMS send');
+      return {
+        bulkId: null,
+        results: messages.map(msg => ({
+          internalMessageId: msg.internalMessageId,
+          sent: false,
+          reason: 'insufficient_credits',
+          balance: walletSummary.balance,
+          error: 'Not enough free allowance or credits to send SMS. Please purchase credits or upgrade your subscription.',
+        })),
+        summary: {
+          total: messages.length,
+          sent: 0,
+          failed: messages.length,
+        },
+      };
+    }
   }
 
   // 3. Prepare messages for Mitto API
@@ -221,9 +262,9 @@ async function sendBulkSMSWithCredits(messages) {
             bulkId: result.bulkId,
           }, '[DEBUG] Mapping accepted messageId');
         }
-        // Message sent successfully - consume allowance/credits (idempotent) but never fail the send
+        // Message sent successfully - commit reservation (idempotent) but never fail the send
         try {
-          const billingResult = await consumeMessageBilling(mapping.ownerId, 1, {
+          const billingResult = await commitReservationForMessage(mapping.ownerId, mapping.internalMessageId, {
             reason: mapping.meta.reason || 'sms:send:bulk',
             campaignId: mapping.meta.campaignId || null,
             messageId: mapping.internalMessageId || null,
@@ -234,10 +275,8 @@ async function sendBulkSMSWithCredits(messages) {
             ownerId: mapping.ownerId,
             internalMessageId: mapping.internalMessageId,
             messageId: respMsg.messageId,
-            usedAllowance: billingResult.usedAllowance,
-            debitedCredits: billingResult.debitedCredits,
             balanceAfter: billingResult.balance,
-            alreadyBilled: Boolean(billingResult.alreadyBilled),
+            alreadyBilled: Boolean(billingResult.alreadyCommitted),
           }, 'Billing applied after successful bulk send');
 
           results.push({
@@ -246,8 +285,8 @@ async function sendBulkSMSWithCredits(messages) {
             messageId: respMsg.messageId,
             providerMessageId: respMsg.messageId,
             trafficAccountId: respMsg.trafficAccountId,
-            balanceAfter: billingResult.balance ?? balance,
-            billingStatus: billingResult.billingStatus || 'paid',
+            balanceAfter: billingResult.balance ?? walletSummary.balance,
+            billingStatus: billingResult.committed || billingResult.alreadyCommitted ? 'paid' : 'failed',
             billedAt: billingResult.billedAt || new Date(),
           });
           successCount++;
@@ -265,7 +304,7 @@ async function sendBulkSMSWithCredits(messages) {
             messageId: respMsg.messageId,
             providerMessageId: respMsg.messageId,
             trafficAccountId: respMsg.trafficAccountId,
-            balanceAfter: balance, // Return original balance if debit failed
+            balanceAfter: walletSummary.balance, // Return original balance if debit failed
             billingStatus: 'failed',
             billingError: billingErr.message,
           });
@@ -278,6 +317,11 @@ async function sendBulkSMSWithCredits(messages) {
           internalMessageId: mapping.internalMessageId,
           destination: mapping.destination,
         }, 'Mitto bulk send succeeded but no messageId returned for message');
+
+        await releaseReservationForMessage(mapping.ownerId, mapping.internalMessageId, {
+          reason: 'send_failed',
+          meta: { ...mapping.meta, bulkId: result.bulkId },
+        }).catch(() => null);
 
         results.push({
           internalMessageId: mapping.internalMessageId,
@@ -309,6 +353,9 @@ async function sendBulkSMSWithCredits(messages) {
     const processedInternalIds = new Set(messageMapping.map(m => m.internalMessageId));
     for (const msg of messages) {
       if (!processedInternalIds.has(msg.internalMessageId)) {
+        await releaseReservationForMessage(ownerId, msg.internalMessageId, {
+          reason: 'preparation_failed',
+        }).catch(() => null);
         results.push({
           internalMessageId: msg.internalMessageId,
           sent: false,
@@ -341,6 +388,17 @@ async function sendBulkSMSWithCredits(messages) {
     // 7. On send failure, do NOT debit credits (no messageId = no debit)
     logger.warn({ ownerId, messageCount: messages.length, err: err.message }, 'Bulk SMS send failed, no credits debited');
 
+    const messageIdsToRelease = messages
+      .map((msg) => msg.internalMessageId)
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (messageIdsToRelease.length) {
+      await Promise.all(
+        messageIdsToRelease.map((id) =>
+          releaseReservationForMessage(ownerId, id, { reason: 'send_failed' }).catch(() => null),
+        ),
+      );
+    }
+
     return {
       bulkId: null,
       results: messages.map(msg => ({
@@ -348,7 +406,7 @@ async function sendBulkSMSWithCredits(messages) {
         sent: false,
         reason: 'send_failed',
         error: err.message,
-        balanceAfter: balance,
+        balanceAfter: walletSummary.balance,
       })),
       summary: {
         total: messages.length,

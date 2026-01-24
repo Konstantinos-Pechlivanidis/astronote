@@ -12,7 +12,7 @@ exports.ensureWallet = async (ownerId) => {
   return prisma.wallet.upsert({
     where: { ownerId },
     update: {},
-    create: { ownerId, balance: 0 },
+    create: { ownerId, balance: 0, reservedBalance: 0 },
   });
 };
 
@@ -25,6 +25,25 @@ exports.getBalance = async (ownerId) => {
 };
 
 /**
+ * Get wallet summary including reserved balance and available credits.
+ */
+exports.getWalletSummary = async (ownerId) => {
+  const w = await prisma.wallet.upsert({
+    where: { ownerId },
+    update: {},
+    create: { ownerId, balance: 0, reservedBalance: 0 },
+    select: { balance: true, reservedBalance: true },
+  });
+  const reservedBalance = w.reservedBalance || 0;
+  const balance = w.balance || 0;
+  return {
+    balance,
+    reservedBalance,
+    available: Math.max(0, balance - reservedBalance),
+  };
+};
+
+/**
  * Internal helper to append a transaction & update wallet balance atomically.
  * Can be used within an existing transaction by passing tx parameter.
  */
@@ -33,12 +52,14 @@ async function appendTxnAndUpdate(ownerId, delta, type, { reason, campaignId, me
     const wallet = await client.wallet.upsert({
       where: { ownerId },
       update: {},
-      create: { ownerId, balance: 0 },
-      select: { id: true, balance: true },
+      create: { ownerId, balance: 0, reservedBalance: 0 },
+      select: { id: true, balance: true, reservedBalance: true },
     });
 
     const newBalance = wallet.balance + delta;
-    if (newBalance < 0) {
+    const reservedBalance = wallet.reservedBalance || 0;
+    const available = wallet.balance - reservedBalance;
+    if (delta < 0 && available + delta < 0) {
       logger.warn({ ownerId, currentBalance: wallet.balance, delta, type }, 'Insufficient credits');
       throw new Error('INSUFFICIENT_CREDITS');
     }
