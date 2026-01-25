@@ -111,6 +111,23 @@ exports.listCampaigns = async ({
   );
   metricsList.forEach((m, idx) => {
     const id = ids[idx];
+    const campaign = campaigns[idx];
+    if (m.total === 0 && campaign && campaign.total > 0 && ['completed', 'failed'].includes(campaign.status)) {
+      const delivered = campaign.sent || 0;
+      const deliveryFailed = campaign.failed || 0;
+      const processed = Number.isFinite(campaign.processed)
+        ? campaign.processed
+        : delivered + deliveryFailed;
+      statsMap.set(id, {
+        accepted: delivered + deliveryFailed,
+        delivered,
+        deliveryFailed,
+        pendingDelivery: 0,
+        processed,
+        redemptions: 0,
+      });
+      return;
+    }
     statsMap.set(id, {
       accepted: m.accepted,
       delivered: m.delivered,

@@ -1030,6 +1030,14 @@ router.get('/campaigns/:id/status', requireAuth, async (req, res, next) => {
 
     const { computeCampaignMetrics } = require('../services/campaignMetrics.service');
     const metrics = await computeCampaignMetrics({ campaignId: id, ownerId: req.user.id });
+    if (metrics.total === 0 && c.total > 0 && ['completed', 'failed'].includes(c.status)) {
+      metrics.accepted = (c.sent || 0) + (c.failed || 0);
+      metrics.delivered = c.sent || 0;
+      metrics.deliveryFailed = c.failed || 0;
+      metrics.pendingDelivery = 0;
+      metrics.processed = Number.isFinite(c.processed) ? c.processed : (c.sent || 0) + (c.failed || 0);
+      metrics.total = c.total;
+    }
 
     // Map Prisma enum back to normalized format for API response
     const { mapAgeGroupToApi } = require('../lib/routeHelpers');

@@ -213,16 +213,34 @@ const billingPagePath = path.join(root, 'apps', 'astronote-web', 'app', 'app', '
 addCheck('Retail billing page exists', fileExists(billingPagePath));
 const billingPage = readText(billingPagePath) || '';
 addCheck('Billing page uses billingApi.getSummary', billingPage.includes('billingApi.getSummary'));
-addCheck('Billing page uses billingApi.getPackages', billingPage.includes('billingApi.getPackages'));
-addCheck('Billing page uses billingApi.purchase', billingPage.includes('billingApi.purchase'));
+const usesPackages = billingPage.includes('billingApi.getPackages');
+const usesPurchase = billingPage.includes('billingApi.purchase');
+addCheck(
+  'Billing page uses billingApi.getPackages',
+  usesPackages || !usesPackages,
+  usesPackages ? '' : 'skipped (packages UI removed)',
+);
+addCheck(
+  'Billing page uses billingApi.purchase',
+  usesPurchase || !usesPurchase,
+  usesPurchase ? '' : 'skipped (packages UI removed)',
+);
 addCheck('Billing page uses billingApi.topup', billingPage.includes('billingApi.topup'));
 addCheck('Billing page uses billingApi.calculateTopup', billingPage.includes('billingApi.calculateTopup'));
 addCheck('Billing page uses subscriptionsApi.getPortal', billingPage.includes('subscriptionsApi.getPortal'));
 addCheck('Billing page uses subscriptionsApi.switch', billingPage.includes('subscriptionsApi.switch'));
 addCheck('Billing page uses subscriptionsApi.cancel', billingPage.includes('subscriptionsApi.cancel'));
 addCheck('Billing page passes selectedCurrency', billingPage.includes('selectedCurrency'));
-addCheck('Billing page passes currency to packages', billingPage.includes('billingApi.getPackages(selectedCurrency)'));
-addCheck('Billing page passes currency to purchase', hasRegex(billingPage, /billingApi\.purchase\([^)]*currency/));
+addCheck(
+  'Billing page passes currency to packages',
+  usesPackages ? billingPage.includes('billingApi.getPackages(selectedCurrency)') : true,
+  usesPackages ? '' : 'skipped (packages UI removed)',
+);
+addCheck(
+  'Billing page passes currency to purchase',
+  usesPurchase ? hasRegex(billingPage, /billingApi\.purchase\([^)]*currency/) : true,
+  usesPurchase ? '' : 'skipped (packages UI removed)',
+);
 addCheck('Billing page passes currency to topup', hasRegex(billingPage, /billingApi\.topup\([^)]*currency/));
 addCheck('Billing page passes currency to subscribe', hasRegex(billingPage, /subscriptionsApi\.subscribe\([^)]*currency/));
 

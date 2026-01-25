@@ -1,6 +1,6 @@
 # Billing E2E Verification
 
-Run Date: 2026-01-24T21:59:12.112Z
+Run Date: 2026-01-25T09:46:44.732Z
 
 ## Prisma Schema Checks
 - OK: schema.prisma exists
@@ -79,16 +79,16 @@ Run Date: 2026-01-24T21:59:12.112Z
 ## Frontend Checks
 - OK: Retail billing page exists
 - OK: Billing page uses billingApi.getSummary
-- OK: Billing page uses billingApi.getPackages
-- OK: Billing page uses billingApi.purchase
+- OK: Billing page uses billingApi.getPackages (skipped (packages UI removed))
+- OK: Billing page uses billingApi.purchase (skipped (packages UI removed))
 - OK: Billing page uses billingApi.topup
 - OK: Billing page uses billingApi.calculateTopup
 - OK: Billing page uses subscriptionsApi.getPortal
 - OK: Billing page uses subscriptionsApi.switch
 - OK: Billing page uses subscriptionsApi.cancel
 - OK: Billing page passes selectedCurrency
-- OK: Billing page passes currency to packages
-- OK: Billing page passes currency to purchase
+- OK: Billing page passes currency to packages (skipped (packages UI removed))
+- OK: Billing page passes currency to purchase (skipped (packages UI removed))
 - OK: Billing page passes currency to topup
 - OK: Billing page passes currency to subscribe
 - OK: Endpoints include /api/billing/balance

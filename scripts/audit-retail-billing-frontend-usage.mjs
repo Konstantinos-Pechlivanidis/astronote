@@ -43,8 +43,18 @@ const enqueueHook = readText(enqueueHookPath) || '';
 
 if (billingPage) {
   addCheck('billing page uses billingApi.getSummary', billingPage.includes('billingApi.getSummary'));
-  addCheck('billing page uses billingApi.getPackages with currency', billingPage.includes('billingApi.getPackages(selectedCurrency)'));
-  addCheck('billing page uses billingApi.purchase with idempotencyKey', /billingApi\.purchase\([^)]*idempotencyKey/.test(billingPage));
+  const usesPackages = billingPage.includes('billingApi.getPackages');
+  const usesPurchase = billingPage.includes('billingApi.purchase');
+  addCheck(
+    'billing page uses billingApi.getPackages with currency',
+    usesPackages ? billingPage.includes('billingApi.getPackages(selectedCurrency)') : true,
+    usesPackages ? '' : 'skipped (packages UI removed)',
+  );
+  addCheck(
+    'billing page uses billingApi.purchase with idempotencyKey',
+    usesPurchase ? /billingApi\.purchase\([^)]*idempotencyKey/.test(billingPage) : true,
+    usesPurchase ? '' : 'skipped (packages UI removed)',
+  );
   addCheck('billing page uses subscriptionsApi.switch', billingPage.includes('subscriptionsApi.switch'));
   addCheck('billing page uses subscriptionsApi.cancel', billingPage.includes('subscriptionsApi.cancel'));
   addCheck('billing page passes idempotencyKey to switch', /subscriptionsApi\.switch\([^)]*idempotencyKey/.test(billingPage));

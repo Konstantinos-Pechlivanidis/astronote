@@ -26,7 +26,11 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
     where: { id: campaignId, ownerId },
     select: {
       id: true,
+      status: true,
       total: true,
+      sent: true,
+      failed: true,
+      processed: true,
       updatedAt: true,
     },
   });
@@ -38,6 +42,16 @@ exports.getCampaignStats = async (campaignId, ownerId) => {
 
   const { computeCampaignMetrics } = require('./campaignMetrics.service');
   const metrics = await computeCampaignMetrics({ campaignId, ownerId });
+  if (metrics.total === 0 && campaign.total > 0 && ['completed', 'failed'].includes(campaign.status)) {
+    metrics.accepted = (campaign.sent || 0) + (campaign.failed || 0);
+    metrics.delivered = campaign.sent || 0;
+    metrics.deliveryFailed = campaign.failed || 0;
+    metrics.pendingDelivery = 0;
+    metrics.processed = Number.isFinite(campaign.processed)
+      ? campaign.processed
+      : (campaign.sent || 0) + (campaign.failed || 0);
+    metrics.total = campaign.total;
+  }
 
   // Get conversions count from Redemption table (this is our conversion tracking)
   const conversions = await prisma.redemption.count({
@@ -100,6 +114,10 @@ exports.getManyCampaignsStats = async (campaignIds, ownerId) => {
     select: {
       id: true,
       total: true,
+      status: true,
+      sent: true,
+      failed: true,
+      processed: true,
     },
   });
 
@@ -122,6 +140,24 @@ exports.getManyCampaignsStats = async (campaignIds, ownerId) => {
   const out = campaigns.map((c, idx) => {
     const m = metricsList[idx];
     const conversionsCount = conversionsMap.get(c.id) || 0;
+    if (m.total === 0 && c.total > 0 && ['completed', 'failed'].includes(c.status)) {
+      const delivered = c.sent || 0;
+      const deliveryFailed = c.failed || 0;
+      return {
+        campaignId: c.id,
+        total: c.total,
+        accepted: delivered + deliveryFailed,
+        delivered,
+        failedDelivery: deliveryFailed,
+        pendingDelivery: 0,
+        // Backward compatibility
+        sent: delivered,
+        failed: deliveryFailed,
+        conversions: conversionsCount,
+        failureRate: rate(deliveryFailed, delivered || 1),
+        conversionRate: rate(conversionsCount, delivered || 1),
+      };
+    }
     return {
       campaignId: c.id,
       total: m.total,

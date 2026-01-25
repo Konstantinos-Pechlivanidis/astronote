@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { billingApi, type Package } from '@/src/lib/retail/api/billing';
+import { billingApi } from '@/src/lib/retail/api/billing';
 import { subscriptionsApi } from '@/src/lib/retail/api/subscriptions';
 import api from '@/src/lib/retail/api/axios';
 import { endpoints } from '@/src/lib/retail/api/endpoints';
@@ -16,8 +16,6 @@ import {
   CreditCard,
   CheckCircle,
   XCircle,
-  Package as PackageIcon,
-  ShoppingCart,
   Plus,
   AlertCircle,
   ArrowUp,
@@ -833,117 +831,6 @@ function CreditTopupCard({ currency }: { currency: BillingCurrency }) {
   );
 }
 
-function PackageCard({ pkg, currency }: { pkg: Package; currency: BillingCurrency }) {
-  const [isPurchasing, setIsPurchasing] = useState(false);
-  const idempotencyKeyRef = useRef<string | null>(null);
-
-  const purchaseMutation = useMutation({
-    mutationFn: async ({
-      packageId,
-      currency = 'EUR',
-      idempotencyKey,
-    }: { packageId: number; currency?: string; idempotencyKey?: string }) => {
-      const res = await billingApi.purchase({ packageId, currency, idempotencyKey });
-      return res.data;
-    },
-    onSuccess: (data) => {
-      if (data.checkoutUrl || data.url) {
-        window.location.href = data.checkoutUrl || data.url!;
-      } else {
-        toast.error('No checkout URL received');
-      }
-    },
-    onError: (error: any) => {
-      const message = error.response?.data?.message || 'Failed to initiate purchase';
-      toast.error(message);
-      setIsPurchasing(false);
-    },
-    retry: false,
-  });
-
-  const getPrice = (pkg: Package) => {
-    if ('priceCents' in pkg && typeof pkg.priceCents === 'number') {
-      return (pkg.priceCents / 100).toFixed(2);
-    }
-    if ('amount' in pkg && typeof pkg.amount === 'number') {
-      return pkg.amount.toFixed(2);
-    }
-    if ('priceEur' in pkg && typeof pkg.priceEur === 'number') {
-      return pkg.priceEur.toFixed(2);
-    }
-    return pkg.price.toFixed(2);
-  };
-
-  const getUnits = (pkg: Package) => {
-    if ('units' in pkg && pkg.units) {
-      return pkg.units;
-    }
-    return pkg.credits || 0;
-  };
-
-  const handlePurchase = () => {
-    if (!idempotencyKeyRef.current) {
-      idempotencyKeyRef.current = typeof crypto?.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    }
-    const unitCount = getUnits(pkg).toLocaleString();
-    const priceLabel = `${currencySymbol(pkg.currency || currency)}${getPrice(pkg)}`;
-    const confirmMessage = `You’re purchasing: ${priceLabel} → +${unitCount} credits.\nProceed to Stripe Checkout?`;
-    if (typeof window !== 'undefined' && !window.confirm(confirmMessage)) {
-      return;
-    }
-    setIsPurchasing(true);
-    purchaseMutation.mutate({
-      packageId: Number(pkg.id),
-      currency,
-      idempotencyKey: idempotencyKeyRef.current || undefined,
-    });
-  };
-
-  return (
-    <RetailCard hover>
-      <div className="flex items-center gap-2 mb-3">
-        <PackageIcon className="w-5 h-5 text-accent" />
-        <h3 className="text-lg font-semibold text-text-primary">
-          {pkg.displayName || pkg.name || 'Package'}
-        </h3>
-      </div>
-      <div className="mb-4">
-        <div className="text-2xl font-bold text-text-primary mb-1">
-          {getUnits(pkg).toLocaleString()} credits
-        </div>
-        <div className="text-lg text-text-secondary">
-          {currencySymbol(pkg.currency || currency)}
-          {getPrice(pkg)}
-        </div>
-      </div>
-      <Button
-        onClick={handlePurchase}
-        disabled={isPurchasing || purchaseMutation.isPending || (pkg as any)?.available === false}
-        className="w-full"
-      >
-        {isPurchasing || purchaseMutation.isPending ? (
-          <>
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-            Processing...
-          </>
-        ) : (
-          <>
-            <ShoppingCart className="w-4 h-4 mr-2" />
-            Purchase
-          </>
-        )}
-      </Button>
-      {(pkg as any)?.available === false && (
-        <p className="text-xs text-text-tertiary mt-2 text-center">
-          Stripe checkout not available for this package
-        </p>
-      )}
-    </RetailCard>
-  );
-}
-
 function TransactionsTable({ transactions, isLoading }: { transactions: any[]; isLoading: boolean }) {
   if (isLoading) {
     return (
@@ -1265,15 +1152,6 @@ export default function RetailBillingPage() {
     }
   }, [currencyStorageKey, summaryData?.billingCurrency]);
 
-  const { data: packages, isLoading: packagesLoading, error: packagesError } = useQuery({
-    queryKey: ['retail-packages', selectedCurrency],
-    queryFn: async () => {
-      const res = await billingApi.getPackages(selectedCurrency);
-      return res.data;
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
-
   const {
     data: transactionsData,
     isLoading: transactionsLoading,
@@ -1441,9 +1319,6 @@ export default function RetailBillingPage() {
   const subscription =
     subscriptionCurrent || summaryData?.subscription || { active: false, planType: null };
   const credits = summaryData?.totalCredits ?? (summaryData?.credits || 0);
-  const availablePackages = Array.isArray(packages)
-    ? packages.filter((pkg) => ['credit_topup', 'subscription_package', 'credit_pack'].includes(pkg.type || ''))
-    : [];
   const subscriptionStatus = subscription?.status || (subscription?.active ? 'active' : 'inactive');
 
   return (
@@ -1478,44 +1353,6 @@ export default function RetailBillingPage() {
           />
           <CreditTopupCard currency={selectedCurrency} />
         </div>
-
-        {subscription.active && (
-          <div>
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold text-text-primary">Credit Packages</h2>
-              <p className="mt-1 text-sm text-text-secondary">Purchase additional credit packages</p>
-            </div>
-            {packagesLoading && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {[1, 2, 3].map((i) => (
-                  <RetailCard key={i}>
-                    <div className="h-20 animate-pulse rounded bg-surface-light"></div>
-                  </RetailCard>
-                ))}
-              </div>
-            )}
-            {packagesError && (
-              <RetailCard>
-                <div className="text-sm text-red-400">Error loading packages</div>
-              </RetailCard>
-            )}
-            {!packagesLoading && !packagesError && packages && (
-              <>
-                {availablePackages.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {availablePackages.map((pkg) => (
-                      <PackageCard key={pkg.id} pkg={pkg} currency={selectedCurrency} />
-                    ))}
-                  </div>
-                ) : (
-                  <RetailCard>
-                    <p className="text-sm text-text-secondary">No packages available at this time.</p>
-                  </RetailCard>
-                )}
-              </>
-            )}
-          </div>
-        )}
 
         <div className="mb-6 space-y-4">
           <div className="flex flex-wrap items-center gap-2">

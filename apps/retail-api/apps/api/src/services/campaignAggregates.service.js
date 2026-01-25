@@ -46,6 +46,24 @@ async function updateCampaignAggregates(campaignId, ownerId) {
     const pendingDelivery = metrics.pendingDelivery;
     const processed = metrics.processed;
 
+    const isFinished = Boolean(campaign.finishedAt) || ['completed', 'failed'].includes(campaign.status);
+    const isNotStarted = !campaign.startedAt && ['draft', 'scheduled', 'paused'].includes(campaign.status);
+    if (total === 0 && (isFinished || isNotStarted)) {
+      logger.info({
+        campaignId,
+        ownerId,
+        status: campaign.status,
+        total,
+      }, 'Skipping aggregate update because campaign has no messages but status is stable');
+      return {
+        total: campaign.total,
+        sent: campaign.sent,
+        processed: campaign.processed ?? (campaign.sent + campaign.failed),
+        failed: campaign.failed,
+        campaignStatus: campaign.status,
+      };
+    }
+
     // SLA calculation
     const defaultSlaSeconds =
       total <= 100 ? 600 :
