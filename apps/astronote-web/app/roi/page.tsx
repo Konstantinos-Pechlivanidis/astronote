@@ -1,7 +1,6 @@
 'use client';
 
-import { Navbar } from '@/components/layout/navbar';
-import { Footer } from '@/components/layout/footer';
+import { MarketingShell } from '@/components/layout/marketing-shell';
 import { GlassCard } from '@/components/ui/glass-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -98,9 +97,7 @@ export default function ROIPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-
+    <MarketingShell>
       <main className="flex-1 pt-24 pb-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
@@ -450,8 +447,6 @@ export default function ROIPage() {
           </div>
         </div>
       </main>
-
-      <Footer />
-    </div>
+    </MarketingShell>
   );
 }

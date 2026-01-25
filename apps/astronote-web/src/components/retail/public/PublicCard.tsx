@@ -12,7 +12,7 @@ export function PublicCard({
   style?: CSSProperties
 }) {
   return (
-    <GlassCard className={cn('p-6', className)} style={style}>
+    <GlassCard className={cn('p-7 sm:p-9 rounded-3xl', className)} style={style}>
       {children}
     </GlassCard>
   );

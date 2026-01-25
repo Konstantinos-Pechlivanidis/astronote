@@ -24,7 +24,7 @@ export function SmsPhonePreviewDark({
   timestamp = 'Now',
   phoneLabel,
   showCounts = true,
-  accentColor = '#0ABAB5',
+  accentColor = '#12C6B5',
   className = '',
 }: SmsPhonePreviewDarkProps) {
   // Calculate SMS segments (simple 160-char segmentation)
@@ -237,4 +237,3 @@ export function SmsPhonePreviewDark({
     </div>
   );
 }
-

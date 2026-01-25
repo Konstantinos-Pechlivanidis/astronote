@@ -89,54 +89,54 @@ export default function OfferPage() {
       <PublicCard>
         <div className="space-y-6">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl bg-[#0ed7c4]/15 border border-[#0ed7c4]/40 flex items-center justify-center text-[#0ed7c4]">
+            <div className="h-11 w-11 rounded-xl bg-accent-light border border-accent flex items-center justify-center text-accent">
               <Gift className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-white/60">Exclusive Offer</p>
-              <h1 className="text-2xl font-bold text-white">Claim your reward</h1>
-              <p className="text-sm text-white/70">From {storeName}</p>
+              <p className="text-sm uppercase tracking-[0.2em] text-text-tertiary">Exclusive Offer</p>
+              <h1 className="text-2xl font-bold text-text-primary">Claim your reward</h1>
+              <p className="text-sm text-text-secondary">From {storeName}</p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <p className="text-lg text-white whitespace-pre-wrap leading-relaxed">{offerText}</p>
+          <div className="rounded-2xl border border-border bg-surface p-4">
+            <p className="text-lg text-text-primary whitespace-pre-wrap leading-relaxed">{offerText}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-            <div className="rounded-2xl border border-[#0ed7c4]/30 bg-[#0ed7c4]/5 p-4 text-white">
+            <div className="rounded-2xl border border-accent bg-accent-light p-4 text-text-primary">
               <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-[#0ed7c4]" />
+                <Sparkles className="w-4 h-4 text-accent" />
                 <p className="text-sm font-semibold">How to redeem</p>
               </div>
-              <ul className="text-sm text-white/80 space-y-2">
+              <ul className="text-sm text-text-secondary space-y-2">
                 <li>1) Show this page at checkout.</li>
                 <li>2) Staff scans the QR code or uses the link below.</li>
                 <li>3) Enjoy your reward instantly.</li>
               </ul>
               {redeemUrl ? (
-                <p className="mt-3 text-xs text-white/60 break-all">
+                <p className="mt-3 text-xs text-text-tertiary break-all">
                   Redeem URL: {redeemUrl}
                 </p>
               ) : null}
             </div>
             {qrImageUrl ? (
               <div className="flex flex-col items-center gap-3">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 shadow-lg">
+                <div className="rounded-2xl border border-border bg-surface p-3 shadow-lg">
                   <img
                     src={qrImageUrl}
                     alt="Redeem QR code"
                     className="w-48 h-48 md:w-56 md:h-56 rounded-xl bg-white"
                   />
                 </div>
-                <p className="text-xs text-white/70">Scan to redeem securely</p>
+                <p className="text-xs text-text-secondary">Scan to redeem securely</p>
               </div>
             ) : null}
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center gap-3">
-            <ShieldCheck className="w-5 h-5 text-[#0ed7c4]" />
-            <p className="text-sm text-white/80">
+          <div className="rounded-2xl border border-border bg-surface p-4 flex items-center gap-3">
+            <ShieldCheck className="w-5 h-5 text-accent" />
+            <p className="text-sm text-text-secondary">
               Safe links on <strong>astronote.onrender.com</strong>. Each code is unique to your visit.
             </p>
           </div>

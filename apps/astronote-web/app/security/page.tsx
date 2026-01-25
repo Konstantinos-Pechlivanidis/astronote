@@ -1,5 +1,4 @@
-import { Navbar } from '@/components/layout/navbar';
-import { Footer } from '@/components/layout/footer';
+import { MarketingShell } from '@/components/layout/marketing-shell';
 import { GlassCard } from '@/components/ui/glass-card';
 import { Shield, Lock, Eye, CheckCircle2 } from 'lucide-react';
 
@@ -28,9 +27,7 @@ const securityFeatures = [
 
 export default function SecurityPage() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-
+    <MarketingShell>
       <main className="flex-1 pt-24 pb-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
@@ -76,9 +73,6 @@ export default function SecurityPage() {
           </GlassCard>
         </div>
       </main>
-
-      <Footer />
-    </div>
+    </MarketingShell>
   );
 }
-

@@ -6,37 +6,36 @@
 export const THEME = {
   // Backgrounds
   bg: {
-    page: '#0A0E14',           // Very dark blue-grey
-    elevated: '#141921',        // Slightly lighter for cards
-    card: 'rgba(255, 255, 255, 0.06)',  // Glass card
+    page: '#0B1120',           // Deep navy
+    elevated: '#111A2B',        // Slightly lighter for cards
+    card: 'rgba(255, 255, 255, 0.07)',  // Glass card
   },
 
   // Borders
   border: {
-    default: 'rgba(255, 255, 255, 0.12)',
-    subtle: 'rgba(255, 255, 255, 0.06)',
+    default: 'rgba(148, 163, 184, 0.2)',
+    subtle: 'rgba(148, 163, 184, 0.12)',
   },
 
   // Text
   text: {
-    primary: '#FFFFFF',
-    secondary: '#CBD5E1',      // slate-300
+    primary: '#F8FAFC',
+    secondary: '#E2E8F0',      // slate-200
     tertiary: '#94A3B8',       // slate-400
   },
 
   // Accent (Astronote teal)
   accent: {
-    default: '#0ABAB5',
-    hover: '#0BC5C0',
-    light: 'rgba(10, 186, 181, 0.15)',
+    default: '#12C6B5',
+    hover: '#19D3C1',
+    light: 'rgba(18, 198, 181, 0.2)',
   },
 
   // Input specific
   input: {
-    bg: 'rgba(255, 255, 255, 0.05)',
-    border: 'rgba(255, 255, 255, 0.12)',
-    text: '#FFFFFF',
+    bg: 'rgba(15, 23, 42, 0.65)',
+    border: 'rgba(148, 163, 184, 0.2)',
+    text: '#F8FAFC',
     placeholder: '#94A3B8',    // slate-400
   },
 } as const;
-

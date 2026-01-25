@@ -61,14 +61,14 @@ function ShopifyConnectContent() {
 
   return (
     <PublicLayout>
-      <div className="max-w-md mx-auto text-white space-y-6">
-        <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-[#0ed7c4]/15 border border-[#0ed7c4]/30 mx-auto">
-          <Store className="w-8 h-8 text-[#0ed7c4]" />
+      <div className="max-w-md mx-auto text-text-primary space-y-6">
+        <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-accent-light border border-accent mx-auto">
+          <Store className="w-8 h-8 text-accent" />
         </div>
         <div className="text-center space-y-2">
-          <p className="text-sm uppercase tracking-[0.2em] text-white/60">Shopify</p>
+          <p className="text-sm uppercase tracking-[0.2em] text-text-tertiary">Shopify</p>
           <h1 className="text-3xl font-bold">Connect your store</h1>
-          <p className="text-sm text-white/75">
+          <p className="text-sm text-text-secondary">
             {isEmbedded ? 'Connecting your Shopify store...' : 'Enter your Shopify store domain to get started'}
           </p>
         </div>
@@ -77,7 +77,7 @@ function ShopifyConnectContent() {
           {!isEmbedded && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-white/80 mb-2">
+                <label className="block text-sm font-medium text-text-secondary mb-2">
                   Store Domain
                 </label>
                 <div className="flex gap-2">
@@ -88,16 +88,16 @@ function ShopifyConnectContent() {
                     onChange={(e) => setShop(e.target.value)}
                     className="flex-1"
                   />
-                  <span className="flex items-center text-white/60">.myshopify.com</span>
+                  <span className="flex items-center text-text-tertiary">.myshopify.com</span>
                 </div>
-                <p className="text-xs text-white/60 mt-2">
+                <p className="text-xs text-text-tertiary mt-2">
                   Enter just the store name (e.g., &quot;your-store&quot; not &quot;your-store.myshopify.com&quot;)
                 </p>
               </div>
 
               <Button
                 onClick={handleOAuthConnect}
-                className="w-full bg-[#0ed7c4] text-[#0b1f2e] hover:bg-[#12b6a7]"
+                className="w-full bg-accent text-[#041b1f] hover:bg-accent-hover"
                 size="lg"
                 disabled={isLoading || !shop}
               >
@@ -107,11 +107,11 @@ function ShopifyConnectContent() {
           )}
 
           {isEmbedded && isLoading && (
-            <div className="text-center text-white/75">Authenticating with Shopify...</div>
+            <div className="text-center text-text-secondary">Authenticating with Shopify...</div>
           )}
 
           <div className="mt-6 text-center">
-            <a href="/auth" className="text-sm text-white/70 hover:text-white">
+            <a href="/auth" className="text-sm text-text-tertiary hover:text-text-primary">
               ← Back to service selection
             </a>
           </div>

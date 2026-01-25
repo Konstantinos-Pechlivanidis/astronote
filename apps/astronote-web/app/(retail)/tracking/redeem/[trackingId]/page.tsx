@@ -59,21 +59,21 @@ export default function RedeemPage() {
   if (isRedeemed) {
     return (
       <PublicLayout>
-        <PublicCard className="text-white space-y-3">
+        <PublicCard className="text-text-primary space-y-3">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-[#0ed7c4]/15 border border-[#0ed7c4]/30 flex items-center justify-center text-[#0ed7c4]">
+            <div className="h-10 w-10 rounded-full bg-accent-light border border-accent flex items-center justify-center text-accent">
               <CheckCircle className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-white/60">Success</p>
-              <h2 className="text-xl font-semibold text-white">Offer redeemed</h2>
+              <p className="text-sm uppercase tracking-[0.2em] text-text-tertiary">Success</p>
+              <h2 className="text-xl font-semibold text-text-primary">Offer redeemed</h2>
             </div>
           </div>
-          <p className="text-sm text-white/80">
+          <p className="text-sm text-text-secondary">
             This offer{storeName ? ` from ${storeName}` : ''} has been redeemed.
           </p>
           {redeemedAt && (
-            <p className="text-xs text-white/60">
+            <p className="text-xs text-text-tertiary">
               Redeemed on {format(new Date(redeemedAt), 'PPpp')}
             </p>
           )}
@@ -84,17 +84,17 @@ export default function RedeemPage() {
 
   return (
     <PublicLayout>
-      <PublicCard className="text-white space-y-4">
+      <PublicCard className="text-text-primary space-y-4">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white">
+          <div className="h-10 w-10 rounded-full bg-surface border border-border flex items-center justify-center text-text-primary">
             <Clock className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-white/60">Not yet redeemed</p>
-            <h2 className="text-xl font-semibold text-white">Awaiting redemption</h2>
+            <p className="text-sm uppercase tracking-[0.2em] text-text-tertiary">Not yet redeemed</p>
+            <h2 className="text-xl font-semibold text-text-primary">Awaiting redemption</h2>
           </div>
         </div>
-        <p className="text-sm text-white/80">
+        <p className="text-sm text-text-secondary">
           This offer{storeName ? ` from ${storeName}` : ''} has not been redeemed yet. Show your offer page or QR at checkout to redeem.
         </p>
       </PublicCard>

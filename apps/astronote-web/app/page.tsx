@@ -1,5 +1,4 @@
-import { Navbar } from '@/components/layout/navbar';
-import { Footer } from '@/components/layout/footer';
+import { MarketingShell } from '@/components/layout/marketing-shell';
 import { Button } from '@/components/ui/button';
 import { GlassCard } from '@/components/ui/glass-card';
 import { SmsPhonePreviewDark } from '@/src/components/marketing/SmsPhonePreviewDark';
@@ -9,9 +8,7 @@ import { marketingCopy } from '@/lib/content/marketingCopy';
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-
+    <MarketingShell>
       <main className="flex-1">
         {/* Hero Section */}
         <section className="pt-32 pb-20 px-4 sm:px-6 lg:px-8">
@@ -238,8 +235,6 @@ export default function HomePage() {
           </div>
         </section>
       </main>
-
-      <Footer />
-    </div>
+    </MarketingShell>
   );
 }

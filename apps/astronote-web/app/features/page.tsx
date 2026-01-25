@@ -1,5 +1,4 @@
-import { Navbar } from '@/components/layout/navbar';
-import { Footer } from '@/components/layout/footer';
+import { MarketingShell } from '@/components/layout/marketing-shell';
 import { GlassCard } from '@/components/ui/glass-card';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -8,9 +7,7 @@ import { marketingCopy } from '@/lib/content/marketingCopy';
 
 export default function FeaturesPage() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
-
+    <MarketingShell>
       <main className="flex-1 pt-24 pb-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
@@ -61,8 +58,6 @@ export default function FeaturesPage() {
           </div>
         </div>
       </main>
-
-      <Footer />
-    </div>
+    </MarketingShell>
   );
 }

@@ -60,25 +60,25 @@ function ResubscribeContent() {
 
   return (
     <PublicLayout>
-      <PublicCard className="text-white space-y-5">
+      <PublicCard className="text-text-primary space-y-5">
         <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-xl bg-[#0ed7c4]/15 border border-[#0ed7c4]/30 flex items-center justify-center text-[#0ed7c4]">
+          <div className="h-11 w-11 rounded-xl bg-accent-light border border-accent flex items-center justify-center text-accent">
             <Bell className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-white/60">Welcome back</p>
+            <p className="text-sm uppercase tracking-[0.2em] text-text-tertiary">Welcome back</p>
             <h1 className="text-2xl font-bold">Resubscribe to SMS updates</h1>
-            <p className="text-sm text-white/70">
+            <p className="text-sm text-text-secondary">
               Get offers and updates again. You can opt out anytime.
             </p>
           </div>
         </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
-          <div className="flex items-center gap-2 text-[#0ed7c4]">
+        <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+          <div className="flex items-center gap-2 text-accent">
             <ShieldCheck className="w-4 h-4" />
-            <p className="text-sm font-semibold text-white">Trusted by Astronote</p>
+            <p className="text-sm font-semibold text-text-primary">Trusted by Astronote</p>
           </div>
-          <p className="text-sm text-white/80">
+          <p className="text-sm text-text-secondary">
             We only send relevant messages. Reply STOP or use the unsubscribe link to opt out instantly.
           </p>
         </div>
@@ -86,11 +86,11 @@ function ResubscribeContent() {
           <Button
             onClick={handleResubscribe}
             disabled={resubscribeMutation.isPending}
-            className="w-full bg-[#0ed7c4] text-[#0b1f2e] hover:bg-[#12b6a7]"
+            className="w-full bg-accent text-[#041b1f] hover:bg-accent-hover"
           >
             {resubscribeMutation.isPending ? 'Processing...' : 'Yes, resubscribe me'}
           </Button>
-          <p className="text-xs text-white/60 text-center">
+          <p className="text-xs text-text-tertiary text-center">
             You can unsubscribe at any time.
           </p>
         </div>

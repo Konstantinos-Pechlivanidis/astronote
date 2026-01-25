@@ -83,7 +83,7 @@ export default function RetailRegisterPage() {
     <RetailPublicOnlyGuard>
       <PublicLayout>
         <div className="w-full max-w-md mx-auto">
-          <PublicCard className="p-6 sm:p-8 lg:p-10 text-white">
+          <PublicCard className="p-6 sm:p-8 lg:p-10 text-text-primary">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               <AuthHeader
                 title="Create your account"

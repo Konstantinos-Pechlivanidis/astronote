@@ -19,12 +19,12 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 glass border-b border-border">
+    <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black/30 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center space-x-2">
-            <div className="w-9 h-9 rounded-lg bg-white/90 overflow-hidden border border-border shadow-sm">
+            <div className="w-9 h-9 rounded-lg bg-white/90 overflow-hidden border border-white/20 shadow-sm">
               <Image
                 src="/logo/astronote-logo-1200x1200.png"
                 alt="Astronote logo"
@@ -34,16 +34,21 @@ export function Navbar() {
                 priority
               />
             </div>
-            <span className="text-xl font-semibold text-text-primary">Astronote</span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-xl font-semibold text-text-primary font-display">Astronote</span>
+              <span className="text-[11px] uppercase tracking-[0.24em] text-text-tertiary hidden sm:block">
+                Astronomical ROI
+              </span>
+            </div>
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-1">
+          <div className="hidden md:flex items-center space-x-1 text-sm">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="px-4 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface transition-colors"
+                className="px-4 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
               >
                 {item.label}
               </Link>
@@ -58,13 +63,15 @@ export function Navbar() {
               </Button>
             </Link>
             <Link href="/pricing">
-              <Button size="sm">Start earning</Button>
+              <Button size="sm" className="shadow-[0_12px_30px_-18px_rgba(18,198,181,0.9)]">
+                Start earning
+              </Button>
             </Link>
           </div>
 
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden p-2 rounded-lg hover:bg-surface"
+            className="md:hidden p-2 rounded-lg hover:bg-white/10"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle menu"
           >
@@ -88,7 +95,7 @@ export function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="px-4 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface transition-colors"
+                className="px-4 py-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-white/10 transition-colors"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 {item.label}

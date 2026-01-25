@@ -49,7 +49,7 @@ function StateCard({ title, message, type }: { title: string; message: string; t
       border: `1px solid ${THEME.border.default}`,
     }}>
       {type === 'loading' && (
-        <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-t-[#0ABAB5]" style={{
+        <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-t-accent" style={{
           borderColor: `${THEME.border.default} ${THEME.border.default} ${THEME.accent.default} ${THEME.border.default}`,
         }} />
       )}

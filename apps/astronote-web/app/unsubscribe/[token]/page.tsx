@@ -113,15 +113,15 @@ function UnsubscribeContent() {
   return (
     <PublicLayout>
       <PublicCard>
-        <div className="space-y-5 text-white">
+        <div className="space-y-5 text-text-primary">
           <div className="flex items-center gap-3">
-            <div className="h-11 w-11 rounded-xl bg-[#0ed7c4]/15 border border-[#0ed7c4]/30 flex items-center justify-center text-[#0ed7c4]">
+            <div className="h-11 w-11 rounded-xl bg-accent-light border border-accent flex items-center justify-center text-accent">
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-white/60">Your preferences</p>
+              <p className="text-sm uppercase tracking-[0.2em] text-text-tertiary">Your preferences</p>
               <h1 className="text-2xl font-bold">Stay in the loop or unsubscribe</h1>
-              <p className="text-sm text-white/70">
+              <p className="text-sm text-text-secondary">
                 {contactName ? `Hi ${contactName}, ` : ''}messages from <strong>{storeName}</strong> are tailored for you.
               </p>
             </div>
@@ -129,22 +129,22 @@ function UnsubscribeContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center gap-2 text-[#0ed7c4] mb-2">
+              <div className="flex items-center gap-2 text-accent mb-2">
                 <ThumbsUp className="w-4 h-4" />
-                <p className="text-sm font-semibold text-white">Why stay subscribed</p>
+                <p className="text-sm font-semibold text-text-primary">Why stay subscribed</p>
               </div>
-              <ul className="text-sm text-white/80 space-y-2">
+              <ul className="text-sm text-text-secondary space-y-2">
                 <li>• Early access to offers and drops.</li>
                 <li>• Personalized rewards based on your visits.</li>
                 <li>• Zero spam—only store updates that matter.</li>
               </ul>
             </div>
-            <div className="rounded-xl border border-[#0ed7c4]/30 bg-[#0ed7c4]/5 p-4">
-              <div className="flex items-center gap-2 text-[#0ed7c4] mb-2">
+            <div className="rounded-xl border border-accent bg-accent-light p-4">
+              <div className="flex items-center gap-2 text-accent mb-2">
                 <BellOff className="w-4 h-4" />
-                <p className="text-sm font-semibold text-white">Unsubscribe anytime</p>
+                <p className="text-sm font-semibold text-text-primary">Unsubscribe anytime</p>
               </div>
-              <p className="text-sm text-white/80 mb-3">
+              <p className="text-sm text-text-secondary mb-3">
                 If you prefer to opt out, we will stop SMS immediately—no questions asked.
               </p>
               <Button
@@ -154,12 +154,12 @@ function UnsubscribeContent() {
               >
                 {unsubscribeMutation.isPending ? 'Processing...' : 'Unsubscribe now'}
               </Button>
-              <p className="text-xs text-white/60 mt-2">You can resubscribe later by contacting the store.</p>
+              <p className="text-xs text-text-tertiary mt-2">You can resubscribe later by contacting the store.</p>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm text-white/80">
+            <div className="text-sm text-text-secondary">
               Prefer to stay? Explore what we do and how we protect your data.
             </div>
             <div className="flex gap-2">
@@ -171,7 +171,7 @@ function UnsubscribeContent() {
               </Link>
               <Link
                 href="/"
-                className="px-4 py-2 text-sm rounded-lg bg-[#0ed7c4] text-[#0b1f2e] hover:bg-[#12b6a7] transition font-semibold"
+                className="px-4 py-2 text-sm rounded-lg bg-accent text-[#041b1f] hover:bg-accent-hover transition font-semibold"
               >
                 Keep me subscribed
               </Link>
