@@ -55,7 +55,7 @@ export function TemplatesToolbar({
             type="button"
             onClick={() => onTabChange('system')}
             className={[
-              'flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-xl transition-all',
+              'flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-xl',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/35',
               tab === 'system'
                 ? 'bg-white shadow-sm text-text-primary'
@@ -69,7 +69,7 @@ export function TemplatesToolbar({
             type="button"
             onClick={() => onTabChange('my')}
             className={[
-              'flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-xl transition-all',
+              'flex-1 sm:flex-none px-4 py-2 text-sm font-semibold rounded-xl',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/35',
               tab === 'my'
                 ? 'bg-white shadow-sm text-text-primary'

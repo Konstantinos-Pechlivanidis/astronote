@@ -19,20 +19,25 @@ const config: Config = {
         surface: {
           DEFAULT: 'var(--color-surface)',
           hover: 'var(--color-surface-hover)',
+          light: 'var(--color-surface-light)',
+          subtle: 'var(--color-surface-subtle)',
         },
         border: {
           DEFAULT: 'var(--color-border)',
           light: 'var(--color-border-light)',
+          subtle: 'var(--color-border-subtle)',
         },
         text: {
           primary: 'var(--color-text-primary)',
           secondary: 'var(--color-text-secondary)',
           tertiary: 'var(--color-text-tertiary)',
+          muted: 'var(--color-text-muted)',
         },
         accent: {
           DEFAULT: 'var(--color-accent)',
           hover: 'var(--color-accent-hover)',
           light: 'var(--color-accent-light)',
+          lighter: 'var(--color-accent-lighter)',
         },
       },
       backdropBlur: {
@@ -66,4 +71,3 @@ const config: Config = {
   plugins: [],
 }
 export default config
-

@@ -112,7 +112,6 @@ export function RetailDataTable<T>({
                     key={key}
                     onClick={() => onRowClick?.(item)}
                     className={cn(
-                      'transition-colors',
                       onRowClick && 'cursor-pointer hover:bg-surface',
                       rowClass,
                     )}
@@ -180,4 +179,3 @@ export function RetailDataTable<T>({
     </div>
   );
 }
-

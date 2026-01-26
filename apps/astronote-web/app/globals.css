@@ -77,6 +77,11 @@
   letter-spacing: -0.02em;
 }
 
+.font-display {
+  font-family: var(--font-display), 'Segoe UI', sans-serif;
+  letter-spacing: -0.02em;
+}
+
 .astro-shell {
   position: relative;
   min-height: 100vh;
@@ -391,6 +396,27 @@ html[data-theme='retail-light'] body,
 html.retail-light body {
   background: var(--color-background);
   color: var(--color-text-primary);
+}
+
+html.retail-no-transitions,
+html.retail-no-transitions *::before,
+html.retail-no-transitions *::after,
+html.retail-no-transitions * {
+  transition: none !important;
+}
+
+html.retail-no-transitions {
+  scroll-behavior: auto;
+}
+
+html.retail-no-transitions .glass-hover:hover {
+  transform: none !important;
+  box-shadow: var(--shadow);
+}
+
+html.retail-no-transitions button:active,
+html.retail-no-transitions [role='button']:active {
+  transform: none !important;
 }
 
 /* Light mode glass effect - enhanced contrast */

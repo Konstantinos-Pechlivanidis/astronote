@@ -47,18 +47,10 @@ export default function AutomationsPage() {
               </div>
 
               {/* Right: CTA button (always visible + responsive) */}
-              <Link
-                href="/app/retail/billing"
-                className={[
-                  'inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold',
-                  'transition-transform duration-150 active:scale-[0.98]',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  'border border-border bg-surface-light text-text-primary hover:bg-surface-light/80',
-                  // on bigger screens the button hugs content and aligns right
-                  'sm:w-auto sm:min-w-[160px]',
-                ].join(' ')}
-              >
-                Go to Billing
+              <Link href="/app/retail/billing" className="w-full sm:w-auto sm:min-w-[160px]">
+                <Button variant="outline" size="sm" className="w-full">
+                  Go to Billing
+                </Button>
               </Link>
             </div>
           </RetailCard>

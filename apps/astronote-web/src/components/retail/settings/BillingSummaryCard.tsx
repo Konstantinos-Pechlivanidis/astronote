@@ -3,7 +3,7 @@
 import { CreditCard, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { useBillingGate } from '@/src/features/retail/billing/hooks/useBillingGate';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
 
 export function BillingSummaryCard() {
@@ -11,7 +11,7 @@ export function BillingSummaryCard() {
 
   if (billingGate.isLoading) {
     return (
-      <GlassCard>
+      <RetailCard>
         <div className="flex items-center gap-2 mb-6">
           <CreditCard className="w-5 h-5 text-text-secondary" />
           <h2 className="text-lg font-semibold text-text-primary">Billing Status</h2>
@@ -19,13 +19,13 @@ export function BillingSummaryCard() {
         <div className="text-center py-8">
           <p className="text-sm text-text-secondary">Loading billing information...</p>
         </div>
-      </GlassCard>
+      </RetailCard>
     );
   }
 
   if (billingGate.error) {
     return (
-      <GlassCard>
+      <RetailCard>
         <div className="flex items-center gap-2 mb-6">
           <CreditCard className="w-5 h-5 text-text-secondary" />
           <h2 className="text-lg font-semibold text-text-primary">Billing Status</h2>
@@ -33,7 +33,7 @@ export function BillingSummaryCard() {
         <div className="text-center py-8">
           <p className="text-sm text-red-400">Error loading billing information</p>
         </div>
-      </GlassCard>
+      </RetailCard>
     );
   }
 
@@ -44,7 +44,7 @@ export function BillingSummaryCard() {
     : null;
 
   return (
-    <GlassCard>
+    <RetailCard>
       <div className="flex items-center gap-2 mb-6">
         <CreditCard className="w-5 h-5 text-text-secondary" />
         <h2 className="text-lg font-semibold text-text-primary">Billing Status</h2>
@@ -101,6 +101,6 @@ export function BillingSummaryCard() {
           </Link>
         </div>
       </div>
-    </GlassCard>
+    </RetailCard>
   );
 }

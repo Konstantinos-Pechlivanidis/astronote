@@ -63,7 +63,7 @@ export function RetailNavList({
                   aria-current={isActive ? 'page' : undefined}
                   title={collapsed ? item.label : undefined}
                   className={cn(
-                    'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                     isActive
                       ? 'bg-accent-light text-accent'

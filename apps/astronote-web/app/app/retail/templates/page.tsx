@@ -183,21 +183,22 @@ export default function TemplatesPage() {
           description="Browse system templates, copy text for campaigns, and manage your own message library."
         />
 
-        {/* Toolbar */}
-        <TemplatesToolbar
-          search={search}
-          onSearchChange={setSearch}
-          language={language}
-          onLanguageChange={() => {
-            /* i18n disabled by requirement */
-          }}
-          // ✅ Pass non-empty category value always
-          category={category}
-          onCategoryChange={handleCategoryChange}
-          tab={tab}
-          onTabChange={handleTabChange}
-          onAddClick={handleAddClick}
-        />
+        <RetailCard className="p-4">
+          <TemplatesToolbar
+            search={search}
+            onSearchChange={setSearch}
+            language={language}
+            onLanguageChange={() => {
+              /* i18n disabled by requirement */
+            }}
+            // ✅ Pass non-empty category value always
+            category={category}
+            onCategoryChange={handleCategoryChange}
+            tab={tab}
+            onTabChange={handleTabChange}
+            onAddClick={handleAddClick}
+          />
+        </RetailCard>
 
         {/* Loading */}
         {isLoading && <TemplatesSkeleton />}

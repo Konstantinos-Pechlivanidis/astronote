@@ -14,6 +14,7 @@ export function RetailLayoutShell({ children }: { children: ReactNode }) {
       sidebarStorageKey={SIDEBAR_STORAGE_KEY}
       sidebarWidthCssVar="--retail-sidebar-width"
       desktopContentPaddingClassName="md:pl-[var(--retail-sidebar-width)]"
+      disableTransitions
       Sidebar={RetailSidebar}
       Topbar={RetailTopbar}
       MobileNav={RetailMobileNav}

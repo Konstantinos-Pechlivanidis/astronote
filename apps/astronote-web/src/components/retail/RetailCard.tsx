@@ -24,7 +24,7 @@ export const RetailCard = forwardRef<HTMLDivElement, RetailCardProps>(
         ref={ref}
         hover={hover}
         light={variant === 'subtle'}
-        className={cn(variantClasses[variant], className)}
+        className={cn('p-5', variantClasses[variant], className)}
         {...props}
       >
         {children}
@@ -34,4 +34,3 @@ export const RetailCard = forwardRef<HTMLDivElement, RetailCardProps>(
 );
 
 RetailCard.displayName = 'RetailCard';
-

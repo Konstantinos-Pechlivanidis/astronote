@@ -48,6 +48,7 @@ export type AppShellProps = {
   collapsedWidth?: number;
 
   themeName?: string; // e.g. retail-light
+  disableTransitions?: boolean;
 
   Sidebar: ComponentType<AppShellSidebarProps>;
   Topbar: ComponentType<AppShellTopbarProps>;
@@ -62,6 +63,7 @@ export function AppShell({
   expandedWidth = 280,
   collapsedWidth = 80,
   themeName = 'retail-light',
+  disableTransitions = false,
   Sidebar,
   Topbar,
   MobileNav,
@@ -80,6 +82,14 @@ export function AppShell({
       document.documentElement.classList.remove(themeName);
     };
   }, [themeName]);
+
+  useEffect(() => {
+    if (!disableTransitions) return;
+    document.documentElement.classList.add('retail-no-transitions');
+    return () => {
+      document.documentElement.classList.remove('retail-no-transitions');
+    };
+  }, [disableTransitions]);
 
   // Load sidebar collapse state from localStorage (Retail/Shopify parity)
   useEffect(() => {
@@ -134,12 +144,17 @@ export function AppShell({
     [sidebarWidthCssVar, sidebarWidth],
   );
 
+  const contentWrapperClassName = disableTransitions
+    ? `flex min-h-dvh flex-col ${desktopContentPaddingClassName}`
+    : `flex min-h-dvh flex-col transition-[padding] duration-300 ${desktopContentPaddingClassName}`;
+
   return (
-    <div className="min-h-dvh bg-background text-text-primary" style={shellStyle}>
+    <div
+      className={`min-h-dvh bg-background text-text-primary ${disableTransitions ? 'retail-no-transitions' : ''}`}
+      style={shellStyle}
+    >
       <Sidebar pathname={pathname} collapsed={collapsed} className="hidden md:flex" />
-      <div
-        className={`flex min-h-dvh flex-col transition-[padding] duration-300 ${desktopContentPaddingClassName}`}
-      >
+      <div className={contentWrapperClassName}>
         <Topbar
           pathname={pathname}
           collapsed={collapsed}
@@ -152,5 +167,4 @@ export function AppShell({
     </div>
   );
 }
-
 

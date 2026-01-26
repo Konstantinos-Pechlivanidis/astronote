@@ -75,7 +75,7 @@ function CampaignsToolbar({
 
 function CampaignSkeleton() {
   return (
-    <RetailCard>
+    <RetailCard className="p-5">
       <div className="space-y-4">
         {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="h-16 animate-pulse rounded bg-surface-light"></div>
@@ -190,12 +190,14 @@ export default function CampaignsPage() {
           }
         />
 
-        <CampaignsToolbar
-          search={search}
-          onSearchChange={setSearch}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-        />
+        <RetailCard className="p-4">
+          <CampaignsToolbar
+            search={search}
+            onSearchChange={setSearch}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+          />
+        </RetailCard>
 
         {isLoading && <CampaignSkeleton />}
 

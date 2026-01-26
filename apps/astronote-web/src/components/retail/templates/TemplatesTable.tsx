@@ -6,7 +6,7 @@ import { Eye, Edit, Trash2, Copy, CopyCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { TemplateTypeBadge } from './TemplateTypeBadge';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
 import type { Template } from '@/src/lib/retail/api/templates';
 
@@ -68,7 +68,7 @@ export function TemplatesTable({
     <>
       {/* Desktop Table */}
       <div className="hidden md:block">
-        <GlassCard>
+        <RetailCard>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-border">
               <thead>
@@ -103,7 +103,7 @@ export function TemplatesTable({
                   const hasMore = (template.text?.length || 0) > 100;
 
                   return (
-                    <tr key={template.id} className="hover:bg-surface transition-colors">
+                    <tr key={template.id} className="hover:bg-surface">
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium text-text-primary">{template.name}</div>
                         {template.goal && (
@@ -200,7 +200,7 @@ export function TemplatesTable({
               </tbody>
             </table>
           </div>
-        </GlassCard>
+        </RetailCard>
       </div>
 
       {/* Mobile Cards */}
@@ -210,7 +210,7 @@ export function TemplatesTable({
           const previewText = template.text?.substring(0, 150) || '';
 
           return (
-            <GlassCard key={template.id} hover className="p-4">
+            <RetailCard key={template.id} hover className="p-4">
               <div className="space-y-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -300,7 +300,7 @@ export function TemplatesTable({
                   )}
                 </div>
               </div>
-            </GlassCard>
+            </RetailCard>
           );
         })}
       </div>
@@ -325,4 +325,3 @@ export function TemplatesTable({
     </>
   );
 }
-

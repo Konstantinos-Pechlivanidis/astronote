@@ -41,7 +41,6 @@ export function RetailSidebar({
         'fixed inset-y-0 left-0 z-40 flex-col',
         'glass border-r border-border bg-background-elevated/90 backdrop-blur-sm',
         'supports-[backdrop-filter]:bg-background-elevated/70',
-        'transition-[width] duration-200 ease-out',
         className,
       )}
       style={{ width: sidebarWidth }}

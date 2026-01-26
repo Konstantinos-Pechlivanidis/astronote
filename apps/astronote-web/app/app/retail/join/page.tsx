@@ -496,7 +496,7 @@ export default function NfcSignupPage() {
                     <button
                       type="button"
                       onClick={() => setEditLang('en')}
-                      className={`px-3 py-1 text-sm font-medium rounded-md transition ${
+                      className={`px-3 py-1 text-sm font-medium rounded-md ${
                         editLang === 'en'
                           ? 'bg-white text-text-primary shadow-sm'
                           : 'text-text-secondary hover:text-text-primary'
@@ -507,7 +507,7 @@ export default function NfcSignupPage() {
                     <button
                       type="button"
                       onClick={() => setEditLang('el')}
-                      className={`px-3 py-1 text-sm font-medium rounded-md transition ${
+                      className={`px-3 py-1 text-sm font-medium rounded-md ${
                         editLang === 'el'
                           ? 'bg-white text-text-primary shadow-sm'
                           : 'text-text-secondary hover:text-text-primary'

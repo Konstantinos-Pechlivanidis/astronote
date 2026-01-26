@@ -104,16 +104,18 @@ export default function ContactsPage() {
           }
         />
 
-        <ContactsToolbar
-          search={search}
-          onSearchChange={setSearch}
-          onAddClick={handleAddClick}
-          joinHref="/app/retail/nfc"
-          listId={listId}
-          onListChange={handleListChange}
-          systemLists={systemLists}
-          isLoadingLists={isLoadingLists}
-        />
+        <RetailCard className="p-4">
+          <ContactsToolbar
+            search={search}
+            onSearchChange={setSearch}
+            onAddClick={handleAddClick}
+            joinHref="/app/retail/nfc"
+            listId={listId}
+            onListChange={handleListChange}
+            systemLists={systemLists}
+            isLoadingLists={isLoadingLists}
+          />
+        </RetailCard>
 
         {isLoading && <ContactsSkeleton />}
 

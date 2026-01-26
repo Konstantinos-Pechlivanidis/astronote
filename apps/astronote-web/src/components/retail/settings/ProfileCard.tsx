@@ -2,7 +2,7 @@
 
 import { User } from 'lucide-react';
 import { ProfileForm } from './ProfileForm';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 import type { RetailUser } from '@/src/features/retail/auth/useRetailAuth';
 
 interface ProfileCardProps {
@@ -12,7 +12,7 @@ interface ProfileCardProps {
 
 export function ProfileCard({ user, isLoading }: ProfileCardProps) {
   return (
-    <GlassCard>
+    <RetailCard>
       <div className="flex items-center gap-2 mb-6">
         <User className="w-5 h-5 text-text-secondary" />
         <h2 className="text-lg font-semibold text-text-primary">Account / Profile</h2>
@@ -26,7 +26,6 @@ export function ProfileCard({ user, isLoading }: ProfileCardProps) {
       ) : (
         <ProfileForm user={user} />
       )}
-    </GlassCard>
+    </RetailCard>
   );
 }
-

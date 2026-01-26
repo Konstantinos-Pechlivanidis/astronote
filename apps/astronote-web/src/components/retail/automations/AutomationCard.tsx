@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Edit, Mail, Calendar } from 'lucide-react';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
 import { useUpdateAutomation } from '@/src/features/retail/automations/hooks/useUpdateAutomation';
 import { useBillingGate } from '@/src/features/retail/billing/hooks/useBillingGate';
@@ -57,7 +57,7 @@ export function AutomationCard({ automation }: AutomationCardProps) {
 
   return (
     <>
-      <GlassCard>
+      <RetailCard>
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-start gap-3">
             <div className="p-2 bg-blue-50 rounded-lg">
@@ -70,10 +70,10 @@ export function AutomationCard({ automation }: AutomationCardProps) {
           </div>
           <div className="flex items-center gap-3">
             <span
-              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+              className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${
                 automation.isActive
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-gray-100 text-gray-800'
+                  ? 'bg-green-100 text-green-800 border-green-200'
+                  : 'bg-surface-light text-text-secondary border-border'
               }`}
             >
               {automation.isActive ? 'Active' : 'Inactive'}
@@ -81,10 +81,10 @@ export function AutomationCard({ automation }: AutomationCardProps) {
             <button
               onClick={handleToggle}
               disabled={updateMutation.isPending || !canToggle}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 border ${
+              className={`relative inline-flex h-6 w-11 items-center rounded-full focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 border ${
                 automation.isActive
                   ? 'bg-accent border-accent'
-                  : 'bg-gray-100 text-gray-800'
+                  : 'bg-surface-light border-border'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
               aria-label={
                 !canToggle
@@ -95,7 +95,7 @@ export function AutomationCard({ automation }: AutomationCardProps) {
               }
             >
               <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ${
                   automation.isActive ? 'translate-x-6' : 'translate-x-1'
                 }`}
               />
@@ -140,7 +140,7 @@ export function AutomationCard({ automation }: AutomationCardProps) {
             Edit Message
           </Button>
         </div>
-      </GlassCard>
+      </RetailCard>
 
       {isEditorOpen && (
         <AutomationEditorModal

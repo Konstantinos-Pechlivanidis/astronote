@@ -24,26 +24,31 @@ function KpiCard({
   icon?: any
   trend?: number
 }) {
+  const displayValue = typeof value === 'number' ? value.toLocaleString() : value;
   return (
-    <RetailCard hover>
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-medium text-text-secondary">{title}</h3>
+    <RetailCard className="p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-text-tertiary">{title}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-2xl font-semibold text-text-primary">{displayValue}</p>
+            {trend !== undefined && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  trend >= 0
+                    ? 'bg-green-50 text-green-600'
+                    : 'bg-red-50 text-red-600'
+                }`}
+              >
+                {trend > 0 ? '+' : ''}
+                {trend}%
+              </span>
+            )}
+          </div>
+          {subtitle && <p className="mt-1 text-xs text-text-tertiary">{subtitle}</p>}
+        </div>
         {Icon && <Icon className="h-5 w-5 text-text-tertiary" />}
       </div>
-      <div className="flex items-baseline">
-        <p className="text-3xl font-bold text-text-primary">{value}</p>
-        {trend !== undefined && (
-          <span
-            className={`ml-2 text-sm font-medium ${
-              trend > 0 ? 'text-green-400' : 'text-red-400'
-            }`}
-          >
-            {trend > 0 ? '+' : ''}
-            {trend}%
-          </span>
-        )}
-      </div>
-      {subtitle && <p className="mt-1 text-xs text-text-tertiary">{subtitle}</p>}
     </RetailCard>
   );
 }
@@ -63,8 +68,8 @@ function CreditsCard() {
 
   if (isLoading) {
     return (
-      <RetailCard>
-        <div className="mb-4 h-6 w-32 animate-pulse rounded bg-surface-light" />
+      <RetailCard className="p-5">
+        <div className="mb-4 h-4 w-28 animate-pulse rounded bg-surface-light" />
         <div className="mb-2 h-8 w-24 animate-pulse rounded bg-surface-light" />
         <div className="h-4 w-40 animate-pulse rounded bg-surface-light" />
       </RetailCard>
@@ -87,45 +92,48 @@ function CreditsCard() {
   const subscription = data?.subscription || { active: false, planType: null };
 
   return (
-    <RetailCard>
-      <div className="mb-4 flex items-center gap-2">
-        <CreditCard className="h-5 w-5 text-accent" />
-        <h3 className="text-lg font-semibold text-text-primary">Credits & Subscription</h3>
+    <RetailCard className="p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <CreditCard className="h-5 w-5 text-accent" />
+          <h3 className="text-base font-semibold text-text-primary">Credits & Subscription</h3>
+        </div>
+        <Link href="/app/retail/billing" className="text-xs font-semibold text-accent">
+          Manage billing
+        </Link>
       </div>
 
-      <div className="space-y-4">
-        <div>
-          <p className="mb-1 text-sm text-text-secondary">Available Credits</p>
-          <p className="text-3xl font-bold text-text-primary">{balance.toLocaleString()}</p>
+      <div className="mt-4 grid gap-4 md:grid-cols-[1fr,1fr]">
+        <div className="rounded-2xl border border-border bg-surface p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-text-tertiary">Available credits</p>
+          <p className="mt-2 text-3xl font-semibold text-text-primary">{balance.toLocaleString()}</p>
+          <p className="mt-1 text-xs text-text-tertiary">Credits never expire.</p>
         </div>
-
-        <div className="border-t border-border pt-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-text-secondary mb-1">Subscription Status</p>
-              <div className="flex items-center gap-2">
-                {subscription.active ? (
-                  <>
-                    <CheckCircle className="h-5 w-5 text-green-400" />
-                    <span className="text-sm font-medium text-green-400">Active</span>
-                    {subscription.planType && (
-                      <span className="text-sm capitalize text-text-secondary">
-                        ({subscription.planType})
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <XCircleIcon className="h-5 w-5 text-red-400" />
-                    <span className="text-sm font-medium text-red-400">Inactive</span>
-                  </>
+        <div className="rounded-2xl border border-border bg-surface p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-text-tertiary">Subscription status</p>
+          <div className="mt-2 flex items-center gap-2">
+            {subscription.active ? (
+              <>
+                <span className="inline-flex items-center gap-2 rounded-full bg-green-50 px-2 py-1 text-xs font-semibold text-green-600">
+                  <CheckCircle className="h-4 w-4" />
+                  Active
+                </span>
+                {subscription.planType && (
+                  <span className="text-xs capitalize text-text-secondary">
+                    {subscription.planType}
+                  </span>
                 )}
-              </div>
-              <p className="mt-2 text-xs text-text-tertiary">
-                Credits accumulate and never expire; spending requires an active subscription.
-              </p>
-            </div>
+              </>
+            ) : (
+              <span className="inline-flex items-center gap-2 rounded-full bg-red-50 px-2 py-1 text-xs font-semibold text-red-600">
+                <XCircleIcon className="h-4 w-4" />
+                Inactive
+              </span>
+            )}
           </div>
+          <p className="mt-2 text-xs text-text-tertiary">
+            Spending requires an active subscription.
+          </p>
         </div>
       </div>
     </RetailCard>
@@ -186,50 +194,49 @@ export default function RetailDashboardPage() {
     }
 
     return (
-      <div className="space-y-6">
-        {/* Page Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-text-primary">Dashboard</h1>
-            <p className="text-sm text-text-secondary mt-1">Overview of your SMS campaigns and performance</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/app/retail/campaigns/new">
-              <Button size="sm">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Campaign
-              </Button>
-            </Link>
-            <Link href="/app/retail/billing">
-              <Button variant="outline" size="sm">
-                <ShoppingCart className="w-4 h-4 mr-2" />
-                Buy Credits
-              </Button>
-            </Link>
-          </div>
-        </div>
+      <RetailPageLayout>
+        <div className="space-y-6">
+          <RetailPageHeader
+            title="Dashboard"
+            description="Overview of your SMS campaigns and performance"
+            actions={
+              <>
+                <Link href="/app/retail/campaigns/new">
+                  <Button size="sm">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Campaign
+                  </Button>
+                </Link>
+                <Link href="/app/retail/billing">
+                  <Button variant="outline" size="sm">
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Buy Credits
+                  </Button>
+                </Link>
+              </>
+            }
+          />
 
-        {/* Error card - doesn't block navigation */}
-        <RetailCard variant="danger">
-          <div className="flex items-start gap-4">
-            <XCircle className="mt-1 h-6 w-6 shrink-0 text-red-400" />
-            <div className="flex-1">
-              <h3 className="mb-2 text-lg font-semibold text-text-primary">Error Loading Dashboard Data</h3>
-              <p className="mb-4 text-sm text-text-secondary">
-                {kpisError instanceof Error
-                  ? kpisError.message
-                  : (kpisError as any)?.response?.data?.message || 'Failed to load dashboard KPIs'}
-              </p>
-              <Button onClick={() => refetchKPIs()} variant="outline" size="sm">
-                Retry
-              </Button>
+          <RetailCard variant="danger" className="p-5">
+            <div className="flex items-start gap-4">
+              <XCircle className="mt-1 h-6 w-6 shrink-0 text-red-400" />
+              <div className="flex-1">
+                <h3 className="mb-2 text-base font-semibold text-text-primary">Error Loading Dashboard Data</h3>
+                <p className="mb-4 text-sm text-text-secondary">
+                  {kpisError instanceof Error
+                    ? kpisError.message
+                    : (kpisError as any)?.response?.data?.message || 'Failed to load dashboard KPIs'}
+                </p>
+                <Button onClick={() => refetchKPIs()} variant="outline" size="sm">
+                  Retry
+                </Button>
+              </div>
             </div>
-          </div>
-        </RetailCard>
+          </RetailCard>
 
-        {/* Show CreditsCard even on error - don't block entire page */}
-        <CreditsCard />
-      </div>
+          <CreditsCard />
+        </div>
+      </RetailPageLayout>
     );
   }
 
@@ -260,10 +267,10 @@ export default function RetailDashboardPage() {
           />
 
           {/* Loading Skeletons */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <RetailCard key={i}>
-                <div className="mb-4 h-6 w-32 animate-pulse rounded bg-surface-light"></div>
+              <RetailCard key={i} className="p-5">
+                <div className="mb-4 h-4 w-28 animate-pulse rounded bg-surface-light"></div>
                 <div className="h-8 w-24 animate-pulse rounded bg-surface-light"></div>
               </RetailCard>
             ))}
@@ -300,7 +307,7 @@ export default function RetailDashboardPage() {
         />
 
         {/* KPI Cards - Responsive Grid */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
             title="Total Campaigns"
             value={kpis?.totalCampaigns || 0}

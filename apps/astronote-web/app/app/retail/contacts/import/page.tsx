@@ -213,7 +213,7 @@ export default function ContactsImportPage() {
                       </div>
                       <div className="h-2 w-full rounded-full bg-surface-light">
                         <div
-                          className="h-2 rounded-full bg-accent transition-all"
+                          className="h-2 rounded-full bg-accent"
                           style={{
                             width: `${
                               jobStatus.progress.total > 0
@@ -300,4 +300,3 @@ export default function ContactsImportPage() {
     </RetailPageLayout>
   );
 }
-

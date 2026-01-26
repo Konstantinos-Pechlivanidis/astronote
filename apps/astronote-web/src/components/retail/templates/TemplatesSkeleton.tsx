@@ -1,8 +1,8 @@
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 
 export function TemplatesSkeleton() {
   return (
-    <GlassCard>
+    <RetailCard>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
           <thead>
@@ -27,7 +27,6 @@ export function TemplatesSkeleton() {
           </tbody>
         </table>
       </div>
-    </GlassCard>
+    </RetailCard>
   );
 }
-

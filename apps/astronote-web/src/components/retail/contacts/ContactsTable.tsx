@@ -6,7 +6,7 @@ import { Edit, Trash2 } from 'lucide-react';
 import { SubscriptionBadge } from './SubscriptionBadge';
 import { maskPhone } from '@/src/lib/retail/utils/phone';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
-import { GlassCard } from '@/components/ui/glass-card';
+import { RetailCard } from '@/src/components/retail/RetailCard';
 import { Button } from '@/components/ui/button';
 import type { Contact } from '@/src/lib/retail/api/contacts';
 
@@ -27,7 +27,7 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
     <>
       {/* Desktop Table */}
       <div className="hidden md:block">
-        <GlassCard>
+        <RetailCard>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-border">
               <thead>
@@ -51,7 +51,7 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
               </thead>
               <tbody className="divide-y divide-border">
                 {contacts.map((contact) => (
-                  <tr key={contact.id} className="hover:bg-surface transition-colors">
+                  <tr key={contact.id} className="hover:bg-surface">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-text-primary">
                         {contact.firstName || contact.lastName
@@ -97,13 +97,13 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
               </tbody>
             </table>
           </div>
-        </GlassCard>
+        </RetailCard>
       </div>
 
       {/* Mobile Cards */}
       <div className="md:hidden space-y-4">
         {contacts.map((contact) => (
-          <GlassCard key={contact.id} hover className="p-4">
+          <RetailCard key={contact.id} hover className="p-4">
             <div className="space-y-3">
               <div className="flex items-start justify-between">
                 <div>
@@ -142,7 +142,7 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                 </Button>
               </div>
             </div>
-          </GlassCard>
+          </RetailCard>
         ))}
       </div>
 

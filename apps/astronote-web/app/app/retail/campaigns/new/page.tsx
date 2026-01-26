@@ -177,7 +177,7 @@ export default function NewCampaignPage() {
                       <div
                         className={[
                           'relative flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold',
-                          'ring-1 ring-inset transition-colors',
+                          'ring-1 ring-inset',
                           isDone
                             ? 'bg-green-500 text-white ring-green-500/25'
                             : isActive

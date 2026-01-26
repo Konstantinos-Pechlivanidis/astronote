@@ -24,9 +24,11 @@ export function RetailPageHeader({
       )}
     >
       <div>
-        <h1 className="text-3xl font-bold text-text-primary">{title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-text-primary md:text-3xl font-display">
+          {title}
+        </h1>
         {description && (
-          <p className="mt-1 text-sm text-text-secondary">{description}</p>
+          <p className="mt-1 text-sm text-text-tertiary">{description}</p>
         )}
       </div>
       {actions && (
@@ -35,4 +37,3 @@ export function RetailPageHeader({
     </div>
   );
 }
-

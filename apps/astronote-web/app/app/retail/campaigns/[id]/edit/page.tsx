@@ -145,7 +145,7 @@ export default function EditCampaignPage() {
           <div className="flex items-center gap-4">
             <Link
               href={`/app/retail/campaigns/${campaignId}`}
-              className="flex items-center gap-2 text-text-secondary transition-colors hover:text-text-primary"
+              className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
@@ -158,12 +158,12 @@ export default function EditCampaignPage() {
           <RetailCard>
             <div className="mb-4 flex items-center gap-4">
               <span
-                className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${
                   campaign.status === 'completed'
-                    ? 'bg-green-100 text-green-800'
+                    ? 'bg-green-100 text-green-800 border-green-200'
                     : campaign.status === 'sending'
-                      ? 'bg-blue-100 text-blue-800'
-                      : 'bg-gray-100 text-gray-800'
+                      ? 'bg-blue-100 text-blue-800 border-blue-200'
+                      : 'bg-surface-light text-text-secondary border-border'
                 }`}
               >
                 {campaign.status}
@@ -191,7 +191,7 @@ export default function EditCampaignPage() {
         <div className="flex items-center gap-4">
           <Link
             href={`/app/retail/campaigns/${campaignId}`}
-            className="flex items-center gap-2 text-text-secondary transition-colors hover:text-text-primary"
+            className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Campaign
