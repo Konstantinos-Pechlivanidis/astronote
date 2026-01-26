@@ -13,7 +13,12 @@ if (process.env.QUEUE_DISABLED === '1') {
 // Dependencies are resolved from apps/api/node_modules because worker runs with cwd=apps/api
 const { Worker } = require('bullmq');
 const { getRedisClient } = require('../../api/src/lib/redis');
-const { refreshPendingStatuses, refreshMissingDeliveryStatuses } = require('../../api/src/services/statusRefresh.service');
+const {
+  refreshPendingStatuses,
+  refreshMissingDeliveryStatuses,
+  refreshPendingDirectMessages,
+  refreshMissingDirectDeliveryStatuses,
+} = require('../../api/src/services/statusRefresh.service');
 
 const connection = getRedisClient();
 
@@ -56,6 +61,29 @@ const worker = new Worker(
           errors: result.errors,
           campaignsUpdated: result.campaignsUpdated
         }, 'Delivery refresh job completed');
+        return result;
+      }
+
+      if (job.name === 'refreshPendingDirectMessages') {
+        const result = await refreshPendingDirectMessages(limit);
+        logger.info({
+          limit,
+          refreshed: result.refreshed,
+          updated: result.updated,
+          errors: result.errors,
+        }, 'Direct message status refresh job completed');
+        return result;
+      }
+
+      if (job.name === 'refreshMissingDirectDeliveryStatuses') {
+        const result = await refreshMissingDirectDeliveryStatuses(limit, olderThanSeconds);
+        logger.info({
+          limit,
+          olderThanSeconds,
+          refreshed: result.refreshed,
+          updated: result.updated,
+          errors: result.errors,
+        }, 'Direct delivery refresh job completed');
         return result;
       }
     } catch (err) {

@@ -1,8 +1,10 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   CreditCard,
+  CalendarDays,
   FileText,
   LayoutDashboard,
+  ListChecks,
   Megaphone,
   RadioTower,
   Settings,
@@ -71,6 +73,18 @@ export const NAV_ITEMS: RetailNavItem[] = [
     label: 'Automations',
     href: '/app/retail/automations',
     icon: Zap,
+    group: 'Engage',
+  },
+  {
+    label: 'Message Logs',
+    href: '/app/retail/message-logs',
+    icon: ListChecks,
+    group: 'Engage',
+  },
+  {
+    label: 'Events',
+    href: '/app/retail/events',
+    icon: CalendarDays,
     group: 'Engage',
   },
   {

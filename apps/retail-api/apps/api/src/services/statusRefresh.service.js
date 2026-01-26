@@ -590,9 +590,194 @@ async function refreshBulkStatuses(bulkId, ownerId = null) {
   }
 }
 
+/**
+ * Refresh statuses for pending direct (1-to-1) messages
+ *
+ * @param {number} limit - Maximum number of messages to refresh
+ * @returns {Promise<Object>} Summary of refresh operation
+ */
+async function refreshPendingDirectMessages(limit = 50) {
+  try {
+    const messages = await prisma.directMessage.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { status: 'pending' },
+              {
+                status: 'sent',
+                OR: [
+                  { deliveryStatus: null },
+                  { deliveryStatus: { notIn: terminalDeliveryStatuses } },
+                ],
+              },
+            ],
+          },
+          { providerMessageId: { not: null } },
+        ],
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        providerMessageId: true,
+        status: true,
+        sentAt: true,
+      },
+      take: limit,
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!messages.length) {
+      logger.info('No pending direct messages to refresh');
+      return { refreshed: 0, updated: 0, errors: 0 };
+    }
+
+    let refreshed = 0;
+    let updated = 0;
+    let errors = 0;
+    const updates = [];
+
+    for (const msg of messages) {
+      try {
+        const mittoStatus = await getMessageStatus(msg.providerMessageId);
+        const newStatus = mapMittoStatus(mittoStatus.deliveryStatus);
+        const delivery = mittoStatus.deliveryStatus || null;
+
+        const updateData = {
+          status: newStatus,
+          deliveryStatus: delivery,
+          deliveryLastCheckedAt: new Date(),
+        };
+
+        if (newStatus === 'sent') {
+          updateData.sentAt = msg.sentAt || (mittoStatus.updatedAt ? new Date(mittoStatus.updatedAt) : new Date());
+          if (delivery && String(delivery).toLowerCase().includes('deliv')) {
+            updateData.deliveredAt = mittoStatus.updatedAt ? new Date(mittoStatus.updatedAt) : new Date();
+          }
+        } else if (newStatus === 'failed') {
+          updateData.failedAt = mittoStatus.updatedAt ? new Date(mittoStatus.updatedAt) : new Date();
+          updateData.error = `Mitto status: ${delivery || 'failed'}`;
+        }
+
+        updates.push({ id: msg.id, data: updateData });
+        refreshed++;
+        updated++;
+      } catch (err) {
+        errors++;
+        logger.error({
+          messageId: msg.id,
+          providerMessageId: msg.providerMessageId,
+          err: err.message,
+        }, 'Failed to refresh direct message status from Mitto');
+      }
+    }
+
+    if (updates.length) {
+      await Promise.all(
+        updates.map(update =>
+          prisma.directMessage.update({
+            where: { id: update.id },
+            data: update.data,
+          }),
+        ),
+      );
+    }
+
+    logger.info({ refreshed, updated, errors }, 'Direct message status refresh completed');
+    return { refreshed, updated, errors };
+  } catch (err) {
+    logger.error({ limit, err: err.message }, 'Failed to refresh direct message statuses');
+    throw err;
+  }
+}
+
+/**
+ * Refresh deliveryStatus for direct messages missing delivery status.
+ *
+ * @param {number} limit
+ * @param {number} olderThanSeconds
+ */
+async function refreshMissingDirectDeliveryStatuses(limit = 50, olderThanSeconds = 60) {
+  try {
+    const cutoff = new Date(Date.now() - olderThanSeconds * 1000);
+    const messages = await prisma.directMessage.findMany({
+      where: {
+        providerMessageId: { not: null },
+        deliveryStatus: null,
+        sentAt: { lte: cutoff },
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        providerMessageId: true,
+        sentAt: true,
+      },
+      take: limit,
+      orderBy: { sentAt: 'asc' },
+    });
+
+    if (!messages.length) {
+      logger.debug('No direct messages missing delivery statuses to refresh');
+      return { refreshed: 0, updated: 0, errors: 0 };
+    }
+
+    let refreshed = 0;
+    let updated = 0;
+    let errors = 0;
+    const updates = [];
+
+    for (const msg of messages) {
+      try {
+        const mittoStatus = await getMessageStatus(msg.providerMessageId);
+        const delivery = mittoStatus?.deliveryStatus || null;
+        if (!delivery) {
+          refreshed++;
+          continue;
+        }
+
+        const lower = String(delivery).toLowerCase();
+        const updateData = {
+          deliveryStatus: delivery,
+          deliveryLastCheckedAt: new Date(),
+        };
+
+        if (lower.includes('deliv')) {
+          updateData.deliveredAt = mittoStatus.updatedAt ? new Date(mittoStatus.updatedAt) : new Date();
+          updateData.status = 'sent';
+        } else if (lower.includes('fail') || lower.includes('undeliv') || lower.includes('expire') || lower.includes('reject')) {
+          updateData.failedAt = mittoStatus.updatedAt ? new Date(mittoStatus.updatedAt) : new Date();
+          updateData.error = `Mitto status: ${delivery}`;
+          updateData.status = 'failed';
+        }
+
+        updates.push({ id: msg.id, data: updateData });
+        refreshed++;
+        updated++;
+      } catch (err) {
+        errors++;
+        logger.error({ messageId: msg.id, providerMessageId: msg.providerMessageId, err: err.message }, 'Failed to refresh direct delivery status');
+      }
+    }
+
+    if (updates.length) {
+      await Promise.all(
+        updates.map(u => prisma.directMessage.update({ where: { id: u.id }, data: u.data })),
+      );
+    }
+
+    logger.info({ refreshed, updated, errors }, 'Direct missing delivery status refresh completed');
+    return { refreshed, updated, errors };
+  } catch (err) {
+    logger.error({ err: err.message }, 'refreshMissingDirectDeliveryStatuses failed');
+    throw err;
+  }
+}
+
 module.exports = {
   refreshCampaignStatuses,
   refreshPendingStatuses,
   refreshMissingDeliveryStatuses,
+  refreshPendingDirectMessages,
+  refreshMissingDirectDeliveryStatuses,
   refreshBulkStatuses,
 };

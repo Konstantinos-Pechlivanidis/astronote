@@ -12,6 +12,7 @@ const router = express.Router();
 router.use(cookieParser());
 
 const REFRESH_COOKIE = 'rt';
+const BUSINESS_PROFILES = ['retail', 'gym', 'appointments', 'hotel', 'other'];
 
 // Cookie options (secure in production, cross-site support)
 function setRefreshCookie(res, token, expiresAt) {
@@ -73,7 +74,13 @@ router.post(
 
       res.status(201).json({
         accessToken,
-        user: { id: user.id, email: user.email, senderName: user.senderName, company: user.company },
+        user: {
+          id: user.id,
+          email: user.email,
+          senderName: user.senderName,
+          company: user.company,
+          businessProfile: user.businessProfile,
+        },
       });
     } catch (e) {
       // Pass to centralized error handler for proper Prisma error handling
@@ -103,7 +110,13 @@ router.post(
 
       res.json({
         accessToken,
-        user: { id: user.id, email: user.email, senderName: user.senderName, company: user.company },
+        user: {
+          id: user.id,
+          email: user.email,
+          senderName: user.senderName,
+          company: user.company,
+          businessProfile: user.businessProfile,
+        },
       });
     } catch (e) {
       // Ensure error has 401 status for auth failures (don't leak whether email exists)
@@ -170,17 +183,18 @@ router.post(
 
 /**
  * PUT /api/user
- * Update user profile (company, senderName, timezone)
+ * Update user profile (company, senderName, timezone, businessProfile)
  * Note: The User model does not have a 'name' field. Only 'company', 'senderName', and 'timezone' can be updated.
  * @param {string|null} company - Company name (optional, max 160 chars)
  * @param {string|null} senderName - SMS sender name (optional, max 11 chars, alphanumeric)
  * @param {string|null} timezone - IANA timezone (optional, e.g. "Europe/Athens", "America/New_York")
- * @returns {User} Updated user object (id, email, senderName, company, timezone)
+ * @param {string|null} businessProfile - Business profile (retail/gym/appointments/hotel/other)
+ * @returns {User} Updated user object (id, email, senderName, company, timezone, businessProfile)
  */
 router.put('/user', requireAuth, async (req, res, next) => {
   try {
     const { sanitizeString } = require('../lib/sanitize');
-    const { name, company, senderName, timezone } = req.body || {};
+    const { name, company, senderName, timezone, businessProfile } = req.body || {};
     const updates = {};
 
     // Note: User model doesn't have a 'name' field - ignore it if provided
@@ -224,6 +238,16 @@ router.put('/user', requireAuth, async (req, res, next) => {
       }
       updates.timezone = timezone || null;
     }
+    if (businessProfile !== undefined) {
+      const normalized = String(businessProfile || 'retail').toLowerCase();
+      if (!BUSINESS_PROFILES.includes(normalized)) {
+        return res.status(400).json({
+          message: 'Invalid business profile',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+      updates.businessProfile = normalized;
+    }
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({
@@ -241,6 +265,7 @@ router.put('/user', requireAuth, async (req, res, next) => {
         senderName: true,
         company: true,
         timezone: true,
+        businessProfile: true,
       },
     });
 

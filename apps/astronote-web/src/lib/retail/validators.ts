@@ -66,6 +66,7 @@ export const contactSchema = z.object({
     .or(z.literal(''))
     .nullable(),
   isSubscribed: z.boolean().optional(),
+  serviceAllowed: z.boolean().optional(),
 });
 
 export const campaignSchema = z.object({
@@ -74,6 +75,7 @@ export const campaignSchema = z.object({
     .string()
     .min(1, 'Message text is required')
     .max(2000, 'Message text must be 2000 characters or less'),
+  messageType: z.enum(['marketing', 'service']).optional().default('marketing'),
   filterGender: z
     .union([
       z.enum(['male', 'female', 'other']),
@@ -119,6 +121,7 @@ export const profileUpdateSchema = z.object({
     .optional()
     .or(z.literal('')),
   timezone: z.string().optional().or(z.literal('')), // IANA timezone format
+  businessProfile: z.enum(['retail', 'gym', 'appointments', 'hotel', 'other']).optional().or(z.literal('')),
 });
 
 export const passwordChangeSchema = z

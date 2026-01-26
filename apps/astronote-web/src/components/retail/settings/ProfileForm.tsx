@@ -47,6 +47,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
       company: user?.company || '',
       senderName: user?.senderName || '',
       timezone: user?.timezone || '',
+      businessProfile: user?.businessProfile || 'retail',
     },
   });
 
@@ -62,6 +63,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
         company: user.company || '',
         senderName: user.senderName || '',
         timezone: user.timezone || '',
+        businessProfile: user.businessProfile || 'retail',
       });
     }
   }, [user, reset]);
@@ -77,6 +79,9 @@ export function ProfileForm({ user }: ProfileFormProps) {
     }
     if (formData.timezone !== undefined) {
       updateData.timezone = formData.timezone || null;
+    }
+    if (formData.businessProfile !== undefined) {
+      updateData.businessProfile = formData.businessProfile || 'retail';
     }
 
     updateMutation.mutate(updateData, {
@@ -190,6 +195,43 @@ export function ProfileForm({ user }: ProfileFormProps) {
         )}
       </div>
 
+      {/* Business Profile */}
+      <div>
+        <label htmlFor="businessProfile" className="block text-sm font-medium text-text-secondary mb-1">
+          Business Profile
+        </label>
+        <Controller
+          name="businessProfile"
+          control={control}
+          defaultValue={user?.businessProfile || 'retail'}
+          render={({ field }) => (
+            <Select
+              value={field.value || undefined}
+              onValueChange={(value) => {
+                field.onChange(value || 'retail');
+              }}
+            >
+              <SelectTrigger id="businessProfile">
+                <SelectValue placeholder="Select profile..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="retail">Retail</SelectItem>
+                <SelectItem value="gym">Gym</SelectItem>
+                <SelectItem value="appointments">Appointments</SelectItem>
+                <SelectItem value="hotel">Hotel</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        />
+        <p className="mt-1 text-xs text-text-tertiary">
+          Used to suggest automation presets tailored to your business.
+        </p>
+        {errors.businessProfile && (
+          <p className="mt-1 text-sm text-red-400">{errors.businessProfile.message}</p>
+        )}
+      </div>
+
       {/* Submit Button */}
       <div className="flex justify-end pt-4 border-t border-border">
         <Button type="submit" disabled={!isDirty || updateMutation.isPending} size="sm">
@@ -199,4 +241,3 @@ export function ProfileForm({ user }: ProfileFormProps) {
     </form>
   );
 }
-

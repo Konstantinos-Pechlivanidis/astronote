@@ -657,6 +657,7 @@ async function consumeAllowanceThenCredits(userId, amount, opts = {}, tx = null)
       debitedCredits: debitAmount,
       remainingAllowance: Math.max(0, remaining - allowanceToUse),
       balance: walletResult?.balance ?? null,
+      transactionId: walletResult?.txn?.id || null,
     };
   };
 
@@ -682,7 +683,7 @@ async function consumeMessageBilling(userId, amount, opts = {}) {
   return prisma.$transaction(async (tx) => {
     const message = await tx.campaignMessage.findUnique({
       where: { id: messageId },
-      select: { billingStatus: true, billedAt: true },
+      select: { billingStatus: true, billedAt: true, transactionId: true },
     });
 
     if (message?.billingStatus === 'paid') {
@@ -690,6 +691,7 @@ async function consumeMessageBilling(userId, amount, opts = {}) {
         alreadyBilled: true,
         billingStatus: 'paid',
         billedAt: message.billedAt,
+        transactionId: message.transactionId || null,
         usedAllowance: 0,
         debitedCredits: 0,
         remainingAllowance: null,
@@ -708,12 +710,15 @@ async function consumeMessageBilling(userId, amount, opts = {}) {
           billingStatus: 'paid',
           billedAt,
           billingError: null,
+          transactionId: reservationResult?.transactionId || null,
+          creditsCharged: amount,
         },
       });
 
       return {
         billingStatus: 'paid',
         billedAt,
+        transactionId: reservationResult?.transactionId || null,
         balance: reservationResult.balance ?? null,
         usedAllowance: 0,
         debitedCredits: amount,
@@ -731,6 +736,8 @@ async function consumeMessageBilling(userId, amount, opts = {}) {
         billingStatus: 'paid',
         billedAt,
         billingError: null,
+        transactionId: result.transactionId || null,
+        creditsCharged: amount,
       },
     });
 

@@ -68,6 +68,8 @@ test('shortenUrl reuses the same short code per owner/kind for identical URLs', 
 });
 
 test('public short route redirects to target URL', async (t) => {
+  const originalBase = process.env.PUBLIC_WEB_BASE_URL;
+  process.env.PUBLIC_WEB_BASE_URL = 'https://example.com';
   delete require.cache[publicShortRoutesPath];
   const router = require(publicShortRoutesPath);
   const layer = router.stack.find((l) => l.route?.path === '/public/s/:shortCode');
@@ -100,7 +102,169 @@ test('public short route redirects to target URL', async (t) => {
     assert.equal(redirectInfo.url, mockLink.targetUrl);
     assert.equal(updated, true);
   } finally {
+    if (originalBase) {process.env.PUBLIC_WEB_BASE_URL = originalBase;} else {delete process.env.PUBLIC_WEB_BASE_URL;}
     prisma.shortLink = originalDelegate;
+    t.mock.restoreAll();
+  }
+});
+
+test('public short route blocks non-http targets', async (t) => {
+  const originalBase = process.env.PUBLIC_WEB_BASE_URL;
+  process.env.PUBLIC_WEB_BASE_URL = 'https://example.com';
+  delete require.cache[publicShortRoutesPath];
+  const router = require(publicShortRoutesPath);
+  const layer = router.stack.find((l) => l.route?.path === '/public/s/:shortCode');
+  const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+  const mockLink = { shortCode: 'abc12345', targetUrl: 'javascript:alert(1)' };
+
+  const originalDelegate = prisma.shortLink;
+  let updated = false;
+  prisma.shortLink = {
+    findUnique: async () => mockLink,
+    update: async () => {
+      updated = true;
+      return mockLink;
+    },
+  };
+
+  const req = { params: { shortCode: 'abc12345' } };
+  let redirectInfo = null;
+  const res = {
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    redirect(code, url) { redirectInfo = { code, url }; return this; },
+  };
+
+  try {
+    await handler(req, res, () => {});
+
+    assert.equal(res.statusCode, 404);
+    assert.equal(redirectInfo, null);
+    assert.equal(updated, false);
+  } finally {
+    if (originalBase) {process.env.PUBLIC_WEB_BASE_URL = originalBase;} else {delete process.env.PUBLIC_WEB_BASE_URL;}
+    prisma.shortLink = originalDelegate;
+    t.mock.restoreAll();
+  }
+});
+
+test('public short route blocks unapproved domains', async (t) => {
+  const originalBase = process.env.PUBLIC_WEB_BASE_URL;
+  process.env.PUBLIC_WEB_BASE_URL = 'https://allowed.test';
+  delete require.cache[publicShortRoutesPath];
+  const router = require(publicShortRoutesPath);
+  const layer = router.stack.find((l) => l.route?.path === '/public/s/:shortCode');
+  const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+  const mockLink = { shortCode: 'abc12345', targetUrl: 'https://evil.com/landing' };
+
+  const originalDelegate = prisma.shortLink;
+  let updated = false;
+  prisma.shortLink = {
+    findUnique: async () => mockLink,
+    update: async () => {
+      updated = true;
+      return mockLink;
+    },
+  };
+
+  const req = { params: { shortCode: 'abc12345' } };
+  let redirectInfo = null;
+  const res = {
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    redirect(code, url) { redirectInfo = { code, url }; return this; },
+  };
+
+  try {
+    await handler(req, res, () => {});
+
+    assert.equal(res.statusCode, 404);
+    assert.equal(redirectInfo, null);
+    assert.equal(updated, false);
+  } finally {
+    if (originalBase) {process.env.PUBLIC_WEB_BASE_URL = originalBase;} else {delete process.env.PUBLIC_WEB_BASE_URL;}
+    prisma.shortLink = originalDelegate;
+    t.mock.restoreAll();
+  }
+});
+
+test('public short route rejects invalid short codes', async (t) => {
+  const originalBase = process.env.PUBLIC_WEB_BASE_URL;
+  process.env.PUBLIC_WEB_BASE_URL = 'https://example.com';
+  delete require.cache[publicShortRoutesPath];
+  const router = require(publicShortRoutesPath);
+  const layer = router.stack.find((l) => l.route?.path === '/public/s/:shortCode');
+  const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+  const req = { params: { shortCode: 'bad!' } };
+  const res = {
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+  };
+
+  try {
+    await handler(req, res, () => {});
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body?.code, 'VALIDATION_ERROR');
+  } finally {
+    if (originalBase) {process.env.PUBLIC_WEB_BASE_URL = originalBase;} else {delete process.env.PUBLIC_WEB_BASE_URL;}
+    t.mock.restoreAll();
+  }
+});
+
+test('public short route enforces owner match for unsubscribe links', async (t) => {
+  const tokenServicePath = path.resolve(__dirname, '../../src/services/token.service.js');
+  const originalSecret = process.env.UNSUBSCRIBE_TOKEN_SECRET;
+  const originalBase = process.env.PUBLIC_WEB_BASE_URL;
+  process.env.PUBLIC_WEB_BASE_URL = 'https://astronote.onrender.com';
+  process.env.UNSUBSCRIBE_TOKEN_SECRET = 'test-secret';
+  delete require.cache[tokenServicePath];
+  const { generateUnsubscribeToken } = require(tokenServicePath);
+  const token = generateUnsubscribeToken(10, 55);
+
+  delete require.cache[publicShortRoutesPath];
+  const router = require(publicShortRoutesPath);
+  const layer = router.stack.find((l) => l.route?.path === '/public/s/:shortCode');
+  const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+  const mockLink = {
+    shortCode: 'abc12345',
+    kind: 'unsubscribe',
+    ownerId: 54,
+    targetUrl: `https://astronote.onrender.com/unsubscribe/${token}`,
+  };
+
+  const originalDelegate = prisma.shortLink;
+  let updated = false;
+  prisma.shortLink = {
+    findUnique: async () => mockLink,
+    update: async () => {
+      updated = true;
+      return mockLink;
+    },
+  };
+
+  const req = { params: { shortCode: 'abc12345' } };
+  let redirectInfo = null;
+  const res = {
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    redirect(code, url) { redirectInfo = { code, url }; return this; },
+  };
+
+  try {
+    await handler(req, res, () => {});
+
+    assert.equal(res.statusCode, 404);
+    assert.equal(redirectInfo, null);
+    assert.equal(updated, false);
+  } finally {
+    prisma.shortLink = originalDelegate;
+    if (originalSecret) {process.env.UNSUBSCRIBE_TOKEN_SECRET = originalSecret;} else {delete process.env.UNSUBSCRIBE_TOKEN_SECRET;}
+    if (originalBase) {process.env.PUBLIC_WEB_BASE_URL = originalBase;} else {delete process.env.PUBLIC_WEB_BASE_URL;}
     t.mock.restoreAll();
   }
 });

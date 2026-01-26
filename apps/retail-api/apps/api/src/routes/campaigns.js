@@ -119,7 +119,8 @@ function convertLocalToUTC(dateStr, timeStr, timezone) {
 router.post('/campaigns', requireAuth, async (req, res, next) => {
   try {
     const { sanitizeString } = require('../lib/sanitize');
-    const { name, messageText, filterGender, filterAgeGroup, scheduledAt, scheduledDate, scheduledTime } = req.body || {};
+    const { name, messageText, filterGender, filterAgeGroup, scheduledAt, scheduledDate, scheduledTime, messageType } = req.body || {};
+    const { isMessageType, normalizeMessageType } = require('../services/messagePolicy');
 
     // Sanitize name
     const sanitizedName = name ? sanitizeString(name, { maxLength: 200 }) : null;
@@ -142,6 +143,14 @@ router.post('/campaigns', requireAuth, async (req, res, next) => {
 
     // Sanitize and validate messageText (required)
     const sanitizedMessageText = sanitizeString(messageText.trim(), { maxLength: 2000 });
+
+    if (messageType && !isMessageType(messageType)) {
+      return res.status(400).json({
+        message: 'Invalid message type. Use marketing or service.',
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    const normalizedMessageType = normalizeMessageType(messageType);
 
     // Validate and normalize filters
     const { normalizeGender, normalizeAgeGroup } = require('../lib/validation');
@@ -238,6 +247,7 @@ router.post('/campaigns', requireAuth, async (req, res, next) => {
         scheduledAt: scheduledAtDate,
         createdById: req.user.id,
         total,
+        messageType: normalizedMessageType,
       },
     });
 
@@ -770,7 +780,8 @@ router.put('/campaigns/:id', requireAuth, async (req, res, next) => {
     }
 
     const { sanitizeString } = require('../lib/sanitize');
-    const { name, messageText, filterGender, filterAgeGroup, scheduledDate, scheduledTime } = req.body || {};
+    const { name, messageText, filterGender, filterAgeGroup, scheduledDate, scheduledTime, messageType } = req.body || {};
+    const { isMessageType, normalizeMessageType } = require('../services/messagePolicy');
 
     // Find campaign and verify ownership
     const existingCampaign = await prisma.campaign.findFirst({
@@ -816,6 +827,16 @@ router.put('/campaigns/:id', requireAuth, async (req, res, next) => {
         });
       }
       updates.messageText = sanitizeString(messageText.trim(), { maxLength: 2000 });
+    }
+
+    if (messageType !== undefined) {
+      if (messageType && !isMessageType(messageType)) {
+        return res.status(400).json({
+          message: 'Invalid message type. Use marketing or service.',
+          code: 'VALIDATION_ERROR',
+        });
+      }
+      updates.messageType = normalizeMessageType(messageType);
     }
 
     // Update filters if provided

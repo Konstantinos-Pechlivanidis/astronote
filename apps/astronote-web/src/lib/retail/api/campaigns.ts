@@ -5,6 +5,7 @@ export interface Campaign {
   id: number
   name: string
   messageText: string
+  messageType?: 'marketing' | 'service'
   status: 'draft' | 'scheduled' | 'sending' | 'completed' | 'failed' | 'paused'
   filterGender?: string | null
   filterAgeGroup?: string | null
@@ -44,6 +45,7 @@ export interface CampaignListResponse {
 export interface CampaignCreateRequest {
   name: string
   messageText: string
+  messageType?: 'marketing' | 'service'
   filterGender?: string | null
   filterAgeGroup?: string | null
   scheduledDate?: string
@@ -53,6 +55,7 @@ export interface CampaignCreateRequest {
 export interface CampaignUpdateRequest {
   name?: string
   messageText?: string
+  messageType?: 'marketing' | 'service'
   filterGender?: string | null
   filterAgeGroup?: string | null
   scheduledDate?: string

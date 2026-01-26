@@ -50,6 +50,7 @@ export default function NewCampaignPage() {
     defaultValues: {
       name: '',
       messageText: '',
+      messageType: 'marketing',
       scheduleType: 'now',
       filterGender: null,
       filterAgeGroup: null,
@@ -95,6 +96,7 @@ export default function NewCampaignPage() {
     const submitData = {
       name: data.name,
       messageText: data.messageText || null,
+      messageType: data.messageType || 'marketing',
       filterGender:
         data.filterGender && data.filterGender.trim()
           ? data.filterGender
@@ -292,6 +294,33 @@ export default function NewCampaignPage() {
                     </div>
 
                     <div>
+                      <label className="mb-2 block text-sm font-medium text-text-secondary">
+                        Message Type <span className="text-red-400">*</span>
+                      </label>
+                      <Controller
+                        name="messageType"
+                        control={control}
+                        render={({ field }) => (
+                          <Select
+                            value={field.value || 'marketing'}
+                            onValueChange={field.onChange}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select message type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="marketing">Marketing</SelectItem>
+                              <SelectItem value="service">Service</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      <p className="mt-1 text-xs text-text-tertiary">
+                        Marketing messages automatically include an unsubscribe link. Service messages do not include unsubscribe/offer by default.
+                      </p>
+                    </div>
+
+                    <div>
                       <label
                         htmlFor="messageText"
                         className="mb-2 block text-sm font-medium text-text-secondary"
@@ -338,7 +367,9 @@ export default function NewCampaignPage() {
                           Personalization supports the variables above. Use the exact casing shown.
                         </p>
                         <p className="text-xs text-text-secondary">
-                          Offer link and unsubscribe are added automatically at send time, shortened by the system, and use the Claim Offer label.
+                          {watch('messageType') === 'service'
+                            ? 'Service messages do not include unsubscribe or offer links by default.'
+                            : 'Marketing messages include unsubscribe automatically; offer links are added when enabled and shortened by the system.'}
                         </p>
                         <p className="text-xs text-text-tertiary">
                           Keep messages concise; the preview shows length and GSM character counts.

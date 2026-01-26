@@ -27,6 +27,7 @@ model User {
   senderName String? @db.VarChar(11) // default SMS sender (3-11 alphanumeric)
   company    String? @db.VarChar(160)
   timezone   String? @db.VarChar(50) // IANA timezone (e.g. "Europe/Athens", "America/New_York")
+  businessProfile BusinessProfile @default(retail)
 
   // Subscription fields
   stripeCustomerId        String?              @unique @db.VarChar(255)
@@ -73,6 +74,11 @@ model User {
   offerViewEvents   OfferViewEvent[]
   automationMessages AutomationMessage[]
   automationRedemptions AutomationRedemption[]
+  directMessages DirectMessage[]
+  customerEvents CustomerEvent[]
+  automationRules AutomationRule[]
+  automationSends AutomationSend[]
+  consentEvents ConsentEvent[]
   publicLinkTokens PublicLinkToken[] @relation("PublicLinkTokenOwner")
   retailBranding  RetailBranding? @relation("RetailBrandingOwner")
   publicSignupEvents PublicSignupEvent[] @relation("PublicSignupEventOwner")
@@ -107,6 +113,48 @@ enum Gender {
   prefer_not_to_say
 }
 
+enum BusinessProfile {
+  retail
+  gym
+  appointments
+  hotel
+  other
+}
+
+enum CustomerEventType {
+  appointment
+  membership
+  stay
+  purchase
+  visit
+  custom
+}
+
+enum CustomerEventStatus {
+  scheduled
+  completed
+  canceled
+  no_show
+}
+
+enum ConsentEventType {
+  unsubscribed
+  resubscribed
+  service_allowed
+  service_revoked
+}
+
+enum AutomationTriggerType {
+  event
+  inactivity
+  birthday
+}
+
+enum AutomationEventTimeField {
+  startAt
+  endAt
+}
+
 model Contact {
   id Int @id @default(autoincrement())
 
@@ -132,15 +180,20 @@ model Contact {
 
   // subscription state
   isSubscribed         Boolean   @default(true)
+  serviceAllowed       Boolean   @default(true)
   unsubscribeTokenHash String?   @db.VarChar(64)
   unsubscribedAt       DateTime?
 
   memberships      ListMembership[]
   messages         CampaignMessage[]
   automationMessages AutomationMessage[]
+  directMessages   DirectMessage[]
+  customerEvents   CustomerEvent[]
+  automationSends  AutomationSend[]
   nfcScans         NfcScan[]
   conversionEvents ConversionEvent[]
   offerViewEvents  OfferViewEvent[]
+  consentEvents    ConsentEvent[]
 
   @@unique([ownerId, phone]) // unique per owner
   @@index([unsubscribeTokenHash])
@@ -150,6 +203,63 @@ model Contact {
   @@index([gender])
   @@index([birthday])
   @@index([ownerId, gender]) // Composite for gender-based segmentation
+}
+
+model ConsentEvent {
+  id Int @id @default(autoincrement())
+
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  contactId Int
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  type   ConsentEventType
+  source String? @db.VarChar(80)
+  meta   Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([ownerId])
+  @@index([contactId])
+  @@index([ownerId, type])
+  @@index([createdAt])
+}
+
+model CustomerEvent {
+  id Int @id @default(autoincrement())
+
+  // OWNER SCOPE
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  contactId Int?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  phoneE164   String?
+  externalRef String? @db.VarChar(120)
+
+  eventType CustomerEventType
+  status    CustomerEventStatus @default(scheduled)
+
+  startAt DateTime?
+  endAt   DateTime?
+
+  meta Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  automationSends AutomationSend[]
+
+  @@index([ownerId])
+  @@index([contactId])
+  @@index([eventType])
+  @@index([status])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([ownerId, eventType])
+  @@index([ownerId, status])
 }
 
 model List {
@@ -257,6 +367,7 @@ model Campaign {
   name       String
   // Message text (required - templates are copy-paste library only, no association)
   messageText String @db.Text
+  messageType MessageType @default(marketing)
 
   // Legacy list support (optional for backward compatibility)
   listId Int?
@@ -306,6 +417,17 @@ enum MessageStatus {
   failed
 }
 
+enum DirectMessageStatus {
+  pending
+  sent
+  failed
+}
+
+enum MessageType {
+  marketing
+  service
+}
+
 enum BillingStatus {
   pending
   paid
@@ -348,6 +470,8 @@ model CampaignMessage {
   billingStatus     BillingStatus?
   billingError      String?
   billedAt          DateTime?
+  creditsCharged    Int?
+  transactionId     Int?
 
   redemption       Redemption?
   conversionEvents ConversionEvent[]
@@ -368,6 +492,48 @@ model CampaignMessage {
   @@index([sendClaimedAt])
   @@index([deliveryStatus])
   @@index([billingStatus])
+  @@index([transactionId])
+  @@unique([campaignId, contactId])
+}
+
+model DirectMessage {
+  id Int @id @default(autoincrement())
+
+  // OWNER SCOPE
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  contactId Int?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  phoneE164   String
+  messageBody String @default("") @db.Text
+
+  messageType MessageType @default(marketing)
+  status      DirectMessageStatus @default(pending)
+
+  providerMessageId    String?
+  deliveryStatus       String?
+  deliveryLastCheckedAt DateTime?
+  error                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  sentAt               DateTime?
+  failedAt             DateTime?
+  deliveredAt          DateTime?
+
+  creditsCharged  Int?
+  reservationId   Int?
+  transactionId   Int?
+  idempotencyKey  String? @db.VarChar(128)
+
+  @@index([ownerId])
+  @@index([contactId])
+  @@index([providerMessageId])
+  @@index([status])
+  @@index([deliveryStatus])
+  @@index([ownerId, createdAt])
+  @@unique([ownerId, idempotencyKey])
 }
 
 model ShortLink {
@@ -575,6 +741,8 @@ enum PaymentAdjustmentType {
 enum ExportRunKind {
   weekly
   on_demand
+  messaging_weekly
+  messaging_on_demand
 }
 
 enum ExportRunStatus {
@@ -1146,6 +1314,7 @@ model Automation {
   // User-configurable settings
   isActive    Boolean @default(false) // Active/Inactive toggle
   messageBody String  @default("Hello!") @db.Text // SMS text with {{first_name}} and {{last_name}} placeholders
+  messageType MessageType @default(marketing)
 
   // Timestamps
   createdAt DateTime @default(now())
@@ -1181,10 +1350,13 @@ model AutomationMessage {
   status MessageStatus @default(queued)
 
   providerMessageId String?
+  deliveryStatus    String?
   error             String?
   createdAt         DateTime  @default(now())
   sentAt            DateTime?
   failedAt          DateTime?
+  creditsCharged    Int?
+  transactionId     Int?
 
   redemption AutomationRedemption?
 
@@ -1192,11 +1364,95 @@ model AutomationMessage {
   @@index([contactId])
   @@index([status])
   @@index([providerMessageId])
+  @@index([deliveryStatus])
+  @@index([transactionId])
   @@index([ownerId])
   @@index([sentAt])
   @@index([failedAt])
   @@index([ownerId, automationId]) // Composite for common query pattern
   @@index([ownerId, status]) // Composite for filtered status queries
+}
+
+model AutomationRule {
+  id Int @id @default(autoincrement())
+
+  // OWNER SCOPE
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  presetKey String @db.VarChar(120)
+  name        String  @db.VarChar(200)
+  description String? @db.VarChar(400)
+
+  isActive   Boolean @default(false)
+  messageType MessageType @default(marketing)
+  messageBody String @db.Text
+
+  triggerType AutomationTriggerType
+  eventType   CustomerEventType?
+  eventStatus CustomerEventStatus?
+  eventTimeField AutomationEventTimeField? @default(startAt)
+  offsetMinutes Int @default(0)
+  inactivityDays Int?
+
+  dedupeWindowMinutes Int @default(1440)
+  maxPerContactPerDay Int @default(1)
+  lastRunAt DateTime?
+
+  meta Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sends AutomationSend[]
+
+  @@unique([ownerId, presetKey])
+  @@index([ownerId])
+  @@index([ownerId, isActive])
+  @@index([triggerType])
+  @@index([eventType])
+}
+
+model AutomationSend {
+  id Int @id @default(autoincrement())
+
+  // OWNER SCOPE
+  ownerId Int
+  owner   User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  ruleId Int
+  rule   AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  contactId Int
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  eventId Int?
+  event   CustomerEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  messageType MessageType @default(marketing)
+  messageBody String @db.Text
+  status MessageStatus @default(queued)
+
+  scheduledFor DateTime
+  providerMessageId String?
+  deliveryStatus String?
+  error String?
+  sentAt DateTime?
+  failedAt DateTime?
+  createdAt DateTime @default(now())
+  creditsCharged Int?
+  transactionId Int?
+
+  @@index([ownerId])
+  @@index([ruleId])
+  @@index([contactId])
+  @@index([eventId])
+  @@index([status])
+  @@index([scheduledFor])
+  @@index([ownerId, status])
+  @@index([deliveryStatus])
+  @@index([transactionId])
+  @@unique([ruleId, contactId, scheduledFor])
 }
 
 model AutomationRedemption {

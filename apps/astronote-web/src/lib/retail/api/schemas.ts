@@ -59,6 +59,7 @@ export const ContactsListSchema = z.object({
       gender: z.enum(['male', 'female', 'other']).nullable().optional(),
       birthday: z.string().nullable().optional(),
       isSubscribed: z.boolean().optional(),
+      serviceAllowed: z.boolean().optional(),
       createdAt: z.string().optional(),
     }),
   ),
@@ -66,5 +67,4 @@ export const ContactsListSchema = z.object({
   page: z.number(),
   pageSize: z.number(),
 });
-
 

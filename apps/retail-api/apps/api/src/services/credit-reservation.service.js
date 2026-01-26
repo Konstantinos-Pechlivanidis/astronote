@@ -237,7 +237,13 @@ async function commitReservationById(ownerId, reservationId, opts = {}, tx = nul
       data: { status: 'committed', committedAt },
     });
 
-    return { committed: true, reservation, balance: billingResult.balance, billedAt: committedAt };
+    return {
+      committed: true,
+      reservation,
+      balance: billingResult.balance,
+      billedAt: committedAt,
+      transactionId: billingResult?.txn?.id || null,
+    };
   };
 
   return tx ? execute(tx) : prisma.$transaction(execute);
@@ -255,7 +261,7 @@ async function commitReservationForMessage(ownerId, messageId, opts = {}, tx = n
   return tx ? execute(tx) : prisma.$transaction(execute);
 }
 
-async function releaseReservationById(ownerId, reservationId, opts = {}, tx = null) {
+async function releaseReservationById(ownerId, reservationId, tx = null) {
   const execute = async (client) => {
     const reservation = await client.creditReservation.findUnique({ where: { id: reservationId } });
     if (!reservation || reservation.ownerId !== ownerId) {
@@ -294,12 +300,13 @@ async function releaseReservationById(ownerId, reservationId, opts = {}, tx = nu
 }
 
 async function releaseReservationForMessage(ownerId, messageId, opts = {}, tx = null) {
+  void opts;
   const execute = async (client) => {
     const reservation = await client.creditReservation.findUnique({ where: { messageId } });
     if (!reservation || reservation.ownerId !== ownerId) {
       return { released: false, reason: 'reservation_missing' };
     }
-    return releaseReservationById(ownerId, reservation.id, opts, client);
+    return releaseReservationById(ownerId, reservation.id, client);
   };
 
   return tx ? execute(tx) : prisma.$transaction(execute);

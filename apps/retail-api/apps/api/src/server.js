@@ -299,6 +299,7 @@ app.get('/api/me', requireAuth, async (req, res, next) => {
           senderName: true,
           company: true,
           timezone: true,
+          businessProfile: true,
         },
       });
     } catch (dbError) {
@@ -360,12 +361,16 @@ app.get('/api/me', requireAuth, async (req, res, next) => {
 // Contacts & Lists
 app.use('/api', require('./routes/contacts'));
 app.use('/api', require('./routes/lists'));
+app.use('/api', require('./routes/directMessages'));
+app.use('/api', require('./routes/events'));
+app.use('/api', require('./routes/messageLogs'));
 
 // Templates (system + owner)
 app.use('/api', require('./routes/templates'));
 
 // Automations (system-defined, user can enable/disable and edit)
 app.use('/api', require('./routes/automations'));
+app.use('/api', require('./routes/automationLibrary'));
 
 // Campaigns (CRUD, preview, enqueue, schedule)
 app.use('/api', require('./routes/campaigns'));
@@ -466,6 +471,40 @@ if (STATUS_REFRESH_ENABLED && process.env.QUEUE_DISABLED !== '1') {
       console.log(`[Status Refresh] Scheduled delivery refresh every ${Math.round(deliveryRefreshInterval / 1000)} seconds`);
     }).catch(err => {
       console.error('[Status Refresh] Failed to schedule delivery refresh:', err.message);
+    });
+
+    // Direct messages: pending status refresh
+    statusRefreshQueue.add(
+      'refreshPendingDirectMessages',
+      { limit: 50 },
+      {
+        repeat: {
+          every: STATUS_REFRESH_INTERVAL,
+          immediately: false,
+        },
+        jobId: 'direct-status-refresh-periodic',
+      },
+    ).then(() => {
+      console.log(`[Status Refresh] Scheduled direct message refresh every ${STATUS_REFRESH_INTERVAL / 1000 / 60} minutes`);
+    }).catch(err => {
+      console.error('[Status Refresh] Failed to schedule direct message refresh:', err.message);
+    });
+
+    // Direct messages: missing delivery refresh
+    statusRefreshQueue.add(
+      'refreshMissingDirectDeliveryStatuses',
+      { limit: 50, olderThanSeconds: 60 },
+      {
+        repeat: {
+          every: deliveryRefreshInterval,
+          immediately: false,
+        },
+        jobId: 'direct-delivery-refresh-periodic',
+      },
+    ).then(() => {
+      console.log(`[Status Refresh] Scheduled direct delivery refresh every ${Math.round(deliveryRefreshInterval / 1000)} seconds`);
+    }).catch(err => {
+      console.error('[Status Refresh] Failed to schedule direct delivery refresh:', err.message);
     });
   }
 }

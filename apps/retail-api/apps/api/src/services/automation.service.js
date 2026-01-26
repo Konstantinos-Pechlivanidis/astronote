@@ -4,6 +4,7 @@
 const prisma = require('../lib/prisma');
 const { sendSMSWithCredits } = require('./sms.service');
 const { buildOfferShortUrl } = require('./publicLinkBuilder.service');
+const { getMessagePolicy, normalizeMessageType, stripLinkBlocks } = require('./messagePolicy');
 const { render } = require('../lib/template');
 const crypto = require('node:crypto');
 const pino = require('pino');
@@ -18,28 +19,6 @@ const AUTOMATION_TYPES = {
   WELCOME: 'welcome_message',
   BIRTHDAY: 'birthday_message',
 };
-
-function stripOfferAndUnsub(text) {
-  let output = text || '';
-  const linePatterns = [
-    /^ *(view|claim) offer:.*$/gim,
-    /^ *to unsubscribe.*$/gim,
-  ];
-  const urlPatterns = [
-    /https?:\/\/\S*\/o\/[^\s]+/gi,
-    /https?:\/\/\S*\/retail\/o\/[^\s]+/gi,
-    /https?:\/\/\S*\/tracking\/offer\/[^\s]+/gi,
-    /https?:\/\/\S*\/s\/[^\s]+/gi,
-    /https?:\/\/\S*\/retail\/s\/[^\s]+/gi,
-    /https?:\/\/\S*\/unsubscribe\/[^\s]+/gi,
-  ];
-
-  [...linePatterns, ...urlPatterns].forEach((pattern) => {
-    output = output.replace(pattern, '');
-  });
-
-  return output.replace(/\n{3,}/g, '\n\n').trim();
-}
 
 function startOfDay(date) {
   const d = new Date(date);
@@ -80,6 +59,7 @@ async function getOrCreateAutomation(ownerId, type) {
         type,
         isActive: false, // Default to inactive
         messageBody: defaultMessages[type] || 'Hello {{first_name}}!',
+        messageType: 'marketing',
       },
     });
   }
@@ -103,6 +83,7 @@ async function getAutomations(ownerId) {
       type: welcome.type,
       isActive: welcome.isActive,
       messageBody: welcome.messageBody,
+      messageType: welcome.messageType,
       createdAt: welcome.createdAt,
       updatedAt: welcome.updatedAt,
     },
@@ -111,6 +92,7 @@ async function getAutomations(ownerId) {
       type: birthday.type,
       isActive: birthday.isActive,
       messageBody: birthday.messageBody,
+      messageType: birthday.messageType,
       createdAt: birthday.createdAt,
       updatedAt: birthday.updatedAt,
     },
@@ -199,7 +181,7 @@ async function triggerWelcomeAutomation(ownerId, contact) {
   }
 
   // Render message with contact placeholders
-  let messageText = stripOfferAndUnsub(render(automation.messageBody, contact));
+  const messageText = stripLinkBlocks(render(automation.messageBody, contact));
 
   if (!messageText || !messageText.trim()) {
     logger.error({ ownerId, contactId: contact.id, messageBody: automation.messageBody }, 'Welcome automation message is empty after rendering');
@@ -208,17 +190,19 @@ async function triggerWelcomeAutomation(ownerId, contact) {
 
   // Generate trackingId and offer link
   const trackingId = newTrackingId();
-  let shortenedOfferUrl;
-  try {
-    const offer = await buildOfferShortUrl({ trackingId, ownerId });
-    shortenedOfferUrl = offer?.shortUrl || offer?.longUrl;
-  } catch (err) {
-    logger.error({ ownerId, contactId: contact.id, err: err?.message || String(err) }, 'Failed to shorten offer link for welcome automation');
-    return { sent: false, reason: 'shortener_failed', error: 'Unable to shorten offer link' };
-  }
+  const messageType = normalizeMessageType(automation.messageType);
+  const policy = getMessagePolicy(messageType, true);
+  let shortenedOfferUrl = null;
 
-  // Append offer link to message (with shortened URL)
-  messageText += `\n\nClaim Offer: ${shortenedOfferUrl}`;
+  if (policy.appendOffer) {
+    try {
+      const offer = await buildOfferShortUrl({ trackingId, ownerId });
+      shortenedOfferUrl = offer?.shortUrl || offer?.longUrl;
+    } catch (err) {
+      logger.error({ ownerId, contactId: contact.id, err: err?.message || String(err) }, 'Failed to shorten offer link for welcome automation');
+      return { sent: false, reason: 'shortener_failed', error: 'Unable to shorten offer link' };
+    }
+  }
 
   // Get sender name (using resolveSender which handles user lookup internally)
   const { resolveSender } = require('./mitto.service');
@@ -247,6 +231,8 @@ async function triggerWelcomeAutomation(ownerId, contact) {
     text: messageText,
     sender,
     contactId: contact.id, // Pass contactId for unsubscribe link generation
+    messageType,
+    offerUrl: shortenedOfferUrl,
     meta: {
       reason: 'automation:welcome',
       automationType: AUTOMATION_TYPES.WELCOME,
@@ -268,7 +254,10 @@ async function triggerWelcomeAutomation(ownerId, contact) {
           trackingId,
           status: 'sent',
           providerMessageId: result.messageId,
+          deliveryStatus: 'Sent',
           sentAt: new Date(),
+          creditsCharged: result.creditsCharged || 0,
+          transactionId: result.transactionId || null,
         },
       });
       logger.debug({ ownerId, automationId: automation.id, contactId: contact.id, trackingId }, 'AutomationMessage created (sent)');
@@ -285,6 +274,8 @@ async function triggerWelcomeAutomation(ownerId, contact) {
           status: 'failed',
           error: result.error || result.reason || 'Send failed',
           failedAt: new Date(),
+          creditsCharged: result.creditsCharged || 0,
+          transactionId: result.transactionId || null,
         },
       });
       logger.debug({ ownerId, automationId: automation.id, contactId: contact.id, trackingId }, 'AutomationMessage created (failed)');
@@ -449,7 +440,7 @@ async function processBirthdayAutomations() {
         }
 
         // Render message with contact placeholders
-        let messageText = stripOfferAndUnsub(render(automation.messageBody, contact));
+        const messageText = stripLinkBlocks(render(automation.messageBody, contact));
 
         if (!messageText || !messageText.trim()) {
           logger.error({
@@ -463,22 +454,24 @@ async function processBirthdayAutomations() {
 
         // Generate trackingId and offer link
         const trackingId = newTrackingId();
-        let shortenedOfferUrl;
-        try {
-          const offer = await buildOfferShortUrl({ trackingId, ownerId: automation.ownerId });
-          shortenedOfferUrl = offer?.shortUrl || offer?.longUrl;
-        } catch (err) {
-          logger.error({
-            ownerId: automation.ownerId,
-            contactId: contact.id,
-            err: err?.message || String(err),
-          }, 'Failed to shorten offer link for birthday automation');
-          totalFailed++;
-          continue;
-        }
+        const messageType = normalizeMessageType(automation.messageType);
+        const policy = getMessagePolicy(messageType, true);
+        let shortenedOfferUrl = null;
 
-        // Append offer link to message (with shortened URL)
-        messageText += `\n\nClaim Offer: ${shortenedOfferUrl}`;
+        if (policy.appendOffer) {
+          try {
+            const offer = await buildOfferShortUrl({ trackingId, ownerId: automation.ownerId });
+            shortenedOfferUrl = offer?.shortUrl || offer?.longUrl;
+          } catch (err) {
+            logger.error({
+              ownerId: automation.ownerId,
+              contactId: contact.id,
+              err: err?.message || String(err),
+            }, 'Failed to shorten offer link for birthday automation');
+            totalFailed++;
+            continue;
+          }
+        }
 
         // Send SMS via Mitto with credit enforcement
         const result = await sendSMSWithCredits({
@@ -487,6 +480,8 @@ async function processBirthdayAutomations() {
           text: messageText,
           sender,
           contactId: contact.id, // Pass contactId for unsubscribe link generation
+          messageType,
+          offerUrl: shortenedOfferUrl,
           meta: {
             reason: 'automation:birthday',
             automationType: AUTOMATION_TYPES.BIRTHDAY,
@@ -508,7 +503,10 @@ async function processBirthdayAutomations() {
                 trackingId,
                 status: 'sent',
                 providerMessageId: result.messageId,
+                deliveryStatus: 'Sent',
                 sentAt: new Date(),
+                creditsCharged: result.creditsCharged || 0,
+                transactionId: result.transactionId || null,
               },
             });
             logger.debug({ ownerId: automation.ownerId, automationId: automation.id, contactId: contact.id, trackingId }, 'AutomationMessage created (sent)');
@@ -525,6 +523,8 @@ async function processBirthdayAutomations() {
                 status: 'failed',
                 error: result.error || result.reason || 'Send failed',
                 failedAt: new Date(),
+                creditsCharged: result.creditsCharged || 0,
+                transactionId: result.transactionId || null,
               },
             });
             logger.debug({ ownerId: automation.ownerId, automationId: automation.id, contactId: contact.id, trackingId }, 'AutomationMessage created (failed)');

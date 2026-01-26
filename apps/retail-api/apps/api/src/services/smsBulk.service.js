@@ -288,6 +288,8 @@ async function sendBulkSMSWithCredits(messages) {
             balanceAfter: billingResult.balance ?? walletSummary.balance,
             billingStatus: billingResult.committed || billingResult.alreadyCommitted ? 'paid' : 'failed',
             billedAt: billingResult.billedAt || new Date(),
+            creditsCharged: 1,
+            transactionId: billingResult.transactionId || null,
           });
           successCount++;
         } catch (billingErr) {

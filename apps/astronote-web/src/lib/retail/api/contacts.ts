@@ -11,6 +11,7 @@ export interface Contact {
   gender?: 'male' | 'female' | 'other' | null
   birthday?: string | null
   isSubscribed?: boolean
+  serviceAllowed?: boolean
   createdAt?: string
 }
 
@@ -67,4 +68,3 @@ export const contactsApi = {
   getImportStatus: (jobId: string) => api.get(endpoints.contacts.importStatus(jobId)),
   downloadTemplate: () => api.get(endpoints.contacts.importTemplate, { responseType: 'blob' }),
 };
-

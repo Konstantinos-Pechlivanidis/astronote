@@ -161,6 +161,23 @@ router.get(
  */
 async function recordOfferViewEvent({ campaignMessageId, campaignId, contactId, ownerId, ipAddress, userAgent }) {
   try {
+    const dedupeWindowMs = 10 * 60 * 1000; // 10 minutes
+    const dedupeAfter = new Date(Date.now() - dedupeWindowMs);
+    if (ipAddress || userAgent) {
+      const existing = await prisma.offerViewEvent.findFirst({
+        where: {
+          campaignMessageId,
+          viewedAt: { gte: dedupeAfter },
+          ...(ipAddress ? { ipAddress } : {}),
+          ...(userAgent ? { userAgent } : {}),
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        return;
+      }
+    }
+
     // Simple device type detection from user agent
     let deviceType = null;
     if (userAgent) {
@@ -286,15 +303,26 @@ router.post(
         publicRedeem: true,
       };
 
-      const redemption = await prisma.redemption.create({
-        data: {
-          messageId: msg.id,
-          campaignId: msg.campaignId,
-          contactId: msg.contactId,
-          ownerId: msg.ownerId,
-          evidenceJson: evidence,
-        },
-      });
+      let redemption;
+      try {
+        redemption = await prisma.redemption.create({
+          data: {
+            messageId: msg.id,
+            campaignId: msg.campaignId,
+            contactId: msg.contactId,
+            ownerId: msg.ownerId,
+            evidenceJson: evidence,
+          },
+        });
+      } catch (createErr) {
+        if (createErr?.code === 'P2002' || createErr?.code === 'P2003') {
+          const existingRedeem = await prisma.redemption.findUnique({ where: { messageId: msg.id } });
+          if (existingRedeem) {
+            return res.json({ status: 'already_redeemed', redeemedAt: existingRedeem.redeemedAt });
+          }
+        }
+        throw createErr;
+      }
 
       // Update aggregates (non-blocking)
       try {
@@ -378,16 +406,34 @@ router.post(
         }
 
         // Create automation redemption (scoped)
-        const rdm = await prisma.automationRedemption.create({
-          data: {
-            ownerId: req.user.id,
-            messageId: autoMsg.id,
-            automationId: autoMsg.automationId,
-            contactId: autoMsg.contactId,
-            redeemedByUserId: req.user.id,
-            evidenceJson: { ip: req.ip },
-          },
-        });
+        let rdm;
+        try {
+          rdm = await prisma.automationRedemption.create({
+            data: {
+              ownerId: req.user.id,
+              messageId: autoMsg.id,
+              automationId: autoMsg.automationId,
+              contactId: autoMsg.contactId,
+              redeemedByUserId: req.user.id,
+              evidenceJson: { ip: req.ip, userAgent: req.get('user-agent') || null },
+            },
+          });
+        } catch (createErr) {
+          if (createErr?.code === 'P2002' || createErr?.code === 'P2003') {
+            const existingRedeem = await prisma.automationRedemption.findUnique({ where: { messageId: autoMsg.id } });
+            if (existingRedeem) {
+              return res.json({
+                status: 'already_redeemed',
+                trackingId,
+                messageId: autoMsg.id,
+                automationId: autoMsg.automationId,
+                contactId: autoMsg.contactId,
+                redeemedAt: existingRedeem.redeemedAt,
+              });
+            }
+          }
+          throw createErr;
+        }
 
         logger.info({
           trackingId,
@@ -423,16 +469,34 @@ router.post(
         }
 
         // Create redemption (scoped)
-        const rdm = await prisma.redemption.create({
-          data: {
-            ownerId: req.user.id,
-            messageId: msg.id,
-            campaignId: msg.campaignId,
-            contactId: msg.contactId,
-            redeemedByUserId: req.user.id,
-            evidenceJson: { ip: req.ip },
-          },
-        });
+        let rdm;
+        try {
+          rdm = await prisma.redemption.create({
+            data: {
+              ownerId: req.user.id,
+              messageId: msg.id,
+              campaignId: msg.campaignId,
+              contactId: msg.contactId,
+              redeemedByUserId: req.user.id,
+              evidenceJson: { ip: req.ip, userAgent: req.get('user-agent') || null },
+            },
+          });
+        } catch (createErr) {
+          if (createErr?.code === 'P2002' || createErr?.code === 'P2003') {
+            const existingRedeem = await prisma.redemption.findUnique({ where: { messageId: msg.id } });
+            if (existingRedeem) {
+              return res.json({
+                status: 'already_redeemed',
+                trackingId,
+                messageId: msg.id,
+                campaignId: msg.campaignId,
+                contactId: msg.contactId,
+                redeemedAt: existingRedeem.redeemedAt,
+              });
+            }
+          }
+          throw createErr;
+        }
 
         logger.info({
           trackingId,

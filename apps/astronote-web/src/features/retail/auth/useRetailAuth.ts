@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { authApi, type AuthResponse } from '@/src/lib/retail/api/auth';
 import { meApi } from '@/src/lib/retail/api/me';
+import type { BusinessProfile } from '@/src/lib/retail/types';
 
 export interface RetailUser {
   id: number
@@ -10,6 +11,7 @@ export interface RetailUser {
   senderName?: string
   company?: string
   timezone?: string
+  businessProfile?: BusinessProfile
 }
 
 interface UseRetailAuthReturn {
@@ -109,4 +111,3 @@ export function useRetailAuth(): UseRetailAuthReturn {
     logout,
   };
 }
-

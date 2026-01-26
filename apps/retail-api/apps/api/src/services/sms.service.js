@@ -7,6 +7,8 @@ const { generateUnsubscribeToken } = require('./token.service');
 const { shortenUrlsInText } = require('./urlShortener.service');
 const { buildUnsubscribeShortUrl } = require('./publicLinkBuilder.service');
 const { canSendOrSpendCredits, getAllowanceStatus, consumeMessageBilling } = require('./subscription.service');
+const { getMessagePolicy, normalizeMessageBody, normalizeMessageType } = require('./messagePolicy');
+const { checkMessageGuards } = require('./messageGuards.service');
 const pino = require('pino');
 
 const logger = pino({ name: 'sms-service' });
@@ -23,7 +25,7 @@ const logger = pino({ name: 'sms-service' });
  * @param {Object} [params.meta] - Optional metadata for transaction (campaignId, messageId, etc.)
  * @returns {Promise<Object>} Result with sent status, messageId, etc.
  */
-async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {}, contactId = null }) {
+async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {}, contactId = null, messageType = 'marketing', offerUrl = null }) {
   // 1. Check subscription status first
   const subscriptionGate = await canSendOrSpendCredits(ownerId);
   if (!subscriptionGate.allowed) {
@@ -54,11 +56,38 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
     };
   }
 
+  // 2.5 Check guardrails (rate limits, quiet hours, per-contact limits)
+  const guard = await checkMessageGuards({
+    ownerId,
+    contactId,
+    phoneE164: destination,
+    messageType,
+    eventId: meta?.eventId || null,
+  });
+  if (!guard.allowed) {
+    logger.warn({ ownerId, reason: guard.reason }, 'Message guard blocked send');
+    return {
+      sent: false,
+      reason: guard.reason || 'guard_blocked',
+      error: guard.message || 'Message blocked by safety guardrails.',
+    };
+  }
+
   // 3. Shorten any URLs in the message text first
   let finalText = await shortenUrlsInText(text, { ownerId, kind: 'message' });
 
-  // 4. Append unsubscribe link if contactId is provided (for automations)
-  if (contactId) {
+  const normalizedType = normalizeMessageType(messageType);
+  const policy = getMessagePolicy(normalizedType, Boolean(offerUrl));
+  let unsubscribeUrl = null;
+
+  if (policy.appendUnsubscribe) {
+    if (!contactId) {
+      return {
+        sent: false,
+        reason: 'missing_contact',
+        error: 'Contact is required to generate unsubscribe link for marketing messages.',
+      };
+    }
     try {
       const unsubscribeToken = generateUnsubscribeToken(contactId, ownerId, meta.campaignId || null);
       const unsubscribe = await buildUnsubscribeShortUrl({
@@ -67,7 +96,7 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
         campaignId: meta.campaignId || null,
         campaignMessageId: meta.messageId || null,
       });
-      finalText += `\n\nTo unsubscribe, tap: ${unsubscribe?.shortUrl}`;
+      unsubscribeUrl = unsubscribe?.shortUrl || null;
     } catch (tokenErr) {
       const errMsg = tokenErr?.message || 'Unable to shorten unsubscribe link';
       logger.error({ ownerId, contactId, err: errMsg }, 'Failed to build unsubscribe short link');
@@ -78,6 +107,12 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
       };
     }
   }
+
+  const normalized = normalizeMessageBody(finalText, policy, {
+    offerUrl,
+    unsubscribeUrl,
+  });
+  finalText = normalized.text;
 
   // 4. Send SMS via Mitto (credits will be debited AFTER successful send)
   try {
@@ -116,6 +151,8 @@ async function sendSMSWithCredits({ ownerId, destination, text, sender, meta = {
           providerMessageId: result.messageId, // Mitto messageId is the provider messageId
           trafficAccountId: result.trafficAccountId,
           balanceAfter: billingResult.balance,
+          creditsCharged: billingResult.debitedCredits || 0,
+          transactionId: billingResult.transactionId || null,
         };
       } catch (debitErr) {
         // Log error but don't fail - message was already sent

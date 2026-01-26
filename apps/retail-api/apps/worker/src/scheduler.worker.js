@@ -55,6 +55,10 @@ const BIRTHDAY_AUTOMATION_CRON = process.env.BIRTHDAY_AUTOMATION_CRON || '0 9 * 
 const RESERVATION_RECONCILE_CRON = process.env.CREDIT_RESERVATION_RECONCILE_CRON || '0 3 * * *';
 const EXPORT_WEEKLY_ENABLED = process.env.EXPORT_WEEKLY_ENABLED !== '0';
 const EXPORT_WEEKLY_CRON = process.env.EXPORT_WEEKLY_CRON || '0 7 * * MON';
+const MESSAGING_EXPORT_WEEKLY_ENABLED = process.env.MESSAGING_EXPORT_WEEKLY_ENABLED !== '0';
+const MESSAGING_EXPORT_WEEKLY_CRON = process.env.MESSAGING_EXPORT_WEEKLY_CRON || '0 7 * * MON';
+const ENABLE_AUTOMATION_LIBRARY = process.env.ENABLE_AUTOMATION_LIBRARY !== '0';
+const AUTOMATION_LIBRARY_CRON = process.env.AUTOMATION_LIBRARY_CRON || '*/10 * * * *';
 
 const schedulerQueue = new Queue('schedulerQueue', {
   connection,
@@ -129,6 +133,40 @@ if (EXPORT_WEEKLY_ENABLED) {
   });
 }
 
+if (MESSAGING_EXPORT_WEEKLY_ENABLED) {
+  schedulerQueue.add(
+    'weeklyMessagingExport',
+    {},
+    {
+      repeat: {
+        cron: MESSAGING_EXPORT_WEEKLY_CRON,
+      },
+      jobId: 'weekly-messaging-export',
+    },
+  ).then(() => {
+    logger.info({ cron: MESSAGING_EXPORT_WEEKLY_CRON }, 'Scheduled weekly messaging export job registered');
+  }).catch((err) => {
+    logger.error({ err: err.message, cron: MESSAGING_EXPORT_WEEKLY_CRON }, 'Failed to register weekly messaging export job');
+  });
+}
+
+if (ENABLE_AUTOMATION_LIBRARY) {
+  schedulerQueue.add(
+    'processAutomationLibrary',
+    {},
+    {
+      repeat: {
+        cron: AUTOMATION_LIBRARY_CRON,
+      },
+      jobId: 'automation-library-runner',
+    },
+  ).then(() => {
+    logger.info({ cron: AUTOMATION_LIBRARY_CRON }, 'Scheduled automation library job registered');
+  }).catch((err) => {
+    logger.error({ err: err.message, cron: AUTOMATION_LIBRARY_CRON }, 'Failed to register automation library job');
+  });
+}
+
 const worker = new Worker(
   'schedulerQueue',
   async (job) => {
@@ -151,6 +189,16 @@ const worker = new Worker(
     if (job.name === 'weeklyBillingExport') {
       const { runWeeklyBillingExport } = require('../../api/src/services/billing-export-runner.service');
       return runWeeklyBillingExport();
+    }
+
+    if (job.name === 'weeklyMessagingExport') {
+      const { runWeeklyMessagingExport } = require('../../api/src/services/messaging-export-runner.service');
+      return runWeeklyMessagingExport();
+    }
+
+    if (job.name === 'processAutomationLibrary') {
+      const { processAutomationLibraryRuns } = require('../../api/src/services/automationLibrary.service');
+      return processAutomationLibraryRuns();
     }
 
     logger.warn({ jobId: job.id, jobName: job.name }, 'Unknown or legacy scheduler job, skipping');

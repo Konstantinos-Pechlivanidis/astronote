@@ -141,7 +141,22 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
               select: { id: true, campaignId: true, ownerId: true, status: true },
             });
 
-            if (msgs.length === 0) {
+            const directMsgs = await prisma.directMessage.findMany({
+              where: { providerMessageId: providerId },
+              select: { id: true, ownerId: true, status: true },
+            });
+
+            const automationMsgs = await prisma.automationMessage.findMany({
+              where: { providerMessageId: providerId },
+              select: { id: true, ownerId: true, status: true },
+            });
+
+            const automationSends = await prisma.automationSend.findMany({
+              where: { providerMessageId: providerId },
+              select: { id: true, ownerId: true, status: true },
+            });
+
+            if (msgs.length === 0 && directMsgs.length === 0 && automationMsgs.length === 0 && automationSends.length === 0) {
               logger.info({ providerId, eventId }, 'DLR: no local messages matched');
               return { matched: 0, updated: 0 };
             }
@@ -149,13 +164,24 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
             logger.info({
               providerId,
               eventId,
-              messageCount: msgs.length,
-              currentStatuses: msgs.map(m => m.status),
+              messageCount: msgs.length + directMsgs.length + automationMsgs.length + automationSends.length,
+              currentStatuses: [
+                ...msgs.map(m => m.status),
+                ...directMsgs.map(m => m.status),
+                ...automationMsgs.map(m => m.status),
+                ...automationSends.map(m => m.status),
+              ],
               newStatus: mapped,
             }, 'DLR: updating messages');
 
             const msgIds = msgs.map(m => m.id);
+            const directIds = directMsgs.map(m => m.id);
+            const automationIds = automationMsgs.map(m => m.id);
+            const automationSendIds = automationSends.map(m => m.id);
             let count = 0;
+            let directCount = 0;
+            let automationCount = 0;
+            let automationSendCount = 0;
 
             if (mapped === 'sent') {
               const r = await prisma.campaignMessage.updateMany({
@@ -171,6 +197,47 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
               count = r.count;
               msgs.forEach(m => affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`));
               logger.info({ providerId, eventId, updated: count, originalStatus: statusIn }, 'DLR: marked as sent');
+
+              if (directIds.length) {
+                const rDirect = await prisma.directMessage.updateMany({
+                  where: { id: { in: directIds } },
+                  data: {
+                    status: 'sent',
+                    sentAt: doneAt,
+                    deliveryStatus: statusIn || 'sent',
+                    deliveredAt: (statusIn && String(statusIn).toLowerCase().includes('deliv')) ? doneAt : undefined,
+                    updatedAt: new Date(),
+                  },
+                });
+                directCount = rDirect.count;
+                logger.info({ providerId, eventId, updated: directCount }, 'DLR: direct messages marked as sent');
+              }
+
+              if (automationIds.length) {
+                const rAuto = await prisma.automationMessage.updateMany({
+                  where: { id: { in: automationIds } },
+                  data: {
+                    status: 'sent',
+                    sentAt: doneAt,
+                    deliveryStatus: statusIn || 'sent',
+                  },
+                });
+                automationCount = rAuto.count;
+                logger.info({ providerId, eventId, updated: automationCount }, 'DLR: automation messages marked as sent');
+              }
+
+              if (automationSendIds.length) {
+                const rAutoSend = await prisma.automationSend.updateMany({
+                  where: { id: { in: automationSendIds } },
+                  data: {
+                    status: 'sent',
+                    sentAt: doneAt,
+                    deliveryStatus: statusIn || 'sent',
+                  },
+                });
+                automationSendCount = rAutoSend.count;
+                logger.info({ providerId, eventId, updated: automationSendCount }, 'DLR: automation library sends marked as sent');
+              }
             } else if (mapped === 'failed') {
               const r = await prisma.campaignMessage.updateMany({
                 where: { id: { in: msgIds } }, // tenant safety via fetched rows
@@ -185,11 +252,57 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
               count = r.count;
               msgs.forEach(m => affectedCampaigns.add(`${m.campaignId}:${m.ownerId}`));
               logger.info({ providerId, eventId, updated: count }, 'DLR: marked as failed');
+
+              if (directIds.length) {
+                const rDirect = await prisma.directMessage.updateMany({
+                  where: { id: { in: directIds } },
+                  data: {
+                    status: 'failed',
+                    failedAt: doneAt,
+                    deliveryStatus: statusIn || 'failed',
+                    error: errorDesc || 'FAILED_DLR',
+                    updatedAt: new Date(),
+                  },
+                });
+                directCount = rDirect.count;
+                logger.info({ providerId, eventId, updated: directCount }, 'DLR: direct messages marked as failed');
+              }
+
+              if (automationIds.length) {
+                const rAuto = await prisma.automationMessage.updateMany({
+                  where: { id: { in: automationIds } },
+                  data: {
+                    status: 'failed',
+                    failedAt: doneAt,
+                    deliveryStatus: statusIn || 'failed',
+                    error: errorDesc || 'FAILED_DLR',
+                  },
+                });
+                automationCount = rAuto.count;
+                logger.info({ providerId, eventId, updated: automationCount }, 'DLR: automation messages marked as failed');
+              }
+
+              if (automationSendIds.length) {
+                const rAutoSend = await prisma.automationSend.updateMany({
+                  where: { id: { in: automationSendIds } },
+                  data: {
+                    status: 'failed',
+                    failedAt: doneAt,
+                    deliveryStatus: statusIn || 'failed',
+                    error: errorDesc || 'FAILED_DLR',
+                  },
+                });
+                automationSendCount = rAutoSend.count;
+                logger.info({ providerId, eventId, updated: automationSendCount }, 'DLR: automation library sends marked as failed');
+              }
             } else {
               logger.warn({ providerId, eventId, statusIn, mapped }, 'DLR unknown/ignored status');
             }
 
-            return { matched: msgs.length, updated: count };
+            return {
+              matched: msgs.length + directMsgs.length + automationMsgs.length + automationSends.length,
+              updated: count + directCount + automationCount + automationSendCount,
+            };
           },
           {
             payloadHash,
@@ -244,7 +357,7 @@ router.post('/webhooks/mitto/dlr', async (req, res) => {
 
 /**
  * --- Inbound MO (STOP) ---
- * Unsubscribes contact on STOP. Always 202.
+ * Accepts and logs only (no unsubscribe). Always 200/202 to avoid retries.
  */
 function normalizeMsisdn(s) {
   if (!s) {return null;}
@@ -271,16 +384,11 @@ router.post('/webhooks/mitto/inbound', async (req, res) => {
 
     // Simple STOP detection (extend with STOPALL etc. if needed)
     if (/^\s*stop\b/i.test(text)) {
-      // Note: This updates all contacts with this phone across all owners
-      // In a multi-tenant system, you might want to scope by owner if phone is not globally unique
-      const r = await prisma.contact.updateMany({
-        where: { phone, isSubscribed: true },
-        data: { isSubscribed: false, unsubscribedAt: new Date() },
-      });
-      logger.info({ phone, count: r.count }, 'Inbound STOP → unsubscribed');
+      // Inbound STOP is accepted and logged only (no contact updates).
+      logger.info({ phone }, 'Inbound STOP received (no unsubscribe applied)');
     }
 
-    return res.status(202).json({ ok: true });
+    return res.status(200).json({ ok: true });
   } catch (e) {
     logger.error({ err: e }, 'Inbound handler error');
     return res.status(200).json({ ok: true });

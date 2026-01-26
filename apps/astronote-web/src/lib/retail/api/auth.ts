@@ -1,5 +1,6 @@
 import api from './axios';
 import { endpoints } from './endpoints';
+import type { BusinessProfile } from '@/src/lib/retail/types';
 
 export interface AuthResponse {
   accessToken: string
@@ -8,6 +9,7 @@ export interface AuthResponse {
     email: string
     senderName?: string
     company?: string
+    businessProfile?: BusinessProfile
   }
 }
 
@@ -36,4 +38,3 @@ export const authApi = {
   logout: () =>
     api.post(endpoints.auth.logout, {}),
 };
-

@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { AlertCircle } from 'lucide-react';
 import { useAutomations } from '@/src/features/retail/automations/hooks/useAutomations';
+import { useAutomationLibrary } from '@/src/features/retail/automations/hooks/useAutomationLibrary';
 import { useBillingGate } from '@/src/features/retail/billing/hooks/useBillingGate';
 import { AutomationsList } from '@/src/components/retail/automations/AutomationsList';
 import { AutomationsSkeleton } from '@/src/components/retail/automations/AutomationsSkeleton';
+import { AutomationLibraryList } from '@/src/components/retail/automations/AutomationLibraryList';
 import { RetailCard } from '@/src/components/retail/RetailCard';
 import { RetailPageHeader } from '@/src/components/retail/RetailPageHeader';
 import { RetailPageLayout } from '@/src/components/retail/RetailPageLayout';
@@ -13,6 +15,7 @@ import { Button } from '@/components/ui/button';
 
 export default function AutomationsPage() {
   const { data: automations, isLoading, error, refetch } = useAutomations();
+  const { data: library, isLoading: isLibraryLoading, error: libraryError } = useAutomationLibrary();
   const billingGate = useBillingGate();
 
   const showBillingGate =
@@ -95,6 +98,24 @@ export default function AutomationsPage() {
 
             <AutomationsList automations={automations} />
           </div>
+        )}
+
+        {/* Automation Library */}
+        {!isLibraryLoading && library && (
+          <AutomationLibraryList presets={library.presets} businessProfile={library.businessProfile} />
+        )}
+
+        {libraryError && (
+          <RetailCard variant="danger">
+            <div className="flex flex-col items-center justify-center gap-3 py-6 text-center">
+              <div className="text-sm font-semibold text-red-500">
+                Couldn&apos;t load automation library
+              </div>
+              <div className="max-w-md text-sm text-text-secondary">
+                Please try again or check your network connection.
+              </div>
+            </div>
+          </RetailCard>
         )}
       </div>
     </RetailPageLayout>

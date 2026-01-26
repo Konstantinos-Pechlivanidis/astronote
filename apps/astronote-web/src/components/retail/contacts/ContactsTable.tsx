@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Edit, Trash2 } from 'lucide-react';
+import { Edit, MessageSquare, Trash2 } from 'lucide-react';
 import { SubscriptionBadge } from './SubscriptionBadge';
+import { DirectMessageModal } from './DirectMessageModal';
 import { maskPhone } from '@/src/lib/retail/utils/phone';
 import { ConfirmDialog } from '@/src/components/retail/ConfirmDialog';
 import { RetailCard } from '@/src/components/retail/RetailCard';
@@ -18,6 +19,7 @@ interface ContactsTableProps {
 
 export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<Contact | null>(null);
+  const [sendContact, setSendContact] = useState<Contact | null>(null);
 
   if (!contacts || contacts.length === 0) {
     return null;
@@ -72,6 +74,15 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSendContact(contact)}
+                          className="h-8 w-8 p-0"
+                          aria-label="Send SMS"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -134,6 +145,15 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
                 <Button
                   variant="ghost"
                   size="sm"
+                  onClick={() => setSendContact(contact)}
+                  className="flex-1"
+                >
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Send SMS
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setDeleteConfirm(contact)}
                   className="flex-1 text-red-400 hover:text-red-500"
                 >
@@ -160,6 +180,12 @@ export function ContactsTable({ contacts, onEdit, onDelete }: ContactsTableProps
         confirmText="Delete"
         cancelText="Cancel"
         variant="danger"
+      />
+
+      <DirectMessageModal
+        open={!!sendContact}
+        onClose={() => setSendContact(null)}
+        contact={sendContact}
       />
     </>
   );

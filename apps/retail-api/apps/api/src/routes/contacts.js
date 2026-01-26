@@ -61,7 +61,7 @@ router.post(
   rateLimitByIp(writeIpLimiter),
   async (req, res, next) => {
     try {
-      const { phone, email, firstName, lastName, gender, birthday } = req.body || {};
+      const { phone, email, firstName, lastName, gender, birthday, serviceAllowed } = req.body || {};
       if (!phone) {
         return res.status(400).json({
           message: 'Phone number is required',
@@ -129,6 +129,7 @@ router.post(
           gender: normalizedGender,
           birthday: birthdayDate,
           isSubscribed: true,                  // New contacts are subscribed by default
+          serviceAllowed: serviceAllowed !== undefined ? Boolean(serviceAllowed) : true,
           unsubscribeTokenHash: hash,            // store only the hash (raw can be rotated later)
         },
       });
@@ -328,8 +329,22 @@ router.put(
         });
       }
 
-      const { phone, email, firstName, lastName, gender, birthday, isSubscribed } = req.body || {};
+      const { phone, email, firstName, lastName, gender, birthday, isSubscribed, serviceAllowed } = req.body || {};
       const data = {};
+      let existingContact = null;
+
+      if (isSubscribed !== undefined || serviceAllowed !== undefined) {
+        existingContact = await prisma.contact.findFirst({
+          where: { id, ownerId: req.user.id },
+          select: { id: true, ownerId: true, isSubscribed: true, serviceAllowed: true },
+        });
+        if (!existingContact) {
+          return res.status(404).json({
+            message: 'Contact not found',
+            code: 'RESOURCE_NOT_FOUND',
+          });
+        }
+      }
 
       if (phone !== undefined) {
         const sanitizedPhone = sanitizeString(phone, { maxLength: 20 });
@@ -400,6 +415,10 @@ router.put(
         }
       }
 
+      if (serviceAllowed !== undefined) {
+        data.serviceAllowed = Boolean(serviceAllowed);
+      }
+
       const r = await prisma.contact.updateMany({
         where: { id, ownerId: req.user.id },  // SCOPE
         data,
@@ -415,6 +434,33 @@ router.put(
       const updated = await prisma.contact.findFirst({
         where: { id, ownerId: req.user.id },
       });
+
+      if (existingContact && updated) {
+        const events = [];
+        if (isSubscribed !== undefined && existingContact.isSubscribed !== updated.isSubscribed) {
+          events.push({
+            ownerId: updated.ownerId,
+            contactId: updated.id,
+            type: updated.isSubscribed ? 'resubscribed' : 'unsubscribed',
+            source: 'owner_update',
+          });
+        }
+        if (serviceAllowed !== undefined && existingContact.serviceAllowed !== updated.serviceAllowed) {
+          events.push({
+            ownerId: updated.ownerId,
+            contactId: updated.id,
+            type: updated.serviceAllowed ? 'service_allowed' : 'service_revoked',
+            source: 'owner_update',
+          });
+        }
+        if (events.length) {
+          try {
+            await prisma.consentEvent.createMany({ data: events });
+          } catch (err) {
+            logger.warn({ contactId: updated.id, err: err.message }, 'Failed to record consent event');
+          }
+        }
+      }
 
       res.json(updated);
     } catch (e) {
@@ -945,6 +991,19 @@ router.post('/contacts/unsubscribe',
         },
       });
 
+      try {
+        await prisma.consentEvent.create({
+          data: {
+            ownerId: decoded.storeId,
+            contactId: decoded.contactId,
+            type: 'unsubscribed',
+            source: 'public_unsubscribe',
+          },
+        });
+      } catch (err) {
+        logger.warn({ contactId: decoded.contactId, err: err.message }, 'Failed to record unsubscribe consent event');
+      }
+
       logger.info({
         contactId: decoded.contactId,
         ownerId: decoded.storeId,
@@ -1011,6 +1070,19 @@ router.post('/contacts/resubscribe',
           smsConsentAt: new Date(),
         },
       });
+
+      try {
+        await prisma.consentEvent.create({
+          data: {
+            ownerId: decoded.storeId,
+            contactId: decoded.contactId,
+            type: 'resubscribed',
+            source: 'public_resubscribe',
+          },
+        });
+      } catch (err) {
+        logger.warn({ contactId: decoded.contactId, err: err.message }, 'Failed to record resubscribe consent event');
+      }
 
       logger.info({
         contactId: decoded.contactId,

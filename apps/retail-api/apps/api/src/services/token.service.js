@@ -96,8 +96,33 @@ function verifyUnsubscribeToken(token) {
   }
 }
 
+/**
+ * Verify and decode an unsubscribe token and ensure it belongs to the expected store.
+ *
+ * @param {string} token - Token to verify
+ * @param {number} expectedStoreId - Store/Owner ID to match
+ * @returns {Object|null} Decoded payload or null if invalid/mismatch
+ */
+function verifyUnsubscribeTokenForStore(token, expectedStoreId) {
+  const decoded = verifyUnsubscribeToken(token);
+  if (!decoded) {
+    return null;
+  }
+  if (!expectedStoreId) {
+    return null;
+  }
+  const expected = Number(expectedStoreId);
+  if (!Number.isFinite(expected)) {
+    return null;
+  }
+  if (Number(decoded.storeId) !== expected) {
+    return null;
+  }
+  return decoded;
+}
+
 module.exports = {
   generateUnsubscribeToken,
   verifyUnsubscribeToken,
+  verifyUnsubscribeTokenForStore,
 };
-

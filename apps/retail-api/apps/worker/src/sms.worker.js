@@ -18,9 +18,15 @@ const { sendSingle } = require('../../api/src/services/mitto.service');
 const { sendBulkSMSWithCredits } = require('../../api/src/services/smsBulk.service');
 const { consumeMessageBilling, canSendOrSpendCredits } = require('../../api/src/services/subscription.service');
 const { releaseReservationForMessage } = require('../../api/src/services/credit-reservation.service');
+const { checkMessageGuards, getOwnerLimitSnapshot } = require('../../api/src/services/messageGuards.service');
 const { generateUnsubscribeToken } = require('../../api/src/services/token.service');
 const { shortenUrlsInText, ShortenerError } = require('../../api/src/services/urlShortener.service');
 const { buildOfferShortUrl, buildUnsubscribeShortUrl } = require('../../api/src/services/publicLinkBuilder.service');
+const {
+  getMessagePolicy,
+  normalizeMessageBody,
+  normalizeMessageType,
+} = require('../../api/src/services/messagePolicy');
 const crypto = require('crypto');
 
 const DEBUG_SEND = process.env.SMS_SEND_DEBUG === '1';
@@ -40,7 +46,7 @@ function formatRedisInfo(connection) {
   return { host, port, db, tls };
 }
 
-async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, ctx = null }) {
+async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, policy, ctx = null }) {
   let output = text || '';
   try {
     if (DEBUG_SEND) {
@@ -81,48 +87,13 @@ async function finalizeMessageText(text, { offerUrl, unsubscribeUrl, ctx = null 
     output = text || '';
   }
 
-  // Remove any existing offer/unsubscribe blocks or short URLs
-  const linePatterns = [
-    /^ *(view|claim) offer:.*$/gim,
-    /^ *to unsubscribe.*$/gim,
-  ];
-  const urlPatterns = [
-    /https?:\/\/\S*\/o\/[^\s]+/gi,
-    /https?:\/\/\S*\/retail\/o\/[^\s]+/gi,
-    /https?:\/\/\S*\/tracking\/offer\/[^\s]+/gi,
-    /https?:\/\/\S*\/s\/[^\s]+/gi,
-    /https?:\/\/\S*\/retail\/s\/[^\s]+/gi,
-    /https?:\/\/\S*\/unsubscribe\/[^\s]+/gi
-  ];
-
-  [...linePatterns, ...urlPatterns].forEach((pattern) => {
-    output = output.replace(pattern, '');
+  const resolvedPolicy = policy || getMessagePolicy('marketing', Boolean(offerUrl), { stripExisting: true });
+  const normalized = normalizeMessageBody(output, resolvedPolicy, {
+    offerUrl,
+    unsubscribeUrl,
   });
-
-  // Clean up excessive blank lines after removal
-  output = output.replace(/\n{3,}/g, '\n\n').trim();
-
-  const appended = [];
-
-  const safeOfferUrl = offerUrl || null;
-  const safeUnsubUrl = unsubscribeUrl || null;
-
-  if (safeOfferUrl) {
-    appended.push(`Claim Offer: ${safeOfferUrl}`);
-  }
-  if (safeUnsubUrl) {
-    appended.push(`To unsubscribe, tap: ${safeUnsubUrl}`);
-  }
-
-  if (appended.length) {
-    output = `${output}\n\n${appended.join('\n\n')}`;
-  }
-
-  output = output.replace(/\n{3,}/g, '\n\n').trim();
-  const appendedLinks = {
-    offer: Boolean(safeOfferUrl),
-    unsubscribe: Boolean(safeUnsubUrl),
-  };
+  output = normalized.text;
+  const appendedLinks = normalized.appended;
   if (DEBUG_SEND) {
     logger.info(
       {
@@ -173,6 +144,8 @@ try {
 
 const concurrency = Number(process.env.WORKER_CONCURRENCY || 5);
 const CLAIM_STALE_MINUTES = Number(process.env.SEND_CLAIM_STALE_MINUTES || 15);
+const OWNER_SMS_PER_MINUTE = Number(process.env.OWNER_SMS_PER_MINUTE || 0);
+const OWNER_SMS_PER_DAY = Number(process.env.OWNER_SMS_PER_DAY || 0);
 
 function isRetryable(err) {
   // Check for rate limit errors from our rate limiter (Phase 2.1)
@@ -196,31 +169,40 @@ async function renderMessageWithLinks(msg, jobCtx = {}) {
     throw new ShortenerError('Missing ownerId for message rendering', { messageId: msg?.id });
   }
 
-  const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
-  const unsubscribe = await buildUnsubscribeShortUrl({
-    token: unsubscribeToken,
-    ownerId: msg.campaign.ownerId,
-    campaignId: msg.campaign.id,
-    campaignMessageId: msg.id,
-  });
+  const messageType = normalizeMessageType(msg.campaign.messageType);
+  const policy = getMessagePolicy(messageType, Boolean(msg.trackingId));
+  let unsubscribe = null;
+  let offer = null;
 
-  const offer = msg.trackingId
-    ? await buildOfferShortUrl({
+  if (policy.appendUnsubscribe) {
+    const unsubscribeToken = generateUnsubscribeToken(msg.contact.id, msg.campaign.ownerId, msg.campaign.id);
+    unsubscribe = await buildUnsubscribeShortUrl({
+      token: unsubscribeToken,
+      ownerId: msg.campaign.ownerId,
+      campaignId: msg.campaign.id,
+      campaignMessageId: msg.id,
+    });
+  }
+
+  if (policy.appendOffer && msg.trackingId) {
+    offer = await buildOfferShortUrl({
       trackingId: msg.trackingId,
       ownerId: msg.campaign.ownerId,
       campaignId: msg.campaign.id,
       campaignMessageId: msg.id,
-    })
-    : null;
+    });
+  }
 
   const { text, appended } = await finalizeMessageText(msg.text, {
     offerUrl: offer?.shortUrl || null,
     unsubscribeUrl: unsubscribe?.shortUrl || null,
+    policy,
     ctx: {
       ...jobCtx,
       messageId: msg.id,
       campaignId: msg.campaign.id,
       ownerId: msg.campaign.ownerId,
+      messageType,
     },
   });
 
@@ -301,7 +283,7 @@ async function processIndividualJob(messageId, job) {
     const msg = await prisma.campaignMessage.findUnique({
       where: { id: messageId },
       include: {
-        campaign: { select: { id: true, ownerId: true, createdById: true } },
+        campaign: { select: { id: true, ownerId: true, createdById: true, messageType: true } },
         contact:  { select: { id: true, phone: true, unsubscribeTokenHash: true } }
       }
     });
@@ -340,6 +322,30 @@ async function processIndividualJob(messageId, job) {
           }
         });
         logger.warn({ messageId: msg.id, ownerId: msg.campaign.ownerId }, 'Inactive subscription - individual SMS blocked');
+        return;
+      }
+
+      const guard = await checkMessageGuards({
+        ownerId: msg.campaign.ownerId,
+        contactId: msg.contact?.id || null,
+        phoneE164: msg.to,
+        messageType: msg.campaign.messageType,
+      });
+      if (!guard.allowed) {
+        await releaseReservationForMessage(msg.campaign.ownerId, msg.id, {
+          reason: guard.reason || 'guard_blocked',
+        }).catch(() => null);
+        await prisma.campaignMessage.update({
+          where: { id: msg.id },
+          data: {
+            failedAt: new Date(),
+            status: 'failed',
+            error: guard.message || 'Message blocked by guardrails',
+            billingStatus: 'failed',
+            billingError: guard.reason || 'GUARD_BLOCKED',
+          },
+        });
+        logger.warn({ messageId: msg.id, ownerId: msg.campaign.ownerId, reason: guard.reason }, 'Message blocked by guardrails');
         return;
       }
 
@@ -415,6 +421,8 @@ async function processIndividualJob(messageId, job) {
       let billingStatus = null;
       let billingError = null;
       let billedAt = null;
+      let transactionId = null;
+      let creditsCharged = null;
 
       // Only consume allowance/credits AFTER successful send (when we have messageId)
       if (providerId) {
@@ -427,6 +435,8 @@ async function processIndividualJob(messageId, job) {
           });
           billingStatus = billingResult.billingStatus || 'paid';
           billedAt = billingResult.billedAt || new Date();
+          transactionId = billingResult.transactionId || null;
+          creditsCharged = billingResult.debitedCredits || 0;
           logger.debug({
             messageId: msg.id,
             ownerId: msg.campaign.ownerId,
@@ -454,6 +464,8 @@ async function processIndividualJob(messageId, job) {
           billingStatus: billingStatus || undefined,
           billingError: billingError || null,
           billedAt: billedAt || undefined,
+          transactionId,
+          creditsCharged,
         }
       });
       if (DEBUG_SEND) {
@@ -560,7 +572,7 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
         sendClaimToken: claimToken
       },
       include: {
-        campaign: { select: { id: true, ownerId: true, createdById: true } },
+        campaign: { select: { id: true, ownerId: true, createdById: true, messageType: true } },
         contact: { select: { id: true, phone: true } }
       }
     });
@@ -591,7 +603,7 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
             providerMessageId: null
           },
           include: {
-            campaign: { select: { id: true, ownerId: true, createdById: true } },
+            campaign: { select: { id: true, ownerId: true, createdById: true, messageType: true } },
             contact: { select: { id: true, phone: true } }
           }
         });
@@ -648,9 +660,57 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
 
     const bulkMessages = [];
     const shortenerFailures = [];
+    const guardFailures = [];
+    let ownerMinuteCount = null;
+    let ownerDayCount = null;
+
+    if (OWNER_SMS_PER_MINUTE || OWNER_SMS_PER_DAY) {
+      const snapshot = await getOwnerLimitSnapshot(ownerId);
+      ownerMinuteCount = snapshot.minute ?? 0;
+      ownerDayCount = snapshot.day ?? 0;
+    }
 
     for (const msg of unsentMessages) {
       try {
+        if (OWNER_SMS_PER_MINUTE && ownerMinuteCount !== null && ownerMinuteCount >= OWNER_SMS_PER_MINUTE) {
+          guardFailures.push({
+            id: msg.id,
+            reason: 'owner_rate_limit',
+            message: 'Owner send limit exceeded (per minute).',
+          });
+          continue;
+        }
+        if (OWNER_SMS_PER_DAY && ownerDayCount !== null && ownerDayCount >= OWNER_SMS_PER_DAY) {
+          guardFailures.push({
+            id: msg.id,
+            reason: 'owner_daily_limit',
+            message: 'Owner send limit exceeded (per day).',
+          });
+          continue;
+        }
+
+        const guard = await checkMessageGuards({
+          ownerId: msg.campaign.ownerId,
+          contactId: msg.contact?.id || null,
+          phoneE164: msg.to,
+          messageType: msg.campaign.messageType,
+        }, { skipOwnerLimits: true });
+        if (!guard.allowed) {
+          guardFailures.push({
+            id: msg.id,
+            reason: guard.reason || 'GUARD_BLOCKED',
+            message: guard.message || 'Message blocked by guardrails',
+          });
+          continue;
+        }
+
+        if (OWNER_SMS_PER_MINUTE && ownerMinuteCount !== null) {
+          ownerMinuteCount += 1;
+        }
+        if (OWNER_SMS_PER_DAY && ownerDayCount !== null) {
+          ownerDayCount += 1;
+        }
+
         const rendered = await renderMessageWithLinks(msg, {
           jobId: job.id,
           attempt: job.attemptsMade || 0,
@@ -680,6 +740,38 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
         }, 'Short link generation failed for message in batch');
         shortenerFailures.push({ id: msg.id, err });
       }
+    }
+
+    if (guardFailures.length) {
+      await Promise.all(
+        guardFailures.map((failure) =>
+          releaseReservationForMessage(ownerId, failure.id, { reason: failure.reason }).catch(() => null),
+        ),
+      );
+
+      await Promise.all(
+        guardFailures.map((failure) =>
+          prisma.campaignMessage.update({
+            where: { id: failure.id },
+            data: {
+              status: 'failed',
+              failedAt: new Date(),
+              error: failure.message || failure.reason || 'GUARD_BLOCKED',
+              billingStatus: 'failed',
+              billingError: failure.reason || 'GUARD_BLOCKED',
+              sendClaimedAt: null,
+              sendClaimToken: null,
+            },
+          }),
+        ),
+      );
+
+      logger.warn({
+        campaignId,
+        ownerId,
+        blockedCount: guardFailures.length,
+        reasons: guardFailures.slice(0, 5).map((f) => f.reason),
+      }, 'Guardrails blocked some messages in batch');
     }
 
     if (shortenerFailures.length) {
@@ -792,6 +884,12 @@ async function processBatchJob(campaignId, ownerId, messageIds, job) {
         updateData.sendClaimToken = null;
         updateData.billingStatus = res.billingStatus || 'pending';
         updateData.billingError = res.billingError || null;
+        if (res.creditsCharged !== undefined) {
+          updateData.creditsCharged = res.creditsCharged;
+        }
+        if (res.transactionId) {
+          updateData.transactionId = res.transactionId;
+        }
         if (res.billedAt) {
           updateData.billedAt = res.billedAt;
         }

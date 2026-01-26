@@ -102,6 +102,32 @@ export const endpoints = {
     stats: (type: string) => `/api/automations/${type}/stats`,
   },
 
+  // Automation library presets
+  automationLibrary: {
+    list: '/api/automation-library',
+    update: (key: string) => `/api/automation-library/${key}`,
+  },
+
+  // Customer events
+  events: {
+    list: '/api/events',
+    create: '/api/events',
+    updateStatus: (id: number) => `/api/events/${id}/status`,
+  },
+
+  // Direct messages (1-to-1)
+  directMessages: {
+    send: '/api/direct-messages',
+    detail: (id: number) => `/api/direct-messages/${id}`,
+    refresh: (id: number) => `/api/direct-messages/${id}/refresh`,
+  },
+
+  // Message logs (operator-lite)
+  messageLogs: {
+    list: '/api/message-logs',
+    export: '/api/message-logs/export',
+  },
+
   nfc: {
     me: '/api/me/nfc',
     rotate: '/api/me/nfc/rotate',

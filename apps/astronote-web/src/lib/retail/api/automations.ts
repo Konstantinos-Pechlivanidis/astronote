@@ -12,6 +12,7 @@ export interface Automation {
   id: number
   type: 'welcome_message' | 'birthday_message'
   messageBody: string
+  messageType?: 'marketing' | 'service'
   isActive: boolean
   createdAt?: string
   updatedAt?: string

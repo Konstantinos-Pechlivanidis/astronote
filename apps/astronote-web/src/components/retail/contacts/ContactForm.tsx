@@ -35,6 +35,7 @@ export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) 
           ? new Date(contact.birthday).toISOString().split('T')[0]
           : '',
         isSubscribed: contact.isSubscribed !== undefined ? contact.isSubscribed : true,
+        serviceAllowed: contact.serviceAllowed !== undefined ? contact.serviceAllowed : true,
       }
       : {
         phone: '',
@@ -44,6 +45,7 @@ export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) 
         gender: null,
         birthday: '',
         isSubscribed: true,
+        serviceAllowed: true,
       },
   });
 
@@ -193,6 +195,23 @@ export function ContactForm({ contact, onSubmit, isLoading }: ContactFormProps) 
         {contact && (
           <p className="mt-1 text-xs text-text-tertiary">Uncheck to unsubscribe this contact.</p>
         )}
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2">
+          <input
+            {...register('serviceAllowed')}
+            type="checkbox"
+            className="w-4 h-4 text-accent border-border rounded focus:ring-accent"
+            defaultChecked={!contact}
+          />
+          <span className="text-sm font-medium text-text-secondary">
+            Allow service SMS
+          </span>
+        </label>
+        <p className="mt-1 text-xs text-text-tertiary">
+          Service messages include reminders and updates related to appointments or memberships.
+        </p>
       </div>
 
       <div className="flex justify-end gap-3 pt-4">
